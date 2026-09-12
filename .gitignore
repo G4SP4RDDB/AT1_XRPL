@@ -3,3 +3,10 @@ GEMINI.md
 node_modules/
 .xrpl-devex/
 .claude/settings.local.json
+.env
+.DS_Store
+.claude/skills/
+.codex/
+.cursor/
+.grok/
+xrpl-lending-notion.md

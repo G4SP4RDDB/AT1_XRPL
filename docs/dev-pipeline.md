@@ -20,6 +20,20 @@ Verified against the installed SDK (`xrpl@5.2.0`, the current stable release) an
 | Read PPS, AssetsTotal, loan status | `vault_info` RPC returns the vault plus its share MPT issuance (`OutstandingAmount` = SharesTotal). `Loan` and `LoanBroker` are ledger entries fetched by ID. `AssetsAvailable` is the liquid part, `AssetsTotal` includes principal out on loan, `LossUnrealized` is set while a loan is impaired. | PPS = (AssetsTotal - LossUnrealized) / shares.OutstandingAmount. Liquidity guardrail is driven by AssetsAvailable. |
 | Principal is "locked" while capital is out on loan | Only while `AssetsAvailable` is near zero. Every coupon and every later deposit refills it, and withdrawals are first come first served. A depositor can pull principal out of coupon liquidity. | Create each bond vault with `AssetsMaximum` = bid amount so no deposit lands after the bond fills. Yield-only withdrawal stays an app convention; say so in the report. |
 
+### Verified against the XLS-65 / XLS-66 specs (Sat evening)
+
+| Question | Spec answer | Consequence |
+|---|---|---|
+| Can a multisig borrower counter-sign `LoanSet`? | Yes. `CounterpartySignature` accepts a `Signers` array (XLS-66 §3.8.1.1). Fee = (1 + tx.Signers + counterparty signatures) x base fee. | S1 Q1 becomes a confirmation run, not an open question. |
+| Is early full repayment allowed? | Yes, with `tfLoanFullPayment`, cost = principal + accrued interest + `CloseInterestRate` x principal + `ClosePaymentFee` (§6.1). Refused only when `PaymentRemaining == 1` (`tecKILLED`). | S1 Q2 becomes a cost measurement. The enforcer gate is needed. |
+| Can a coupon be paid before its due date? | Yes. A payment is "on time" while `currentTime < NextPaymentDueDate`; only late ones need `tfLoanLatePayment`, otherwise `tecEXPIRED` (§3.11.4.2 item 11). | The demo can pay all coupons back to back. No waiting per interval. |
+| What does the liquidity guardrail return? | `tecINSUFFICIENT_FUNDS` when `AssetsAvailable` is below the withdrawal (XLS-65 §3.6.2.2 item 10). | S2 measures whether that code is self-explanatory; the code itself is known. |
+| Who sends `LoanBrokerSet`? | The vault `Owner`, else `tecNO_PERMISSION` (§3.3.3.2). | Broker = vault owner, confirmed. |
+| When does PPS rise? | At **origination**: `LoanSet` increases `AssetsTotal` by the whole `InterestDue` (§3.8.6 item 6). Coupons then only move `AssetsAvailable`. | The "PPS rises with each coupon" story in CLAUDE.md §5 is wrong. Yield is recognised up front; coupons make it liquid. Headline finding. |
+| Does `AssetsMaximum` = bid amount work? | No. `LoanSet` fails with `tecLIMIT_EXCEEDED` if `AssetsTotal >= AssetsMaximum` or `AssetsTotal + InterestDue > AssetsMaximum` (§3.8.5.2 items 6 and 14). `VaultSet` cannot lower the cap below `AssetsTotal`. | Cap = principal + interestDue + margin, computed client side with the §1.1 / §2.1 formulas. |
+| Rate units and term limits | Rates are 1/10 basis point (100000 = 100 %). `PaymentInterval >= 60 s`, `60 s <= GracePeriod <= PaymentInterval`. `ManagementFeeRate <= 10000`. | Config fixed. A minutes-long loan at 100 % earns about 0.017 XRP on 1000 XRP: show yield in drops. |
+| Extra payment amount | Only `totalDue` is taken; a larger `Amount` is not an overpayment unless `tfLoanOverpayment` is set (A-3.2.1). Less than due: `tecINSUFFICIENT_PAYMENT`. | Enforcer checks `Amount == PeriodicPayment + LoanServiceFee` from the `Loan` entry. |
+
 Also verified: `LoanManage` with `tfLoanImpair` (broker only) marks the loan impaired and sets `LossUnrealized` on the vault, so PPS drops on screen. One transaction gives the AT1 loss-absorption demo the design otherwise lacks. `tfLoanUnimpair` reverses it.
 
 Also verified: `LoanSet` fields `InterestRate`, `PaymentInterval`, `PaymentTotal`, `GracePeriod`, `CloseInterestRate`, `ClosePaymentFee`. `LoanBrokerSet` fields `ManagementFeeRate`, `DebtMaximum`, `CoverRateMinimum`, `CoverRateLiquidation`. Broker first-loss capital goes in through `LoanBrokerCoverDeposit`.
@@ -99,6 +113,7 @@ Fixed constants in `chain/src/config.ts` so spikes, demo flow and slides show th
 Standalone scripts in `chain/src/spikes/`, each printing the result code and hash. Every finding is a candidate feedback item, so log with `/xrpl-feedback` as you go.
 
 ### S1 — Two multisig questions only (`multisigLoanPay.spike.ts`, 45 min cap)
+Both questions are now answered by the spec (§0); S1 confirms them on the devnet and measures the numbers.
 Q1. Is a multisigned counterparty signature accepted on `LoanSet`? Borrower: `SignerListSet` {borrower-op, broker-enforcer} quorum 2, `AccountSet asfDisableMaster`. Broker builds `LoanSet` with `Counterparty` = borrower; two signers run `signLoanSetByCounterparty(..., { multisign: true })`, then `combineLoanSetCounterpartySigners`; broker signs and submits. Record result code.
 Q2. Is early full repayment allowed, and what does it cost? Right after origination, `LoanPay` + `tfLoanFullPayment` multisigned by two signers. Record result code and the charged `CloseInterestRate` / `ClosePaymentFee`. This is the "nothing stops early repayment" claim in CLAUDE.md §4 and must be measured, not assumed.
 Also record on the way: is a plain `LoanPay` accepted before `NextPaymentDueDate`? If not, the demo must wait real time per interval (§2, 0.5).
@@ -110,7 +125,7 @@ Exit: two answers plus a decision: multisig borrower is viable, or fall back to 
 2. Lender attempts full `VaultWithdraw`. Expect a tec code. Record which one and whether the message makes the cause obvious (feedback item if not).
 3. Lender withdraws 5. Expect success. Confirm PPS unchanged.
 4. Borrower pays one coupon. Re-read PPS, confirm it rose. Withdraw the yield-sized share amount. Confirm principal share count intact.
-Exit: confirmed result code for the guardrail (minimum-bar item 6) and a working formula for yield shares.
+Exit: `tecINSUFFICIENT_FUNDS` confirmed on the devnet for the guardrail (minimum-bar item 6), PPS observed jumping at origination, and a working formula for yield shares.
 
 ### S3 — Read layer shape (`readLayer.spike.ts`, 20 min)
 - `vault_info` by `vault_id`, `ledger_entry` for `LoanBroker` and `Loan`, `account_objects` type `mptoken` for a depositor's share balance, `account_tx` for the share delta of a `VaultDeposit`. Confirm the fields the read layer needs actually come back on this devnet build.
@@ -237,7 +252,12 @@ Root config (`package.json`, `.gitignore`, `CLAUDE.md`) is owned by A. `shared/`
 ### Decided (Sat 12 Sept, Person A)
 
 1. **Multisig borrower is the design, and the broker is the enforcer.** The platform acts as an on-chain broker in the CEX sense: it co-signs every borrower transaction, coupons included, and refuses the `tfLoanFullPayment` repayment before the call date. The co-signature on coupons is therefore a feature (the broker enforces the schedule and can hold a late issuer), not a side effect. Signer set: {borrower-op, broker-enforcer} with quorum 2, master key disabled. No separate scheduler key.
-2. **Enforcer isolation.** The broker-enforcer key lives in its own process, `chain/src/enforcer/`, with its own key file that the app and the demo flow never load. It exposes one call: `cosign(txBlob)`, which checks the transaction type, the loan's call date and the current ledger time before signing. The one-signature rejection in step 2.9 is the on-chain proof that nothing bypasses it.
+2. **Enforcer isolation and policy.** The broker-enforcer key lives in its own process, `chain/src/enforcer/`, with its own key file that the app and the demo flow never load. It exposes one call: `cosign(txBlob)`. Policy, in order:
+   - refuse anything that is not a `LoanPay` on a loan this broker owns;
+   - refuse `tfLoanFullPayment` before the loan's call date (StartDate + PaymentInterval x PaymentTotal);
+   - refuse a coupon whose `Amount` differs from the loan's current `PeriodicPayment` read from the `Loan` ledger entry;
+   - otherwise sign.
+   Origination is created **without** `tfLoanOverpayment`, so the ledger itself rejects any overpayment attempt; the enforcer does not need to handle that case. Refusing to co-sign is not a default: if the borrower then misses the due date plus `GracePeriod`, the broker declares default with `LoanManage` `tfLoanDefault` (step 2.10 covers the sibling impair path). The one-signature rejection in step 2.9 is the on-chain proof that nothing bypasses the enforcer.
    Report framing: the enforcer is a trusted party by construction, like a custodian or exchange. The proposed protocol fix stays the same (earliest-close date on `LoanSet`, or per-transaction-type signer rules) because it would let the issuer pay coupons alone while the broker still gates the close.
 
 ### Pending (need A and B together)

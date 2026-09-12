@@ -1,10 +1,15 @@
 {
   "name": "at1_xrpl",
   "version": "1.0.0",
-  "description": "",
+  "description": "AT1 bond issuance on XRPL (XLS-65/66) — BSA Degen",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "tsx scripts/check-devnet.ts",
+    "fund": "tsx scripts/fund-accounts.ts",
+    "serve": "tsx src/chain/server.ts",
+    "demo": "tsx scripts/demo-flow.ts",
+    "balances": "tsx scripts/balances.ts",
+    "spike": "tsx scripts/spike-lifecycle.ts"
   },
   "repository": {
     "type": "git",
@@ -13,7 +18,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/G4SP4RDDB/AT1_XRPL/issues"
   },
@@ -21,5 +26,11 @@
   "dependencies": {
     "xrpl": "^5.2.0",
     "xrpl-connect": "^0.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
   }
 }
