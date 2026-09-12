@@ -128,81 +128,128 @@ flowchart TD
 ### Prerequisites
 - **Node.js**: `v20.x` or `v22.x`
 - **npm**: `v10.x` or higher
+- **tmux**: Installed (`sudo apt install tmux` on Ubuntu/Debian)
 - Git with SSH key configured
 
-### Step 1: Clone and Install Dependencies
+---
 
+### Method 1: The Automated Pipeline (Recommended) 🚀
+
+This single command executes the complete end-to-end launch pipeline in **5 automated steps**:
+
+```bash
+npm run dev:tmux
+```
+
+#### What happens under the hood:
+1. **⚡ Account Generation & Funding** (`scripts/fund-and-setup.ts`):
+   - Requests 8 fresh accounts from the Custom Devnet faucet (1,000 XRP each).
+   - Writes the new private seeds to `.env` (`BROKER_SEED`, `LENDER1_SEED`, `BORROWER_SEED`, etc.).
+   - Writes `.enforcer.env` with the new Broker address and Enforcer seed.
+   - Waits for ledger validation and deploys the **2-of-2 Multisig rule** (`SignerListSet`) on the borrower with the master key disabled (`asfDisableMaster`).
+2. **🧪 Test Suite**: Runs all 24 backend tests and 19 frontend Vitest tests.
+3. **⚙️ Compilation & Typecheck**: Compiles TypeScript (`tsc --noEmit`) and creates a production bundle (`vite build`).
+4. **🧹 Port Cleanup**: Automatically frees ports 8788, 8787, and 5173.
+5. **🖥️ Split-Screen tmux**: Launches a detached session (`at1`) with 3 synchronized panes:
+   - **Pane 0** (Left): Autonomous Enforcer Daemon (`:8788`)
+   - **Pane 1** (Top-Right): Chain Shim JSON API (`:8787`)
+   - **Pane 2** (Bottom-Right): Frontend Dev Server (`:5173`)
+
+#### Managing the tmux session:
+```bash
+# Attach and view the split dashboard:
+tmux attach -t at1
+
+# Useful shortcuts inside tmux:
+# - Click on any pane with your mouse (mouse support is enabled)
+# - Ctrl+b then arrow keys : navigate between panes
+# - Ctrl+b then z          : toggle fullscreen zoom on the active pane
+# - Ctrl+b then d          : detach from tmux (services remain running)
+
+# Stop all 3 services and kill the session cleanly:
+npm run stop:tmux
+```
+
+> **Tip**: If you want to restart the services with your **existing accounts** without re-funding from the faucet, simply run:
+> ```bash
+> SKIP_FUND=1 npm run dev:tmux
+> ```
+
+---
+
+### Method 2: Step-by-Step Manual Setup (Terminal by Terminal) 🛠️
+
+For developers who prefer manual control over each individual service:
+
+#### Step 1: Clone and Install Dependencies
 ```bash
 # Clone the repository
 git clone git@github.com:G4SP4RDDB/AT1_XRPL.git
 cd AT1_XRPL
 
-# Install root dependencies
+# Install root & backend dependencies
 npm install
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
 ```
 
-### Step 2: Configure Environment Variables
-
+#### Step 2: Configure Environment Files
 ```bash
-# Copy example environment files
 cp .env.example .env
 cp frontend/.env.example frontend/.env
 ```
 
-To automatically fund development roles (Broker, Borrower, Lenders) on the Custom Hackathon Devnet:
+#### Step 3: Fund Accounts & Configure On-Chain Multisig
+Generate fresh roles from the Devnet faucet, populate `.env` / `.enforcer.env`, and submit the multisig configuration:
 ```bash
-npm run fund
+npm run fund:setup
 ```
 
-To create arbitrary fresh accounts funded with 1,000 XRP and display their addresses and seeds:
+*(Optional: To create additional throwaway funded test accounts at any time:)*
 ```bash
 npm run create-accounts 4
 ```
 
-Example output:
-```text
-Compte #1:
-  Adresse : r3eTV9eUXtYBhtgLmpo1Bpais8Nvjfq9bF
-  Seed    : sEdSxasgJ4H92qPru2dtJv3utVVU8YF
-  Solde   : 1000 XRP (validated)
-...
+To verify on-chain balances across all configured accounts:
+```bash
+npm run balances
 ```
 
-### Step 3: Launch the Services
-
-#### Option A: One-Command All-in-One (Account Creation + Tests + Build + tmux Split-Screen) 🚀
-
-Generates fresh Devnet accounts from the faucet, updates `.env` and `.enforcer.env`, configures the 2-of-2 multisig on the borrower, runs all tests, compiles the codebase, and opens a split 3-pane tmux session:
+#### Step 4: Run Tests & Compile Codebase
 ```bash
-npm run dev:tmux
-```
+# Run backend test suite (24 tests)
+npm test
 
-*(Tip: To launch without regenerating fresh accounts, use `SKIP_FUND=1 npm run dev:tmux`)*
-
-To view or manage the tmux session:
-```bash
-tmux attach -t at1        # View split terminal
-# Inside tmux: Ctrl+b then arrow keys to navigate, Ctrl+b then d to detach
-npm run stop:tmux         # Stop all 3 services and kill the session
-```
-
-#### Option B: Separate Terminals
-
-```bash
-# 1. Start the Autonomous Multisig Enforcer (Port 8788)
-npm run enforcer
-
-# 2. Start the Chain Shim API (Port 8787)
-ENFORCER_URL=http://localhost:8788 npm run serve
-
-# 3. Start the Frontend Dev Server (Port 5173)
+# Run frontend tests & strict typecheck
 cd frontend
-npm run dev
+npm test
+npm run typecheck
+npm run build
+cd ..
 ```
 
+#### Step 5: Start the 3 Services in Separate Terminals
+
+- **Terminal 1 — Autonomous Multisig Enforcer (Port 8788)**:
+  ```bash
+  npm run enforcer
+  ```
+  *(Healthcheck: `curl http://localhost:8788/health`)*
+
+- **Terminal 2 — Chain Shim Service (Port 8787)**:
+  ```bash
+  ENFORCER_URL=http://localhost:8788 npm run serve
+  ```
+  *(Prints the Platform Broker Address banner on startup)*
+
+- **Terminal 3 — Frontend Web Application (Port 5173)**:
+  ```bash
+  cd frontend
+  npm run dev
+  ```
+
+#### Step 6: Access the Application
 Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
