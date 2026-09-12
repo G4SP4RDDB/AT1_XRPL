@@ -284,7 +284,15 @@ export async function createDbAccount(params: {
   };
 
   saveAccount(newAcc);
-  return newAcc;
+  return sanitizeDbAccount(newAcc);
+}
+
+function sanitizeDbAccount(acc: DbAccount): DbAccount {
+  return {
+    ...acc,
+    seed: "",
+    operatorSeed: undefined,
+  };
 }
 
 /** Instant 1-click creation of a random funded account (1,000 XRP) on Devnet. */
@@ -300,7 +308,7 @@ export async function createRandomAccount(name?: string): Promise<DbAccount> {
     createdAt: new Date().toISOString(),
   };
   saveAccount(newAcc);
-  return newAcc;
+  return sanitizeDbAccount(newAcc);
 }
 
 /** Update an account's role and details in SQLite DB. */
@@ -313,7 +321,8 @@ export async function updateDbAccount(params: {
   userRole?: string;
   multisigActive?: number;
 }): Promise<DbAccount> {
-  return updateAccount(params.address, params);
+  const updated = updateAccount(params.address, params);
+  return sanitizeDbAccount(updated);
 }
 
 export { dropsToXrp };
