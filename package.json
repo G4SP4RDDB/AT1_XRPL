@@ -1,0 +1,25 @@
+{
+  "name": "at1_xrpl",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/G4SP4RDDB/AT1_XRPL.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/G4SP4RDDB/AT1_XRPL/issues"
+  },
+  "homepage": "https://github.com/G4SP4RDDB/AT1_XRPL#readme",
+  "dependencies": {
+    "xrpl": "^5.2.0",
+    "xrpl-connect": "^0.8.2"
+  }
+}
