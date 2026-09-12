@@ -393,15 +393,17 @@ npm run build           # Production bundle via Vite / Rolldown
 
 ---
 
-## 10. Key Developer Feedback & Findings
+## 10. Key Developer Feedback & Deliverables
 
-As part of the hackathon evaluation criteria (**40% Developer Feedback Quality**), 14 detailed real-world friction points encountered with XLS-65/66, along with repros, severities, and concrete protocol improvement proposals, are documented in:
-- [`docs/friction-log.md`](docs/friction-log.md): Comprehensive developer friction log & protocol proposals.
-- [`docs/tech-stack.md`](docs/tech-stack.md): Architectural design rationale and boundary separation.
-- [`docs/e2e-full-report.md`](docs/e2e-full-report.md): Verified on-chain ledger test execution report.
+As part of the hackathon evaluation criteria (**40% Developer Feedback Quality**, **10% Presentation & Slide Deck**), our core deliverables are:
+- [**`FEEDBACK_REPORT.md`**](FEEDBACK_REPORT.md): **Official 3-page Developer Feedback Report** at repository root detailing all 15 friction findings, ledger result codes, and actionable architectural proposals for Ripple and the XRPL ecosystem.
+- [**`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`**](slides/BSA_DEGEN_AT1_XRPL_PITCH.md): **Official 10-Slide Presentation Pitch Deck** structured for the 4-minute demo + 2-minute Q&A.
+- [`docs/friction-log.md`](docs/friction-log.md): Granular technical log with repros, severity tags, and exact code citations.
+- [`docs/tech-stack.md`](docs/tech-stack.md): Architectural design rationale, zero-custody boundaries, and security model.
+- [`docs/e2e-full-report.md`](docs/e2e-full-report.md): Verified on-chain ledger test execution report (16 transactions).
 
 ### Headline Finding: The Multisig Timing Gap
-While XLS-65 prevents premature principal redemption via native liquidity guardrails while capital is out on loan, XRPL currently lacks an on-chain time-locked repayment primitive to stop a borrower from clearing a loan prematurely. We resolved this through a **2-of-2 multisig schedule enforcer**, and propose hardening it via **TokenEscrow (`FinishAfter`)** as a native XLS-85 composition.
+While XLS-65 prevents premature principal redemption via native liquidity guardrails while capital is out on loan, XRPL currently lacks an on-chain time-locked repayment primitive to stop a borrower from clearing a loan prematurely. We resolved this through a **2-of-2 multisig schedule enforcer** governed by an autonomous daemon with **Zero Human Access**, and propose hardening it via **`SignerCondition` (`SignAfter`)** or **TokenEscrow (`FinishAfter`)** as a native XLS-85 composition.
 
 ---
 
