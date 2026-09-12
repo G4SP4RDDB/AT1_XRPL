@@ -9,17 +9,25 @@ echo "🚀 AT1 XRPL — Test, Compile & Launch Pipeline"
 echo "========================================================"
 
 echo ""
-echo "🧪 [1/4] Running Backend & Frontend Test Suites..."
+if [ "$SKIP_FUND" = "1" ]; then
+  echo "⚡ [1/5] Skipping account generation (SKIP_FUND=1)..."
+else
+  echo "⚡ [1/5] Generating fresh accounts from faucet, updating .env & configuring borrower multisig..."
+  npx tsx "$PROJECT_DIR/scripts/fund-and-setup.ts"
+fi
+
+echo ""
+echo "🧪 [2/5] Running Backend & Frontend Test Suites..."
 npm test
 (cd "$PROJECT_DIR/frontend" && npm test)
 
 echo ""
-echo "⚙️  [2/4] Compiling & Typechecking Codebase..."
+echo "⚙️  [3/5] Compiling & Typechecking Codebase..."
 npx tsc --noEmit
 (cd "$PROJECT_DIR/frontend" && npm run build)
 
 echo ""
-echo "🧹 [3/4] Ensuring ports (8788, 8787, 5173) and old session are free..."
+echo "🧹 [4/5] Ensuring ports (8788, 8787, 5173) and old session are free..."
 tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
 # Kill any leftover process on the target ports
@@ -32,7 +40,7 @@ for port in 8788 8787 5173; do
 done
 
 echo ""
-echo "🖥️  [4/4] Starting tmux session '$SESSION_NAME' with 3 split panes..."
+echo "🖥️  [5/5] Starting tmux session '$SESSION_NAME' with 3 split panes..."
 
 # Create detached session in the project directory with generous window dimensions
 tmux new-session -d -s "$SESSION_NAME" -n "AT1-Services" -x 180 -y 50 -c "$PROJECT_DIR"

@@ -173,12 +173,14 @@ Compte #1:
 
 ### Step 3: Launch the Services
 
-#### Option A: One-Command All-in-One (Tests + Build + tmux Split-Screen) 🚀
+#### Option A: One-Command All-in-One (Account Creation + Tests + Build + tmux Split-Screen) 🚀
 
-Runs all backend & frontend tests, compiles the codebase, and opens a split 3-pane tmux session:
+Generates fresh Devnet accounts from the faucet, updates `.env` and `.enforcer.env`, configures the 2-of-2 multisig on the borrower, runs all tests, compiles the codebase, and opens a split 3-pane tmux session:
 ```bash
 npm run dev:tmux
 ```
+
+*(Tip: To launch without regenerating fresh accounts, use `SKIP_FUND=1 npm run dev:tmux`)*
 
 To view or manage the tmux session:
 ```bash
@@ -283,6 +285,7 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 | `npm run vaults` | Scans on-chain vaults, Price Per Share (PPS), outstanding loans, and call dates. |
 | `npm run create-accounts [N]` | Generates and funds `N` fresh Devnet accounts (1,000 XRP each) and outputs their addresses & seeds. |
 | `npm run fund` | Automatically funds and populates root `.env` demo seeds from the Devnet faucet. |
+| `npm run fund:setup` | Generates fresh accounts, updates `.env` & `.enforcer.env`, and configures borrower multisig on-chain. |
 | `npm run enforcer` | Starts the standalone Multisig Call-Date Enforcer daemon on port `8788`. |
 | `npm run serve` | Starts the Chain Shim JSON-over-HTTP API bridge on port `8787`. |
 | `cd frontend && npm test` | Runs the Vitest frontend unit test suite (19 tests). |

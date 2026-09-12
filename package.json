@@ -6,6 +6,7 @@
   "scripts": {
     "check": "tsx scripts/check-devnet.ts",
     "fund": "tsx scripts/fund-accounts.ts",
+    "fund:setup": "tsx scripts/fund-and-setup.ts",
     "serve": "tsx src/chain/server.ts",
     "demo": "tsx scripts/demo-flow.ts",
     "balances": "tsx scripts/balances.ts",
