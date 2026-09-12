@@ -9,7 +9,10 @@
     "serve": "tsx src/chain/server.ts",
     "demo": "tsx scripts/demo-flow.ts",
     "balances": "tsx scripts/balances.ts",
-    "spike": "tsx scripts/spike-lifecycle.ts"
+    "spike": "tsx scripts/spike-lifecycle.ts",
+    "vaults": "tsx scripts/vaults.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "objects": "tsx scripts/objects.ts"
   },
   "repository": {
     "type": "git",

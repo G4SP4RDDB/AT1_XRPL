@@ -41,5 +41,5 @@ export const DEMO_BROKER = {
 // vault will book at origination. Cap = principal + interestDue + this margin (in drops).
 export const VAULT_CAP_MARGIN_DROPS = 1_000;
 
-export const ROLES = ["broker", "brokerEnforcer", "lender1", "lender2", "borrower"] as const;
+export const ROLES = ["broker", "brokerEnforcer", "lender1", "lender2", "borrower", "borrowerOp"] as const;
 export type Role = (typeof ROLES)[number];

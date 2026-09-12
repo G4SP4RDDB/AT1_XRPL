@@ -10,3 +10,4 @@ node_modules/
 .cursor/
 .grok/
 xrpl-lending-notion.md
+.enforcer.env

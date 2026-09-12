@@ -137,6 +137,8 @@ Exit (done, Sat evening, `docs/spike-results.md` run 2): `tecINSUFFICIENT_FUNDS`
 
 ## 4. Phase 2 — Chain layer build (A, W2 to W3)
 
+**Status Sat 19:00: steps 2.1 to 2.11 implemented and validated through the public API (`npm run demo`, `npm run demo -- --close`).** Modules: `ops.ts` (transactions), `readLayer.ts` (reads), `enforcer/` (policy + key), `loanMath.ts`. Fixtures removed. C2 is reachable as soon as Person B wires `chainClient.ts`.
+
 Order matters: each step is demoable on its own.
 
 | Step | File | Transaction(s) | Done when |

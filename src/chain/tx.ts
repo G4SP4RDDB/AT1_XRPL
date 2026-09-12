@@ -13,7 +13,7 @@ export interface Receipt {
 
 const CODE = /(te[cfmrs][A-Z_0-9]+)/;
 
-function fromError(e: unknown, hash = ""): Receipt {
+export function fromError(e: unknown, hash = ""): Receipt {
   const msg = (e as Error)?.message ?? String(e);
   const m = msg.match(CODE);
   return { result: m ? m[1] : `error: ${msg.slice(0, 120)}`, hash, explorerUrl: hash ? explorerTx(hash) : "" };

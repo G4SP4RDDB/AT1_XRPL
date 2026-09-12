@@ -22,27 +22,29 @@ const r = await fetch("http://localhost:8787/read/vaultState", {
 }).then(r => r.json());
 ```
 
-While a function is a stub, its result carries `stub: true`. Show that in the UI so nobody mistakes fixtures for ledger data.
+Every function is real and validated on the devnet (Sat evening, `npm run demo`). Nothing returns fixtures any more.
 
 ## Status
 
-| Function | Status | Since |
+| Function | Status | Validated by |
 |---|---|---|
-| `read.vaultState` | stub | F4 |
-| `read.position` | stub | F4 |
-| `read.listVaults` | stub | F4 |
-| `tx.createBond` | stub | F4 |
-| `tx.deposit` | stub | F4 |
-| `tx.originate` | stub | F4 |
-| `tx.payCoupon` | stub | F4 |
-| `tx.withdraw` | stub | F4 |
-| `tx.finalRepayment` | stub (always blocked) | F4 |
-| `tx.impair` / `tx.unimpair` | stub | F4 |
+| `read.vaultState` | real | demo-flow, hashes below |
+| `read.position` | real | demo-flow |
+| `read.listVaults` | real | shim smoke test |
+| `tx.createBond` | real | B087C9CA2D11, E4846F7483C0, AC939AB1AA2A |
+| `tx.deposit` | real | 9749415B3405 |
+| `tx.originate` | real | 47D2F682B46E |
+| `tx.payCoupon` | real | D7351A12A00C |
+| `tx.withdraw` | real | F6E477595F2B (yield-only), E5C33914F5FE (full, guardrail rejection) |
+| `tx.finalRepayment` | real | blocked before call date; 685A52185C45 after (spike) |
+| `tx.impair` / `tx.unimpair` | real | tecTOO_SOON until a payment is overdue (spike) |
+
+Signatures changed since the stub: `originate` takes the whole `Bid` (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
 
 ## `read` — no signing, safe to call as often as the UI likes
 
 ### `read.vaultState(vaultId: string): VaultState`
-Live vault figures. `pps = (assetsTotal - lossUnrealized) / sharesTotal`. `assetsAvailable` is what withdrawals can actually draw on; `assetsTotal` includes principal out on loan. **Measured on the devnet:** PPS stays 1.0 at origination and rises with each coupon by the interest portion net of the broker fee (5652 drops per coupon on the demo terms), and rises again on an early close because the close penalty is paid into the vault. Expect yield in drops, not XRP, for demo-length loans. On the demo terms a full early close left PPS at 1.0066. `loan` is present once a loan is originated on this vault. `callDate` is the earliest date the final repayment can be co-signed.
+Live vault figures. The bid terms are read back from the vault's `Data` field and the loan is found through the borrower's owned objects, so nothing is cached off-chain. `pps = (assetsTotal - lossUnrealized) / sharesTotal`. `assetsAvailable` is what withdrawals can actually draw on; `assetsTotal` includes principal out on loan. **Measured on the devnet:** PPS stays 1.0 at origination and rises with each coupon by the interest portion net of the broker fee (5652 drops per coupon on the demo terms), and rises again on an early close because the close penalty is paid into the vault. Expect yield in drops, not XRP, for demo-length loans. On the demo terms a full early close left PPS at 1.0066. `loan` is present once a loan is originated on this vault. `callDate` is the earliest date the final repayment can be co-signed.
 
 ### `read.position(address: string, vaultId: string): Position`
 One depositor's position. `yieldShares` is the number of shares that can be redeemed without touching principal; it is what `tx.withdraw` in `yield-only` mode redeems. `accruedYield` is `yieldShares * pps` in XRP.
@@ -60,17 +62,20 @@ Borrower posted a bid. Creates the vault (`VaultCreate`, capped at `bid.amount` 
 ### `tx.deposit(lenderAddress, vaultId, amount): TxReceipt`
 Matched ask becomes a real `VaultDeposit`. `amount` in XRP. Shares are minted at the current PPS. Rejected above the vault cap.
 
-### `tx.originate(bidId: string): TxReceipt`
-Broker and multisig borrower co-sign `LoanSet`. Principal moves to the borrower in this same transaction; there is no separate drawdown. Requires `assetsAvailable >= bid.amount`.
+### `tx.originate(bid: Bid): TxReceipt & { loanId?: string }`
+Pass the bid with `vaultId` and `loanBrokerId` set. Broker signs `LoanSet`, the two borrower signers add counterparty signatures, principal moves to the borrower in this same transaction; there is no separate drawdown. Requires `assetsAvailable >= bid.amount`. Store the returned `loanId` on the bid. Loan terms: 3 payments spread to the bid's `callDate` (interval at least 60 s), rate = `yieldRate` percent per year.
 
-### `tx.payCoupon(loanId: string): TxReceipt | Blocked`
-Borrower pays one scheduled `LoanPay`, co-signed by the enforcer. Amount is read from the loan's `periodicPayment`, never chosen by the caller. PPS rises after success. `Blocked` if the enforcer refuses (wrong amount).
+### `tx.payCoupon(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
+Borrower pays one scheduled `LoanPay`, co-signed by the enforcer. Amount is read from the loan's `periodicPayment`, never chosen by the caller. PPS rises after success (measured: +5401 drops on the demo terms). If the payment is already overdue the call adds `tfLoanLatePayment` and the ledger charges the late fee and late interest on top. `Blocked` if the enforcer refuses (wrong amount, or a late payment without the flag). `{ blocked, reason: "loan already closed" }` once `paymentRemaining` is 0.
 
 ### `tx.withdraw(req: WithdrawRequest): TxReceipt`
 `mode: "yield-only"` redeems `position.yieldShares` only. `mode: "full"` redeems every share and is expected to fail with `tecINSUFFICIENT_FUNDS` while principal is out on loan: that is the guardrail demo, show the code.
 
-### `tx.finalRepayment(loanId: string): TxReceipt | Blocked`
-`LoanPay` with `tfLoanFullPayment`. Before `callDate` the enforcer refuses and you get `{ blocked: "before-call-date" }`. After it, the receipt. Also demonstrable with one signature only, which the ledger rejects on-chain.
+### `tx.finalRepayment(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
+Two behaviours, decided by the call date:
+- **Before the call date** it is an early close: `LoanPay` with `tfLoanFullPayment`. The enforcer refuses and you get `{ blocked: "before-call-date", reason: "call date in 334s ..." }`, nothing is submitted. (If the enforcer ever co-signed it, the ledger would charge principal + accrued interest + 1 % close rate + 1 XRP fee and take nothing more, measured in the spike.)
+- **At or after the call date** the call date is the last scheduled due date, so settling means paying every remaining scheduled coupon, late ones flagged late. The function loops `payCoupon` until `paymentRemaining` is 0 and returns the last receipt. Show progress by re-reading `vaultState` between calls if you want a per-coupon UI.
+The one-signature bypass is rejected on-chain with `tefBAD_QUORUM`.
 
 ### `tx.impair(loanId)` / `tx.unimpair(loanId): TxReceipt`
 Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rises and PPS drops, the write-down demo. `unimpair` reverses it. **Only accepted once a payment is overdue** (`tecTOO_SOON` before `nextPaymentDueDate`), so the UI flow is: issuer skips a coupon, due date passes, broker impairs.
@@ -80,7 +85,11 @@ Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rise
 ```ts
 { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay", reason: string }
 ```
-Distinguish it from a receipt with `"blocked" in result`.
+Distinguish it from a receipt with `"blocked" in result`. `reason` is human-readable and safe to show.
+
+## Enforcer
+
+The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. Policy, in order: only `LoanPay`; only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up. Anything else returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed without a policy check because it is the broker's own act.
 
 ## Changes
 
@@ -102,7 +111,12 @@ Listed so anyone picking up `src/chain/` knows what exists. The frontend never i
 | | `explorerTx(hash)`, `explorerAccount(addr)` | Explorer links for receipts and the README. |
 | `accounts.ts` | `fundNewAccount()` | POST to the faucet, returns a `Wallet` with 1000 XRP. Verifies the address matches the seed. |
 | | `saveSeed(role, seed)` | Writes `<ROLE>_SEED` into `.env` (mode 600). |
-| | `loadAccounts()` | `Record<Role, Wallet>` from `.env`; throws naming the missing role. |
+| | `loadAccounts()` | `Record<Role, Wallet>` from `.env`; throws naming the missing role. Roles: broker, brokerEnforcer, lender1, lender2, borrower, borrowerOp. |
+| | `ensureBalance(client, address, minXrp)` | Tops an account up to `minXrp` liquid (reserve excluded) with fresh faucet accounts paying 985 XRP each. The demo calls it for lender1, broker and borrower before starting. |
+| `ops.ts` | `createBond`, `deposit`, `originate`, `payCoupon`, `finalRepayment`, `withdraw`, `impair`, `unimpair` | The real `tx.*` implementations; `termsFromBid(bid, now)` derives interval, rate and expected interest from a bid. |
+| `readLayer.ts` | `vaultStateOf`, `positionOf`, `listVaultsOf` | The real `read.*` implementations, all from the ledger (vault `Data`, `account_objects`, `account_tx`). |
+| `loanMath.ts` | `periodicPayment`, `totalInterest`, `percentToTenthBp`, `rippleToIso`, `isoToRipple` | XLS-66 amortisation and time conversions. |
+| `enforcer/index.ts` | `cosign(client, prepared, brokerAddress)`, `enforcerWallet()`, `callDateRipple(loan)` | The policy and the second signature; key from `.enforcer.env` only. |
 | `tx.ts` | `submit(client, tx, wallet)` | Autofill, sign, submitAndWait. Returns a `Receipt` with the engine result; never throws on tec/tef/tem, the code is in `result`. |
 | | `submitMultisigned(client, tx, signers[])` | Autofill with the signer count, each signer signs, `multisign`, submit. Used for every borrower transaction. |
 | | `submitBlob(client, blob)` | Submit an already encoded transaction (LoanSet with counterparty signatures). |
@@ -112,7 +126,6 @@ Listed so anyone picking up `src/chain/` knows what exists. The frontend never i
 | | `shareBalance(client, account, mptId)` | Depositor's vault shares from `account_objects` type `mptoken`. |
 | | `xrpBalance(client, account)` | Balance in XRP. |
 | | `ledgerCloseTime(client)` | Validated ledger close time, ripple epoch seconds, for due-date maths. |
-| `fixtures.ts` | `vaultFixture`, `positionFixture`, `receiptFixture(tag)` | Stub values returned while a public function is not real yet. |
 | `server.ts` | HTTP shim | `POST /read/<fn>` and `POST /tx/<fn>` with `{"args": [...]}`. |
 
 ### Scripts
@@ -124,4 +137,7 @@ Listed so anyone picking up `src/chain/` knows what exists. The frontend never i
 | `npm run balances` | `scripts/balances.ts` | On-ledger balance, object count and sequence per role. |
 | `npm run spike` | `scripts/spike-lifecycle.ts` | S1 + S2: full lifecycle on fresh objects, one row per step, appended to `docs/spike-results.md`. Idempotent for the borrower multisig setup. |
 | `npm run serve` | `src/chain/server.ts` | The HTTP shim on :8787. |
-| `npm run demo` | `scripts/demo-flow.ts` | Demo run skeleton; steps are filled as Phase 2 lands. |
+| `npm test` | `tests/*.test.ts` | Unit tests (node:test via tsx), no ledger needed: loan maths, enforcer policy, loan state mapping, result-code parsing, created-object lookup, bid-to-terms. |
+| `npm run vaults` | `scripts/vaults.ts` | Every vault the broker owns, through the real read layer. |
+| `npm run objects [role]` | `scripts/objects.ts` | Raw count of a role's ledger objects by type, diagnostic. |
+| `npm run demo` | `scripts/demo-flow.ts` | Full run through the public API on a fresh bond: create, deposit, originate, guardrail, coupon, yield-only withdraw, gated close. `-- --close` sets the call date 3 minutes out, waits, closes, withdraws everything. |
