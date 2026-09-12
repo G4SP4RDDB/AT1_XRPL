@@ -65,16 +65,45 @@ Under XLS-66, if a borrower is delinquent on coupon payments (`now > NextPayment
 |---|---|---|
 | `VaultCreate` | **XLS-65** | Creates an open-ended Single Asset Vault for each bond issuance upon borrower bid creation. |
 | `LoanBrokerSet` | **XLS-66** | Configures loan broker parameters, interest rate bounds, platform fees, and first-loss capital buffer (`CoverAvailable`). |
+| `LoanBrokerCoverDeposit` | **XLS-66** | Broker deposits first-loss absorption capital into the broker risk buffer. |
 | `VaultDeposit` | **XLS-65** | Investors deposit XRP into the bond vault, minting MPT vault shares proportional to the current Price Per Share. |
-| `LoanSet` | **XLS-66** | Originates the loan terms (principal, coupon rate, interval, Call Date maturity) with mutual broker and borrower approval. |
-| `LoanDraw` | **XLS-66** | Borrower draws down the borrowed principal from the vault. |
+| `LoanSet` | **XLS-66** | Originates and atomically disburses principal with mutual broker and borrower approval (Note: no separate `LoanDraw` exists in XLS-66). |
 | `LoanPay` | **XLS-66** | Periodic coupon repayments by the borrower to increase vault assets and PPS; final payoff is multisig-gated. |
+| `LoanManage` | **XLS-66** | Broker triggers loss absorption write-down (`tfLoanImpair`) or restores loan health (`tfLoanUnimpair`). |
 | `VaultWithdraw` | **XLS-65** | Partial share redemption to withdraw accrued yield, or full redemption after Call Date loan clearance. |
 | `SignerListSet` | **Core XRPL** | Establishes the 2-of-2 multisig rule on the borrower account (`BorrowerOp` + `Platform Enforcer`) with master key disabled (`asfDisableMaster`). |
+| `AccountSet` | **Core XRPL** | Disables the borrower's master key (`asfDisableMaster`) to enforce multisig co-signature compliance. |
 
 ---
 
-## 5. Architecture Overview
+## 5. Verified On-Chain Transactions (Deliverable Proof)
+
+Every phase of the AT1 bond lifecycle has been executed and verified on the **Custom Hackathon Devnet** (`lending-hackathon.dev.ripplex.io:51233`), covering happy paths, protocol guardrail rejections, multisig enforcement, and write-down / impairment:
+
+> **Reproducibility**: Run `npm run e2e` to re-execute all 16 on-chain steps against Devnet (report generated in [`docs/e2e-full-report.md`](docs/e2e-full-report.md)).
+
+| # | Step / Mechanism | Expected Result | Devnet Status | Verified On-Chain Explorer Link |
+|---|---|---|---|---|
+| **1** | `VaultCreate` (Open-ended SAV) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`C8B24C23A2...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C8B24C23A2D0499ACE61281E97DCCBC288BFC7711DCBA721CB9DBC60E591A9CC) |
+| **2** | `LoanBrokerSet` (Rates & Fees) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`C093128A26...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C093128A266EE66091CFF3EEEBCB170175221DCDC6C095DDA656E85AE8960C6B) |
+| **3** | `LoanBrokerCoverDeposit` (First-loss buffer) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`CCEA07B7C4...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/CCEA07B7C4387ECD4666476E8C22952F73ABE2F0F49952F832EFA363452CE429) |
+| **4** | `VaultDeposit` (Lender capital -> MPT shares) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`BA2C86E975...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/BA2C86E975C6B07349215D05FA39E58BEE9BEDAB7261F7A31DC79E438F3E9177) |
+| **5** | Master Key Disabled Check (`asfDisableMaster`) | `tefMASTER_DISABLED` | 🛡️ `tefMASTER_DISABLED` | Native Ledger Rejection (Master key disabled) |
+| **6** | `LoanSet` (2-of-2 Multisig Counterparty Approval) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`23AA66A740...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/23AA66A74042F4C4EC5A3ABDCACA90B9CD4715D371A01031D2DD186DDDD17ED8) |
+| **7** | Guardrail: `LoanManage tfLoanImpair` (Not yet due) | `tecTOO_SOON` | 🛡️ `tecTOO_SOON` | [`34AE03134F...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/34AE03134F37ACF3C3B87AB0A5941E1AE755933662E07153F7B6FEE01CE7C13C) |
+| **8** | Guardrail: Full `VaultWithdraw` while capital on loan | `tecINSUFFICIENT_FUNDS` | 🛡️ `tecINSUFFICIENT_FUNDS` | [`C4240633AC...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C4240633AC9E52509C00370466BE8838F05B53F7DA28B61BC31D4FBA4016C1AF) |
+| **9** | Enforcer Policy: Early repayment refusal before Call Date | `blocked:before-call-date` | 🛡️ Blocked | Autonomous Enforcer Daemon policy gate |
+| **10** | Quorum Guardrail: `LoanPay` with 1 of 2 signatures | `tefBAD_QUORUM` | 🛡️ `tefBAD_QUORUM` | Native Ledger Rejection (Multisig threshold 2 not met) |
+| **11** | Loss Absorption: `LoanManage tfLoanImpair` (Overdue) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`7978F00413...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/7978F00413D38372CB2757B46CB31A41D336A186B2297C9B907E8AC11BBD83B5) |
+| **12** | Debt Restoration: `LoanManage tfLoanUnimpair` | `tesSUCCESS` | ✅ `tesSUCCESS` | [`8BB3ECA9B9...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/8BB3ECA9B954F13AFE386ECD03954E91397016236203D6EC4E83654D9C13E4A1) |
+| **13** | Periodic Coupon: `LoanPay` (Increases PPS) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`5F2A407308...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5F2A4073080377786571A24CD2AD0B5DE334BB008871C477FDD998EE0B1211B6) |
+| **14** | `VaultWithdraw` (Yield-only partial harvest) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`0224724B4D...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0224724B4DA69A92D01D1EDA54FD13DB1D7D79520407E706C039F195E760D234) |
+| **15** | Final Payoff at Call Date (`tfLoanFullPayment`) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`EA805215F3...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/EA805215F309CCC1F22A209B3B01328E351BE9EB1F73B5F90447E816D947994E) |
+| **16** | Final Full `VaultWithdraw` (Principal + Yield) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`99A7BB682D...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/99A7BB682D4A772B4A2F8FF461E556DE8D8EC4A33BBED51E5EA56BF76024A7BF) |
+
+---
+
+## 6. Architecture Overview
 
 ```mermaid
 flowchart TD
@@ -123,7 +152,7 @@ flowchart TD
 
 ---
 
-## 6. Installation & Setup Guide
+## 7. Installation & Setup Guide
 
 ### Prerequisites
 - **Node.js**: `v20.x` or `v22.x`
@@ -255,7 +284,7 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
-## 7. Connecting Your Wallet & User Flow
+## 8. Connecting Your Wallet & User Flow
 
 1. **Connect Wallet**:
    - Click **Connect Wallet** in the top-right corner.
@@ -276,7 +305,7 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
-## 8. Verification & Test Suite
+## 9. Verification & Test Suite
 
 ### Backend Unit Tests (24 Passing Tests)
 
@@ -298,35 +327,47 @@ npm test
 ℹ pass 24 | fail 0
 ```
 
+### On-Chain End-to-End Devnet Verification (16/16 Steps)
+
+Executes the complete bond lifecycle against the live Custom Hackathon Devnet, asserting ledger states, guardrails, and yield mathematics:
+
+```bash
+npm run e2e
+```
+
+Generates the audit report at [`docs/e2e-full-report.md`](docs/e2e-full-report.md) with verified transaction hashes on the custom explorer.
+
 ### Frontend Typechecking, Tests & Build
 
 ```bash
 cd frontend
 npm run typecheck       # Strict TypeScript check (tsc -b)
-npm test                # Vitest unit test suite
+npm test                # Vitest unit test suite (19 tests)
 npm run build           # Production bundle via Vite / Rolldown
 ```
 
 ---
 
-## 9. Key Developer Feedback & Findings
+## 10. Key Developer Feedback & Findings
 
-As part of the hackathon evaluation criteria (40% Developer Feedback Quality), detailed friction reports and proposed protocol enhancements are documented in:
-- [`docs/friction-log.md`](docs/friction-log.md): Real-world friction points encountered with XLS-65/66.
+As part of the hackathon evaluation criteria (**40% Developer Feedback Quality**), 14 detailed real-world friction points encountered with XLS-65/66, along with repros, severities, and concrete protocol improvement proposals, are documented in:
+- [`docs/friction-log.md`](docs/friction-log.md): Comprehensive developer friction log & protocol proposals.
 - [`docs/tech-stack.md`](docs/tech-stack.md): Architectural design rationale and boundary separation.
+- [`docs/e2e-full-report.md`](docs/e2e-full-report.md): Verified on-chain ledger test execution report.
 
 ### Headline Finding: The Multisig Timing Gap
 While XLS-65 prevents premature principal redemption via native liquidity guardrails while capital is out on loan, XRPL currently lacks an on-chain time-locked repayment primitive to stop a borrower from clearing a loan prematurely. We resolved this through a **2-of-2 multisig schedule enforcer**, and propose hardening it via **TokenEscrow (`FinishAfter`)** as a native XLS-85 composition.
 
 ---
 
-## 10. Available Scripts & Cheatsheet
+## 11. Available Scripts & Cheatsheet
 
 | Command | Description |
 |---|---|
-| `npm run dev:tmux` | **All-in-One Launcher**: Runs all tests, compiles TS/Vite, clears ports, and launches Enforcer (`:8788`), Shim (`:8787`), and Frontend (`:5173`) in a 3-pane tmux session. |
+| `npm run dev:tmux` | **All-in-One Launcher**: Generates accounts, executes full test suite, compiles TS/Vite, frees ports, and launches Enforcer (`:8788`), Shim (`:8787`), Frontend (`:5173`), and Live Credentials Viewer in a 4-pane tmux session (2x2 grid). |
 | `npm run stop:tmux` | Gracefully stops the `at1` tmux session and frees ports 8788, 8787, and 5173. |
 | `npm test` | Runs the 24 backend unit tests (math, policy, enforcer, share split). |
+| `npm run e2e` | Runs the 16-step on-chain end-to-end bond lifecycle against Devnet (vault creation, multisig, guardrails, impairment, coupon harvest, call date repayment) and writes `docs/e2e-full-report.md`. |
 | `npm run check` | Validates Devnet WSS connectivity and checks required protocol amendments (`SingleAssetVault`, `LendingProtocol`, `fixCleanup3_4_0`, etc.). |
 | `npm run balances` | Queries on-chain XRP balances and sequence numbers for all configured roles. |
 | `npm run all-balances` | Full diagnostic report of liquid and reserved XRP balances across all accounts. |
@@ -343,12 +384,13 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 
 ---
 
-## 11. Repository Structure
+## 12. Repository Structure
 
 ```text
 ├── docs/                       # Architectural specs, friction logs, and reports
 │   ├── chain-api.md            # Chain shim API documentation
-│   ├── friction-log.md         # Detailed hackathon friction log & proposals
+│   ├── e2e-full-report.md      # On-chain verified test report (16 transactions)
+│   ├── friction-log.md         # Detailed hackathon friction log & proposals (14 points)
 │   └── tech-stack.md           # Technology stack deep-dive
 ├── frontend/                   # Vite + React 19 web application
 │   ├── src/                    # Components, pages, wallet context, chainClient
