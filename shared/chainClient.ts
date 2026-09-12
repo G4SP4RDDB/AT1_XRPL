@@ -31,8 +31,12 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       position: (address: string, vaultId: string) => call<Position>("/read/position", [address, vaultId]),
       /** Every vault the platform broker owns, one per bond. */
       listVaults: () => call<VaultState[]>("/read/listVaults"),
+      /** Returns the platform broker's classic address. */
+      brokerAddress: () => call<{ address: string }>("/read/brokerAddress"),
     },
     tx: {
+      /** Register a wallet seed dynamically for the current session. */
+      registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
       createBond: (bid: Bid) => call<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }>("/tx/createBond", [bid]),
       /** Matched ask becomes a VaultDeposit. amount in XRP, e.g. "1000". */

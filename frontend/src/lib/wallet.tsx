@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import type { FC, ReactNode } from 'react'
+import { Wallet } from 'xrpl'
 import { walletManager } from '@/lib/xrplConnect'
 import { getClient } from '@/lib/xrpl'
+import { chainClient } from '@/lib/chainClient'
 
 export interface ConnectedAccount {
   address: string
@@ -17,7 +19,9 @@ interface WalletContextType {
   openModal: () => void
   closeModal: () => void
   connectWalletConnect: (onUri?: (uri: string) => void) => Promise<void>
-  selectRoleAccount: (role: 'borrower' | 'lender1' | 'lender2' | 'broker') => void
+  connectWithSeed: (seed: string) => Promise<void>
+  connectWithAddress: (address: string) => Promise<void>
+  selectRoleAccount?: (role: 'borrower' | 'lender1' | 'lender2' | 'broker') => void
   refreshBalance: () => Promise<void>
   disconnect: () => Promise<void>
 }
@@ -167,6 +171,47 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }
   }
 
+  const connectWithSeed = async (seed: string) => {
+    setIsLoading(true)
+    try {
+      const trimmed = seed.trim()
+      const w = Wallet.fromSeed(trimmed)
+      // Register with chain backend shim so tx.* operations can sign
+      await chainClient.registerWallet(trimmed).catch((err) => {
+        console.warn('Could not register wallet with backend shim:', err)
+      })
+      const balance = await fetchLiveBalance(w.classicAddress)
+      const connected: ConnectedAccount = {
+        address: w.classicAddress,
+        name: `Wallet (${w.classicAddress.slice(0, 6)}...${w.classicAddress.slice(-4)})`,
+        balance,
+      }
+      setCurrentAccount(connected)
+      localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
+      setIsModalOpen(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const connectWithAddress = async (address: string) => {
+    setIsLoading(true)
+    try {
+      const trimmed = address.trim()
+      const balance = await fetchLiveBalance(trimmed)
+      const connected: ConnectedAccount = {
+        address: trimmed,
+        name: `Wallet (${trimmed.slice(0, 6)}...${trimmed.slice(-4)})`,
+        balance,
+      }
+      setCurrentAccount(connected)
+      localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
+      setIsModalOpen(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const selectRoleAccount = (roleKey: 'borrower' | 'lender1' | 'lender2' | 'broker') => {
     const roleData = ROLE_ACCOUNTS[roleKey]
     if (!roleData) return
@@ -203,6 +248,8 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
         openModal,
         closeModal,
         connectWalletConnect,
+        connectWithSeed,
+        connectWithAddress,
         selectRoleAccount,
         refreshBalance,
         disconnect,

@@ -2,6 +2,7 @@
 // POST /read/<fn> and POST /tx/<fn> with a JSON body { args: [...] }. CORS open for the dev UI.
 import http from "node:http";
 import { read, tx } from "./index.js";
+import { loadAccounts } from "./accounts.js";
 
 const PORT = Number(process.env.CHAIN_PORT ?? 8787);
 const groups: Record<string, Record<string, (...a: any[]) => Promise<unknown>>> = { read, tx };
@@ -23,4 +24,10 @@ http.createServer(async (req, res) => {
   } catch (e) {
     res.writeHead(500).end(JSON.stringify({ error: (e as Error).message }));
   }
-}).listen(PORT, () => console.log(`chain shim listening on http://localhost:${PORT}  (POST /read/<fn> | /tx/<fn>, body {"args":[...]})`));
+}).listen(PORT, () => {
+  const brokerAddr = loadAccounts().broker.classicAddress;
+  console.log(`\n======================================================`);
+  console.log(`🛡️  PLATFORM BROKER ADDRESS: ${brokerAddr}`);
+  console.log(`======================================================`);
+  console.log(`chain shim listening on http://localhost:${PORT}  (POST /read/<fn> | /tx/<fn>)\n`);
+});

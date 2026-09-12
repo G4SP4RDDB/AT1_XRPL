@@ -29,9 +29,19 @@ import { positionOf } from "./readLayer.js";
 
 const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, explorerUrl: r.explorerUrl, ledgerIndex: r.ledgerIndex });
 
+const dynamicWallets = new Map<string, Wallet>();
+
+export function registerWallet(seed: string): { address: string } {
+  const w = Wallet.fromSeed(seed.trim());
+  dynamicWallets.set(w.classicAddress, w);
+  return { address: w.classicAddress };
+}
+
 function walletFor(address: string): Wallet {
+  const dynamic = dynamicWallets.get(address);
+  if (dynamic) return dynamic;
   const hit = Object.values(loadAccounts()).find((w) => w.classicAddress === address);
-  if (!hit) throw new Error(`no seed for ${address} in .env`);
+  if (!hit) throw new Error(`no seed for ${address} in .env or registered session`);
   return hit;
 }
 const broker = () => loadAccounts().broker;

@@ -177,6 +177,20 @@ export class ChainBackendClient {
     }
   }
 
+  async getBrokerAddress(): Promise<string> {
+    try {
+      const res = await baseChain.read.brokerAddress()
+      return res.address
+    } catch {
+      return 'r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4'
+    }
+  }
+
+  async registerWallet(seed: string): Promise<string> {
+    const res = await baseChain.tx.registerWallet(seed)
+    return res.address
+  }
+
   async getAsks(): Promise<Ask[]> {
     return [...this.asks]
   }

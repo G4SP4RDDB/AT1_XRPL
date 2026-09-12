@@ -13,4 +13,5 @@ export const tx = {
   finalRepayment: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.finalRepayment(loanId, borrowerAddress),
   impair: (loanId: string): Promise<TxReceipt> => ops.impair(loanId),
   unimpair: (loanId: string): Promise<TxReceipt> => ops.unimpair(loanId),
+  registerWallet: (seed: string) => ops.registerWallet(seed),
 };

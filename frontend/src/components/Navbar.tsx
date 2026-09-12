@@ -34,6 +34,29 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
             Hackathon Devnet
           </span>
+          <span
+            style={{
+              fontSize: '0.72rem',
+              background: 'rgba(37, 99, 235, 0.08)',
+              color: '#1d4ed8',
+              border: '1px solid rgba(37, 99, 235, 0.2)',
+              padding: '0.2rem 0.6rem',
+              borderRadius: '9999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            title="Click to copy Platform Broker address: r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4"
+            onClick={() => {
+              navigator.clipboard.writeText('r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4')
+              alert('Platform Broker address copied: r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4')
+            }}
+          >
+            <span>🛡️</span>
+            <span>Broker: r4araZ...vnBg4</span>
+          </span>
         </div>
 
         {isConnected && (

@@ -130,4 +130,5 @@ export const read = {
   vaultState: async (vaultId: string) => vaultStateOf(await getClient(), vaultId),
   position: async (address: string, vaultId: string) => positionOf(await getClient(), address, vaultId),
   listVaults: async () => listVaultsOf(await getClient()),
+  brokerAddress: async () => ({ address: loadAccounts().broker.classicAddress }),
 };
