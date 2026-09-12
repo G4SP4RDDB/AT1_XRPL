@@ -4,6 +4,7 @@ import type { VaultState, UserPosition } from '@shared/types'
 import { WithdrawModal } from './WithdrawModal'
 import { CouponModal } from './CouponModal'
 import { MultisigRepayModal } from './MultisigRepayModal'
+import { ResolvedName } from './ResolvedName'
 import { explorerAccountUrl } from '@/lib/xrpl'
 
 interface VaultCardProps {
@@ -31,8 +32,8 @@ export const VaultCard: FC<VaultCardProps> = ({ vault, userPosition, onRefresh }
           <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span>{vault.vaultId}</span>
           </h3>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Borrower: {vault.borrowerAddress ? `${vault.borrowerAddress.slice(0, 8)}...${vault.borrowerAddress.slice(-4)}` : 'Issuer'}
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }} title={vault.borrowerAddress}>
+            Borrower: {vault.borrowerAddress ? <ResolvedName address={vault.borrowerAddress} /> : 'Issuer'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>

@@ -4,6 +4,7 @@ import type { Bid } from '@shared/types'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
+import { ResolvedName } from './ResolvedName'
 
 interface FinanceBondsProps {
   onFundSuccess: () => void
@@ -87,10 +88,10 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onFundSuccess }) => {
               <div className="card-header">
                 <div>
                   <h4 className="card-title" style={{ fontSize: '1.15rem' }}>
-                    {bid.borrowerName || 'AT1 Bond'}
+                    <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'AT1 Bond'} />
                   </h4>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    Issuer: {bid.borrowerAddress}
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }} title={bid.borrowerAddress}>
+                    Issuer: {bid.borrowerAddress.slice(0, 10)}...{bid.borrowerAddress.slice(-6)}
                   </span>
                 </div>
                 <span className="card-tag tag-open">Open</span>

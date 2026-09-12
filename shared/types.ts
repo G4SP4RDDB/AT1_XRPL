@@ -97,3 +97,14 @@ export interface TxReceipt {
 }
 
 export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
+
+// Off-chain only: links an address to a human-readable institution identity so the UI can
+// show "Nordic Capital Bank" instead of a raw address. Never touches the ledger.
+export interface BankProfile {
+  address: Address;
+  bankName: string;
+  shortCode?: string;
+  country?: string;
+  logoEmoji?: string;
+  createdAt: IsoDate;
+}

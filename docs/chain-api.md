@@ -80,6 +80,23 @@ The one-signature bypass is rejected on-chain with `tefBAD_QUORUM`.
 ### `tx.impair(loanId)` / `tx.unimpair(loanId): TxReceipt`
 Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rises and PPS drops, the write-down demo. `unimpair` reverses it. **Only accepted once a payment is overdue** (`tecTOO_SOON` before `nextPaymentDueDate`), so the UI flow is: issuer skips a coupon, due date passes, broker impairs.
 
+## `profile` — off-chain bank profile registry, no signing
+
+Links an address to a human-readable institution identity (bank name, short code, country,
+logo emoji) so the UI shows a bank name instead of a raw address. Stored in
+`data/bank-profiles.json` (gitignored, seeded on first run with the four `ROLE_ACCOUNTS`
+addresses from `frontend/src/lib/wallet.tsx`). Never touches the ledger; no auth on writes,
+which is fine for a hackathon devnet demo but is not a real access-control boundary.
+
+### `profile.get(address: string): BankProfile | null`
+Returns `null` if the address has no profile yet.
+
+### `profile.set(input: { address, bankName, shortCode?, country?, logoEmoji? }): BankProfile`
+Upsert. Throws if `address` or `bankName` is missing/blank.
+
+### `profile.list(): BankProfile[]`
+Every known profile.
+
 ## Blocked shape
 
 ```ts

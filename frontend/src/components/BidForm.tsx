@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
+import { useBankName } from '@/lib/bankProfiles'
 
 interface BidFormProps {
   onBidCreated: () => void
@@ -9,6 +10,7 @@ interface BidFormProps {
 
 export const BidForm: FC<BidFormProps> = ({ onBidCreated }) => {
   const { currentAccount } = useWallet()
+  const borrowerName = useBankName(currentAccount?.address, currentAccount?.name)
   const [amount, setAmount] = useState('')
   const [yieldRate, setYieldRate] = useState('')
   const [callDate, setCallDate] = useState('')
@@ -25,7 +27,7 @@ export const BidForm: FC<BidFormProps> = ({ onBidCreated }) => {
     try {
       await chainClient.createBid({
         borrowerAddress: currentAccount.address,
-        borrowerName: currentAccount.name,
+        borrowerName,
         amount,
         yieldRate: parseFloat(yieldRate),
         callDate,

@@ -8,10 +8,29 @@ import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
 import { DevExPanel } from '@/components/DevExPanel'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
+import { BankProfileModal } from '@/components/BankProfileModal'
+import { loadProfile } from '@/lib/bankProfiles'
 
 const MainContent: FC = () => {
-  const { isConnected, isModalOpen, openModal, closeModal } = useWallet()
+  const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
   const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions'>('finance')
+  const [isBankProfileModalOpen, setIsBankProfileModalOpen] = useState(false)
+  const [onboardedAddress, setOnboardedAddress] = useState<string | null>(null)
+
+  // First time we see a connected address with no bank profile yet, prompt onboarding once.
+  useEffect(() => {
+    const address = currentAccount?.address
+    if (!address || address === onboardedAddress) return
+    let cancelled = false
+    loadProfile(address).then((profile) => {
+      if (cancelled) return
+      setOnboardedAddress(address)
+      if (!profile) setIsBankProfileModalOpen(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentAccount?.address, onboardedAddress])
 
   useEffect(() => {
     const initConnector = () => {
@@ -31,6 +50,7 @@ const MainContent: FC = () => {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onEditBankProfile={() => setIsBankProfileModalOpen(true)}
       />
 
       <main style={{ minHeight: '60vh', padding: '1rem 0' }}>
@@ -91,6 +111,13 @@ const MainContent: FC = () => {
       <DevExPanel />
 
       <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
+
+      <BankProfileModal
+        isOpen={isBankProfileModalOpen}
+        address={currentAccount?.address}
+        onClose={() => setIsBankProfileModalOpen(false)}
+        onSaved={() => setIsBankProfileModalOpen(false)}
+      />
 
       {/* Official XRPL Connect Web Component Modal */}
       {createElement('xrpl-wallet-connector', {

@@ -3,6 +3,8 @@ import type { FC } from 'react'
 import type { Bid, Ask } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
+import { ResolvedName } from './ResolvedName'
+import { getCachedProfile } from '@/lib/bankProfiles'
 
 interface MatchBoardProps {
   bids: Bid[]
@@ -79,9 +81,9 @@ export const MatchBoard: FC<MatchBoardProps> = ({ bids, asks, onMatchExecuted })
                 <div className="card-header">
                   <div>
                     <h4 className="card-title" style={{ fontSize: '1rem' }}>
-                      {bid.borrowerName || 'Borrower Bid'}
+                      <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'Borrower Bid'} />
                     </h4>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }} title={bid.borrowerAddress}>
                       {bid.borrowerAddress.slice(0, 10)}...{bid.borrowerAddress.slice(-6)}
                     </span>
                   </div>
@@ -126,9 +128,9 @@ export const MatchBoard: FC<MatchBoardProps> = ({ bids, asks, onMatchExecuted })
                 <div className="card-header">
                   <div>
                     <h4 className="card-title" style={{ fontSize: '1rem' }}>
-                      {ask.lenderName || 'Institutional Lender'}
+                      <ResolvedName address={ask.lenderAddress} fallback={ask.lenderName || 'Institutional Lender'} />
                     </h4>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }} title={ask.lenderAddress}>
                       {ask.lenderAddress.slice(0, 10)}...{ask.lenderAddress.slice(-6)}
                     </span>
                   </div>
@@ -163,7 +165,7 @@ export const MatchBoard: FC<MatchBoardProps> = ({ bids, asks, onMatchExecuted })
                           <option value="" disabled>Select bid to pair...</option>
                           {openBids.map((b) => (
                             <option key={b.id} value={b.id}>
-                              {b.borrowerName || b.id} ({b.yieldRate}% | {b.amount} XRP)
+                              {getCachedProfile(b.borrowerAddress)?.bankName || b.borrowerName || b.id} ({b.yieldRate}% | {b.amount} XRP)
                             </option>
                           ))}
                         </select>

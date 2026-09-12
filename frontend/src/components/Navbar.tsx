@@ -1,14 +1,17 @@
 import type { FC } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { network } from '@/lib/xrpl'
+import { useBankName } from '@/lib/bankProfiles'
 
 interface NavbarProps {
   activeTab: 'issue' | 'finance' | 'positions'
   setActiveTab: (tab: 'issue' | 'finance' | 'positions') => void
+  onEditBankProfile: () => void
 }
 
-export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
+export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankProfile }) => {
   const { currentAccount, isConnected, disconnect, openModal, refreshBalance } = useWallet()
+  const bankName = useBankName(currentAccount?.address)
 
   return (
     <>
@@ -66,13 +69,19 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 className="account-pill"
                 onClick={refreshBalance}
                 style={{ cursor: 'pointer' }}
-                title="Click to refresh on-chain balance from Devnet"
+                title={`${currentAccount.address}\nClick to refresh on-chain balance from Devnet`}
               >
                 <span className="account-balance">{currentAccount.balance}</span>
-                <span className="account-address">
-                  {currentAccount.address.slice(0, 6)}...{currentAccount.address.slice(-4)}
-                </span>
+                <span className="account-address">{bankName}</span>
               </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={onEditBankProfile}
+                title="Edit bank profile"
+              >
+                🏦
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"

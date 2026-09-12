@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
+import { useBankName, getCachedProfile } from '@/lib/bankProfiles'
 import type { Bid } from '@shared/types'
 
 interface AskFormProps {
@@ -11,6 +12,7 @@ interface AskFormProps {
 
 export const AskForm: FC<AskFormProps> = ({ bids, onAskCreated }) => {
   const { currentAccount } = useWallet()
+  const lenderName = useBankName(currentAccount?.address, currentAccount?.name)
   const [amount, setAmount] = useState('')
   const [targetYield, setTargetYield] = useState('')
   const [selectedBidId, setSelectedBidId] = useState<string>('')
@@ -26,7 +28,7 @@ export const AskForm: FC<AskFormProps> = ({ bids, onAskCreated }) => {
     try {
       await chainClient.createAsk({
         lenderAddress: currentAccount.address,
-        lenderName: currentAccount.name,
+        lenderName,
         amount,
         targetYield: parseFloat(targetYield),
         bidId: selectedBidId || undefined,
@@ -91,7 +93,7 @@ export const AskForm: FC<AskFormProps> = ({ bids, onAskCreated }) => {
               .filter((b) => b.status === 'open')
               .map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.borrowerName || b.id} ({Number(b.amount).toLocaleString()} XRP @ {b.yieldRate}% | Call: {b.callDate})
+                  {getCachedProfile(b.borrowerAddress)?.bankName || b.borrowerName || b.id} ({Number(b.amount).toLocaleString()} XRP @ {b.yieldRate}% | Call: {b.callDate})
                 </option>
               ))}
           </select>
