@@ -35,3 +35,13 @@ Aliases: `@/*` → `src/*`, `@shared/*` → `../shared/*` (the frozen contract w
 
 - `xrpl@5.2.0` — stable xrpl.js, ships the XLS-65/66 transaction types. No Vite polyfills needed since 3.0.
 - `xrpl-connect@0.8.2` — wallet connect abstraction (Xaman, Crossmark, GemWallet). Optional; demo accounts can use seed-based signing.
+
+## Tests
+
+Vitest + React Testing Library, jsdom environment. Test files live next to the code (`*.test.ts(x)`) or in `__tests__/` folders; global setup is in `src/test/setup.ts`.
+
+```sh
+npm test               # single run
+npm run test:watch     # watch mode
+npm run test:coverage  # v8 coverage report in coverage/
+```

@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest'
+import { cleanup } from '@testing-library/react'
+import { afterEach, vi } from 'vitest'
 
 // Stub matchMedia for JSDOM
 Object.defineProperty(window, 'matchMedia', {
@@ -30,3 +32,9 @@ if (typeof window !== 'undefined' && !window.indexedDB) {
   })
   ;(globalThis as any).indexedDB = mockIdb
 }
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
