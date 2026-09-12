@@ -1,9 +1,12 @@
+import "dotenv/config";
 // Network and demo constants for the custom hackathon devnet (Track 1, open-ended).
+// Every endpoint can be overridden by environment (XRPL_WSS, XRPL_RPC, XRPL_FAUCET, XRPL_EXPLORER),
+// so a tunnel or relay on another port or host works without touching code.
 export const NETWORK = {
-  wss: "wss://lending-hackathon.dev.ripplex.io:51233",
-  rpc: "https://lending-hackathon.dev.ripplex.io:51234",
-  faucet: "https://lending-hackathon-faucet.dev.ripplex.io/accounts",
-  explorer: "https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233",
+  wss: process.env.XRPL_WSS ?? "wss://lending-hackathon.dev.ripplex.io:51233",
+  rpc: process.env.XRPL_RPC ?? "https://lending-hackathon.dev.ripplex.io:51234",
+  faucet: process.env.XRPL_FAUCET ?? "https://lending-hackathon-faucet.dev.ripplex.io/accounts",
+  explorer: process.env.XRPL_EXPLORER ?? "https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233",
 } as const;
 
 export const REQUIRED_AMENDMENTS = ["SingleAssetVault", "LendingProtocol"] as const;

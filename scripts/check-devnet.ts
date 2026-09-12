@@ -19,7 +19,7 @@ for (const name of REQUIRED_AMENDMENTS) {
   if (!hit?.enabled) ok = false;
   console.log(`${name.padEnd(18)} ${state}`);
 }
-const extra = ["TokenEscrow", "PermissionedDomains", "Credentials", "MPTokensV1", "Batch"];
+const extra = ["fixCleanup3_4_0", "LendingProtocolV1_1", "TokenEscrow", "PermissionedDomains", "Credentials", "MPTokensV1", "Batch"];
 for (const name of extra) {
   const hit = Object.values(features).find((f) => f.name === name);
   console.log(`  ${name.padEnd(20)} ${hit ? (hit.enabled ? "enabled" : "not enabled") : "unknown"}`);
