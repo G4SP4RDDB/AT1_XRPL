@@ -7,6 +7,7 @@ import { FinanceBonds } from '@/components/FinanceBonds'
 import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
+import { NotificationToastContainer } from '@/components/NotificationToast'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal } = useWallet()
@@ -88,6 +89,7 @@ const MainContent: FC = () => {
       </main>
 
       <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
+      <NotificationToastContainer />
 
       {/* Official XRPL Connect Web Component Modal */}
       {createElement('xrpl-wallet-connector', {

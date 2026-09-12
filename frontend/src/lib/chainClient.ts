@@ -1,4 +1,5 @@
 import { createChainClient, isBlocked } from '@shared/chainClient'
+import { notifyTx } from './notifications'
 import type {
   Bid,
   Ask,
@@ -255,8 +256,20 @@ export class ChainBackendClient {
       const created = await baseChain.tx.createBond(newBid)
       newBid.vaultId = created.vaultId
       newBid.loanBrokerId = created.loanBrokerId
+      const txHash = created.receipts?.[0]?.hash
+      notifyTx({
+        title: "Émission d'obligation validée",
+        message: `VaultCreate & LoanBrokerSet confirmés sur XRPL Devnet.`,
+        txHash,
+        type: 'success',
+      })
     } catch (err: any) {
       console.error('Failed to create on-chain bond vault via backend:', err)
+      notifyTx({
+        title: "Échec de création on-chain",
+        message: err.message,
+        type: 'error',
+      })
       throw new Error(`Failed to create bond vault on-chain: ${err.message}`)
     }
 
@@ -302,8 +315,21 @@ export class ChainBackendClient {
     // 1. Execute VaultDeposit on chain through backend
     const depositReceipt = await baseChain.tx.deposit(lenderAddress, targetVaultId, amount)
     if (depositReceipt.result !== 'tesSUCCESS') {
+      notifyTx({
+        title: 'Échec du dépôt on-chain',
+        message: `Code rejet ledger: ${depositReceipt.result}`,
+        txHash: depositReceipt.hash,
+        type: 'error',
+      })
       throw new Error(`Deposit failed on-chain: ${depositReceipt.result}`)
     }
+
+    notifyTx({
+      title: 'Dépôt validé on-chain (VaultDeposit)',
+      message: `${amount} XRP déposés avec succès. Parts de Vault (MPT) émises.`,
+      txHash: depositReceipt.hash,
+      type: 'success',
+    })
 
     // 2. Originate LoanSet (multisig co-signed) on chain through backend
     const bidObj: Bid = {
@@ -371,6 +397,12 @@ export class ChainBackendClient {
 
     const updated = await this.getVault(vaultId)
     this.notify()
+    notifyTx({
+      title: 'Coupon distribué (LoanPay)',
+      message: `Paiement validé on-chain. Le PPS monte à ${(updated?.pps ?? vault.pps).toFixed(6)} !`,
+      txHash: r.hash,
+      type: 'success',
+    })
     return {
       newPps: updated?.pps ?? vault.pps,
       txHash: r.hash,
@@ -395,6 +427,12 @@ export class ChainBackendClient {
 
       if (receipt.result === 'tesSUCCESS') {
         this.notify()
+        notifyTx({
+          title: req.mode === 'yield-only' ? 'Rendement récolté (VaultWithdraw)' : 'Retrait intégral validé (VaultWithdraw)',
+          message: req.mode === 'yield-only' ? 'Parts de rendement brûlées pour du XRP liquide.' : 'Principal et rendements retirés avec succès.',
+          txHash: receipt.hash,
+          type: 'success',
+        })
         return {
           success: true,
           txHash: receipt.hash,
@@ -405,6 +443,12 @@ export class ChainBackendClient {
 
       if (receipt.result === 'tecINSUFFICIENT_FUNDS') {
         // Minimum bar guardrail demonstration
+        notifyTx({
+          title: 'Garde-fou XRPL activé (tecINSUFFICIENT_FUNDS)',
+          message: 'Le capital est bloqué dans le prêt jusqu\'au Call Date. Le retrait du principal est impossible.',
+          txHash: receipt.hash,
+          type: 'error',
+        })
         return {
           success: false,
           error: `${receipt.result}: Principal is illiquid while out on loan to the borrower. The vault cannot fulfill full principal redemption prior to loan repayment (Native Protocol Guardrail Verification).`,
@@ -412,12 +456,24 @@ export class ChainBackendClient {
         }
       }
 
+      notifyTx({
+        title: 'Rejet du retrait on-chain',
+        message: `Code rejet: ${receipt.result}`,
+        txHash: receipt.hash,
+        type: 'error',
+      })
+
       return {
         success: false,
         error: `Ledger rejected transaction: ${receipt.result}`,
         txHash: receipt.hash,
       }
     } catch (err: any) {
+      notifyTx({
+        title: 'Erreur de retrait',
+        message: err.message,
+        type: 'error',
+      })
       return {
         success: false,
         error: err.message,
@@ -439,6 +495,11 @@ export class ChainBackendClient {
     const receipt = await baseChain.tx.finalRepayment(vault.loan.loanId, borrowerAddr)
 
     if (isBlocked(receipt)) {
+      notifyTx({
+        title: 'Blocage Enforcer (Avant Call Date)',
+        message: receipt.reason,
+        type: 'error',
+      })
       return {
         success: false,
         error: `[Enforcer 2-of-2 Policy Refusal] ${receipt.reason}. Principal repayment before call date is disallowed.`,
@@ -447,6 +508,12 @@ export class ChainBackendClient {
 
     const r = receipt as TxReceipt
     if (r.result !== 'tesSUCCESS') {
+      notifyTx({
+        title: 'Rejet du remboursement',
+        message: `Code rejet: ${r.result}`,
+        txHash: r.hash,
+        type: 'error',
+      })
       return {
         success: false,
         error: `Ledger rejected repayment: ${r.result}`,
@@ -454,6 +521,12 @@ export class ChainBackendClient {
     }
 
     this.notify()
+    notifyTx({
+      title: 'Remboursement Multisig 2-of-2 validé',
+      message: 'Prêt soldé on-chain avec approbation de l\'Enforcer. Liquidité débloquée !',
+      txHash: r.hash,
+      type: 'success',
+    })
     return {
       success: true,
       txHash: r.hash,
@@ -465,6 +538,14 @@ export class ChainBackendClient {
     if (!vault?.loan?.loanId) throw new Error('No active loan to impair')
     const r = await baseChain.tx.impair(vault.loan.loanId)
     this.notify()
+    if (r.result === 'tesSUCCESS') {
+      notifyTx({
+        title: 'Dépréciation LoanManage validée',
+        message: 'Perte absorbée par le capital de premier risque du broker.',
+        txHash: r.hash,
+        type: 'success',
+      })
+    }
     return {
       success: r.result === 'tesSUCCESS',
       txHash: r.hash,
@@ -477,6 +558,14 @@ export class ChainBackendClient {
     if (!vault?.loan?.loanId) throw new Error('No active loan to unimpair')
     const r = await baseChain.tx.unimpair(vault.loan.loanId)
     this.notify()
+    if (r.result === 'tesSUCCESS') {
+      notifyTx({
+        title: 'Restauration LoanManage validée',
+        message: 'Santé de l\'emprunt restaurée sur le ledger.',
+        txHash: r.hash,
+        type: 'success',
+      })
+    }
     return {
       success: r.result === 'tesSUCCESS',
       txHash: r.hash,

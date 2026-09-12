@@ -4,6 +4,7 @@ import type { Bid } from '@shared/types'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
+import { notifyTx } from '@/lib/notifications'
 
 interface FinanceBondsProps {
   onFundSuccess: () => void
@@ -41,7 +42,11 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onFundSuccess }) => {
       await loadBids()
       onFundSuccess()
     } catch (err: any) {
-      alert(`Funding error: ${err.message}`)
+      notifyTx({
+        title: 'Erreur de financement (Deposit)',
+        message: err.message,
+        type: 'error',
+      })
     } finally {
       setIsProcessing(false)
     }

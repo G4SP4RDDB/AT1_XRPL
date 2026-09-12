@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
+import { notifyTx } from '@/lib/notifications'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -34,7 +35,11 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
       setSuccessMsg(`The ${Number(amount).toLocaleString()} XRP bond issuance has been created successfully! It is now open for funding.`)
       onSuccess()
     } catch (err: any) {
-      alert(`Error: ${err.message}`)
+      notifyTx({
+        title: "Erreur d'émission",
+        message: err.message,
+        type: 'error',
+      })
     } finally {
       setIsSubmitting(false)
     }
