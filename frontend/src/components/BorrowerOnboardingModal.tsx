@@ -37,6 +37,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   const [company, setCompany] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAlreadyMultisig, setIsAlreadyMultisig] = useState(false)
+  const [enableMultisig, setEnableMultisig] = useState(true)
 
   // Load existing profile from SQLite DB and on-chain status
   useEffect(() => {
@@ -88,11 +89,11 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
           : accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier Plateforme' : accountRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
       })
 
-      // 2. If borrower and not yet multisig, trigger multisig configuration
+      // 2. If borrower or lender and requested multisig, trigger multisig configuration
       let txHash: string | undefined
-      if (accountRole === 'borrower' && !isAlreadyMultisig) {
+      if ((accountRole === 'borrower' || accountRole === 'lender') && enableMultisig && !isAlreadyMultisig) {
         try {
-          const res = await chainClient.setupBorrowerMultisig(currentAccount.address)
+          const res = await chainClient.setupMultisig(currentAccount.address)
           if (res.success) txHash = res.txHash
         } catch (mErr) {
           console.warn('Multisig activation deferred or failed:', mErr)
@@ -105,7 +106,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         company: company.trim() || (accountRole === 'borrower' ? 'Corporate Issuer' : accountRole === 'broker' ? 'BSA Structurer' : 'Asset Management'),
         address: currentAccount.address,
         onboardingCompleted: true,
-        multisigActive: isAlreadyMultisig || (accountRole === 'borrower'),
+        multisigActive: isAlreadyMultisig || ((accountRole === 'borrower' || accountRole === 'lender') && enableMultisig),
         configuredAt: new Date().toISOString(),
         txHash,
       }
@@ -264,24 +265,38 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
             />
           </div>
 
-          {/* Encadré d'explication Multisig si Emprunteur */}
-          {accountRole === 'borrower' && (
+          {/* Encadré d'explication Multisig si Emprunteur ou Prêteur */}
+          {(accountRole === 'borrower' || accountRole === 'lender') && (
             <div
               style={{
                 background: 'var(--bg-surface-elevated)',
                 border: '1px solid var(--border-subtle)',
-                borderLeft: '4px solid var(--accent-blue)',
+                borderLeft: `4px solid ${accountRole === 'borrower' ? 'var(--accent-blue)' : 'var(--accent-green)'}`,
                 borderRadius: '8px',
                 padding: '0.85rem 1rem',
                 fontSize: '0.8rem',
                 lineHeight: 1.45,
               }}
             >
-              <div style={{ fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '0.25rem' }}>
-                🛡️ Gouvernance Multisig 2-sur-2 (XLS-65 / XLS-66)
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <div style={{ fontWeight: 700, color: accountRole === 'borrower' ? 'var(--accent-blue)' : 'var(--accent-green)' }}>
+                  🛡️ Gouvernance Multisig 2-sur-2 ({accountRole === 'borrower' ? 'Emprunteur' : 'Prêteur'})
+                </div>
+                {!isAlreadyMultisig && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.78rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={enableMultisig}
+                      onChange={(e) => setEnableMultisig(e.target.checked)}
+                    />
+                    <span>Activer 2/2</span>
+                  </label>
+                )}
               </div>
               <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-                Pour un emprunteur, la règle <code>SignerListSet</code> (Quorum 2) avec l'Enforcer logiciel et la désactivation de clé maître (<code>asfDisableMaster</code>) garantit le respect de la Call Date.
+                {accountRole === 'borrower'
+                  ? "Pour un emprunteur, la règle SignerListSet (Quorum 2) avec l'Enforcer logiciel et la désactivation de clé maître (asfDisableMaster) garantit le respect strict de la Call Date."
+                  : "Pour un prêteur, le Multisig 2-sur-2 garantit que vous seul récupérez vos parts. L'Enforcer co-signe librement vos retraits de coupons à tout moment et sanctuarise votre principal jusqu'à clôture/remboursement du prêt."}
               </p>
               {isAlreadyMultisig && (
                 <div style={{ marginTop: '0.4rem', color: 'var(--accent-green)', fontWeight: 600 }}>

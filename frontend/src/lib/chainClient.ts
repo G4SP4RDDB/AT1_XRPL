@@ -428,6 +428,18 @@ export class ChainBackendClient {
     try {
       const receipt = await baseChain.tx.withdraw(rawReq)
 
+      if (isBlocked(receipt)) {
+        notifyTx({
+          title: 'Gouvernance Multisig Activée (Enforcer Refusal)',
+          message: `Le co-signataire Enforcer a bloqué le retrait : ${receipt.reason}`,
+          type: 'error',
+        })
+        return {
+          success: false,
+          error: `[Multisig Enforcer Protection] ${receipt.blocked}: ${receipt.reason}`,
+        }
+      }
+
       if (receipt.result === 'tesSUCCESS') {
         this.notify()
         notifyTx({
@@ -583,6 +595,52 @@ export class ChainBackendClient {
         notifyTx({
           title: 'Gouvernance Multisig Activée',
           message: 'Multisig 2-sur-2 configuré on-chain avec clé maître désactivée.',
+          txHash: receipt.hash || undefined,
+          type: 'success',
+        })
+        return { success: true, txHash: receipt.hash }
+      }
+      return { success: false, error: receipt.result }
+    } catch (err: any) {
+      notifyTx({
+        title: 'Erreur activation Multisig',
+        message: err.message,
+        type: 'error',
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  async setupLenderMultisig(lenderAddress: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    try {
+      const receipt = await baseChain.tx.setupLenderMultisig(lenderAddress)
+      if (receipt.result === 'tesSUCCESS') {
+        notifyTx({
+          title: 'Gouvernance Multisig Prêteur Activée',
+          message: 'Multisig 2-sur-2 configuré on-chain avec Enforcer et clé maître désactivée.',
+          txHash: receipt.hash || undefined,
+          type: 'success',
+        })
+        return { success: true, txHash: receipt.hash }
+      }
+      return { success: false, error: receipt.result }
+    } catch (err: any) {
+      notifyTx({
+        title: 'Erreur activation Multisig Prêteur',
+        message: err.message,
+        type: 'error',
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  async setupMultisig(address: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    try {
+      const receipt = await baseChain.tx.setupAccountMultisig(address)
+      if (receipt.result === 'tesSUCCESS') {
+        notifyTx({
+          title: 'Gouvernance Multisig 2/2 Activée',
+          message: 'Multisig 2-sur-2 configuré on-chain avec Enforcer et clé maître désactivée.',
           txHash: receipt.hash || undefined,
           type: 'success',
         })

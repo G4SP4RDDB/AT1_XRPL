@@ -126,8 +126,8 @@ export function updateAccount(address: string, fields: Partial<DbAccount>): DbAc
   let operatorAddress = fields.operatorAddress ?? existing.operatorAddress;
   let operatorSeed = fields.operatorSeed ?? existing.operatorSeed;
 
-  // Auto-generate operator key if promoted to borrower and lacks one
-  if (fields.role === "borrower" && !operatorAddress) {
+  // Auto-generate operator key if promoted to borrower or lender and lacks one
+  if ((fields.role === "borrower" || fields.role === "lender") && !operatorAddress) {
     const opWallet = Wallet.generate();
     operatorAddress = opWallet.classicAddress;
     operatorSeed = opWallet.seed;

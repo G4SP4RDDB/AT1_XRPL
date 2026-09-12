@@ -55,6 +55,10 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
         call<DbAccount>("/tx/updateAccount", [params]),
       /** Configure 2-of-2 Multisig on borrower account with master key disabled. */
       setupBorrowerMultisig: (borrowerAddress?: string) => call<TxReceipt>("/tx/setupBorrowerMultisig", [borrowerAddress]),
+      /** Configure 2-of-2 Multisig on lender account with master key disabled. */
+      setupLenderMultisig: (lenderAddress: string) => call<TxReceipt>("/tx/setupLenderMultisig", [lenderAddress]),
+      /** Configure 2-of-2 Multisig on any account with master key disabled. */
+      setupAccountMultisig: (accountAddress: string) => call<TxReceipt>("/tx/setupAccountMultisig", [accountAddress]),
       /** Deposit First-Loss cover capital into a LoanBroker. */
       depositCover: (loanBrokerId: string, amount: string) => call<TxReceipt>("/tx/depositCover", [loanBrokerId, amount]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
@@ -66,8 +70,8 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       originate: (bid: Bid) => call<TxReceipt & { loanId?: string }>("/tx/originate", [bid]),
       /** One scheduled coupon, co-signed by the enforcer. Late coupons are flagged automatically. */
       payCoupon: (loanId: string, borrowerAddress: string) => call<TxReceipt | Blocked>("/tx/payCoupon", [loanId, borrowerAddress]),
-      /** yield-only: redeem position.yieldShares. full: every share (fails with tecINSUFFICIENT_FUNDS while lent). */
-      withdraw: (req: WithdrawRequest) => call<TxReceipt>("/tx/withdraw", [req]),
+      /** yield-only: redeem position.yieldShares. full: every share (fails with tecINSUFFICIENT_FUNDS or blocked by Enforcer while lent). */
+      withdraw: (req: WithdrawRequest) => call<TxReceipt | Blocked>("/tx/withdraw", [req]),
       /** Before the call date: early close, refused by the enforcer. After: settles the remaining schedule. */
       finalRepayment: (loanId: string, borrowerAddress: string) => call<TxReceipt | Blocked>("/tx/finalRepayment", [loanId, borrowerAddress]),
       /** Broker write-down; accepted only once a payment is overdue. */

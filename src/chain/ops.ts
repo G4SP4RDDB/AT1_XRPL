@@ -48,15 +48,16 @@ function walletFor(address: string): Wallet {
   return hit;
 }
 
-function getBorrowerOpFor(borrowerAddress?: string): Wallet {
-  if (borrowerAddress) {
-    const dbAcc = getAccount(borrowerAddress);
+export function getOperatorFor(address?: string): Wallet {
+  if (address) {
+    const dbAcc = getAccount(address);
     if (dbAcc?.operatorSeed) return Wallet.fromSeed(dbAcc.operatorSeed);
   }
   const acc = loadAccounts();
   if (acc.borrowerOp) return acc.borrowerOp;
-  throw new Error(`no operator key found for borrower ${borrowerAddress || "default"}`);
+  throw new Error(`no operator key found for account ${address || "default"}`);
 }
+export const getBorrowerOpFor = getOperatorFor;
 
 const broker = () => loadAccounts().broker;
 
@@ -124,16 +125,17 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   return { ...toReceipt(r), loanId: createdId(r.meta, "Loan") };
 }
 
-/** Borrower transaction: borrower-op signs, enforcer decides and co-signs, multisign, submit. */
-async function borrowerSubmit(tx: Record<string, any>): Promise<TxReceipt | Blocked> {
+/** Account transaction: operator signs, enforcer decides and co-signs, multisign, submit. */
+async function accountMultisigSubmit(tx: Record<string, any>): Promise<TxReceipt | Blocked> {
   const client = await getClient();
   const prepared = await client.autofill(tx as any, 2);
   const decision = await enforcerCosign(client, prepared);
   if (!decision.ok) return { blocked: decision.blocked, reason: decision.reason };
-  const op = getBorrowerOpFor(tx.Account);
+  const op = getOperatorFor(tx.Account);
   const opBlob = op.sign(prepared as any, true).tx_blob;
   return toReceipt(await submitBlob(client, multisign([opBlob, decision.blob])));
 }
+const borrowerSubmit = accountMultisigSubmit;
 
 /** 2.6 coupon: amount read from the loan, never chosen by the caller. Overdue coupons carry tfLoanLatePayment
  *  and a generous Amount (the ledger takes only what is due, late fee and late interest included). */
@@ -177,21 +179,48 @@ export async function finalRepayment(loanId: string, borrowerAddress: string): P
   return last;
 }
 
-/** 2.7 VaultWithdraw: yield-only redeems position.yieldShares, full redeems every share. */
-export async function withdraw(req: WithdrawRequest): Promise<TxReceipt> {
+/** 2.7 VaultWithdraw: yield-only redeems position.yieldShares, full redeems every share.
+ *  If multisig is active on the account, routed through the Enforcer daemon for policy verification.
+ */
+export async function withdraw(req: WithdrawRequest): Promise<TxReceipt | Blocked> {
   const client = await getClient();
-  const w = walletFor(req.depositorAddress);
   const v = await vaultInfo(client, req.vaultId);
+  const dbAcc = getAccount(req.depositorAddress);
+  let isMultisig = dbAcc?.multisigActive === 1;
+  if (!isMultisig) {
+    try {
+      const ai: any = await client.request({ command: "account_info", account: req.depositorAddress, ledger_index: "validated" } as any);
+      if (((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0) {
+        isMultisig = true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   let shares: string;
   if (req.mode === "full") {
-    shares = await shareBalance(client, w.classicAddress, v.shareMptId);
+    shares = await shareBalance(client, req.depositorAddress, v.shareMptId);
     if (Number(shares) <= 0) return { hash: "", result: "skipped: no shares held", explorerUrl: "" };
   } else {
-    const p = await positionOf(client, w.classicAddress, req.vaultId);
+    const p = await positionOf(client, req.depositorAddress, req.vaultId);
     shares = p.yieldShares;
     if (Number(shares) <= 0) return { hash: "", result: "skipped: no yield shares yet", explorerUrl: "" };
   }
-  return toReceipt(await submit(client, { TransactionType: "VaultWithdraw", Account: w.classicAddress, VaultID: req.vaultId, Amount: { mpt_issuance_id: v.shareMptId, value: shares } }, w));
+
+  const txJson = {
+    TransactionType: "VaultWithdraw",
+    Account: req.depositorAddress,
+    VaultID: req.vaultId,
+    Amount: { mpt_issuance_id: v.shareMptId, value: shares },
+  };
+
+  if (isMultisig) {
+    return accountMultisigSubmit(txJson);
+  }
+
+  const w = walletFor(req.depositorAddress);
+  return toReceipt(await submit(client, txJson, w));
 }
 
 /** 2.10 write-down: only accepted once a payment is overdue on this devnet. */
@@ -203,50 +232,66 @@ export async function unimpair(loanId: string): Promise<TxReceipt> {
   const client = await getClient();
   return toReceipt(await submit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00040000 }, broker()));
 }
-/** 2.11 Configure 2-of-2 Multisig on borrower account with master key disabled. */
-export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<TxReceipt> {
+/** 2.11 Configure 2-of-2 Multisig on an account with master key disabled. */
+export async function setupAccountMultisig(accountAddress: string): Promise<TxReceipt> {
   const client = await getClient();
   const acc = loadAccounts();
-  const borrowerWallet = borrowerAddress ? walletFor(borrowerAddress) : acc.borrower;
-  const dbAcc = borrowerAddress ? getAccount(borrowerAddress) : null;
-  const opAddress = dbAcc?.operatorAddress ?? acc.borrowerOp?.classicAddress;
+  const targetWallet = walletFor(accountAddress);
+  let dbAcc = getAccount(accountAddress);
+
+  if (!dbAcc?.operatorAddress) {
+    const opWallet = Wallet.generate();
+    dbAcc = updateAccount(accountAddress, {
+      operatorAddress: opWallet.classicAddress,
+      operatorSeed: opWallet.seed,
+    });
+  }
+
+  const opAddress = dbAcc?.operatorAddress ?? (accountAddress === acc.borrower?.classicAddress ? acc.borrowerOp?.classicAddress : undefined);
   const enforcerAddress = acc.brokerEnforcer?.classicAddress;
 
   if (!opAddress || !enforcerAddress) {
-    throw new Error("Cannot configure multisig: missing borrower operator or platform enforcer address");
+    throw new Error("Cannot configure multisig: missing operator or platform enforcer address");
   }
 
   // Check if master key is already disabled
-  const ai: any = await client.request({ command: "account_info", account: borrowerWallet.classicAddress, ledger_index: "validated" } as any);
+  const ai: any = await client.request({ command: "account_info", account: targetWallet.classicAddress, ledger_index: "validated" } as any);
   const masterDisabled = ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0;
   if (masterDisabled) {
-    if (borrowerAddress) updateAccount(borrowerAddress, { multisigActive: 1 });
+    updateAccount(accountAddress, { multisigActive: 1 });
     return { hash: "", result: "tesSUCCESS", explorerUrl: "", ledgerIndex: ai.result.ledger_index ?? 0 };
   }
 
-  // 1. SignerListSet
+  // 1. SignerListSet: 2-of-2 multisig between Operator and Platform Enforcer
   await submit(client, {
     TransactionType: "SignerListSet",
-    Account: borrowerWallet.classicAddress,
+    Account: targetWallet.classicAddress,
     SignerQuorum: 2,
     SignerEntries: [
       { SignerEntry: { Account: opAddress, SignerWeight: 1 } },
       { SignerEntry: { Account: enforcerAddress, SignerWeight: 1 } },
     ],
-  }, borrowerWallet);
+  }, targetWallet);
 
   // 2. AccountSet asfDisableMaster
   const dm = await submit(client, {
     TransactionType: "AccountSet",
-    Account: borrowerWallet.classicAddress,
+    Account: targetWallet.classicAddress,
     SetFlag: 4, // asfDisableMaster
-  }, borrowerWallet);
+  }, targetWallet);
 
-  if (borrowerAddress) {
-    updateAccount(borrowerAddress, { multisigActive: 1 });
-  }
+  updateAccount(accountAddress, { multisigActive: 1 });
 
   return toReceipt(dm);
+}
+
+export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<TxReceipt> {
+  const addr = borrowerAddress ?? loadAccounts().borrower.classicAddress;
+  return setupAccountMultisig(addr);
+}
+
+export async function setupLenderMultisig(lenderAddress: string): Promise<TxReceipt> {
+  return setupAccountMultisig(lenderAddress);
 }
 
 /** 2.12 depositCover: Broker deposits First-Loss capital into LoanBroker. */
@@ -269,7 +314,7 @@ export async function createDbAccount(params: {
   let operatorAddress: string | undefined;
   let operatorSeed: string | undefined;
 
-  if (role === "borrower") {
+  if (role === "borrower" || role === "lender") {
     const opWallet = Wallet.generate();
     operatorAddress = opWallet.classicAddress;
     operatorSeed = opWallet.seed;

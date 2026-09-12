@@ -96,7 +96,10 @@ export interface TxReceipt {
   stub?: true;
 }
 
-export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
+export type Blocked = {
+  blocked: "before-call-date" | "wrong-amount" | "not-loan-pay" | "unauthorized-principal-withdrawal" | "not-supported";
+  reason: string;
+};
 
 export type AccountRole = "borrower" | "lender" | "broker" | "unassigned";
 

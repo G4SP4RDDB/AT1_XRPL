@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
@@ -21,6 +21,30 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [guardrailError, setGuardrailError] = useState<string | null>(null)
   const [txSuccess, setTxSuccess] = useState<{ txHash: string; sharesBurned?: string; assetsReturned?: string } | null>(null)
+  const [isMultisig, setIsMultisig] = useState(false)
+  const [isActivatingMultisig, setIsActivatingMultisig] = useState(false)
+
+  const depositorAddress = position?.accountAddress || position?.depositorAddress
+
+  // Check if depositor account has 2/2 multisig active on ledger
+  useEffect(() => {
+    if (depositorAddress) {
+      chainClient.isMasterDisabled(depositorAddress).then(setIsMultisig).catch(() => {})
+    }
+  }, [depositorAddress])
+
+  const handleActivateMultisig = async () => {
+    if (!depositorAddress) return
+    setIsActivatingMultisig(true)
+    try {
+      const res = await chainClient.setupLenderMultisig(depositorAddress)
+      if (res.success) {
+        setIsMultisig(true)
+      }
+    } finally {
+      setIsActivatingMultisig(false)
+    }
+  }
 
   if (!position) {
     return (
@@ -53,7 +77,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
 
     try {
       const res = await chainClient.withdraw({
-        depositorAddress: position.accountAddress || position.depositorAddress,
+        depositorAddress: depositorAddress!,
         vaultId: vault.vaultId,
         mode,
       })
@@ -110,6 +134,41 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
           </div>
         </div>
 
+        {/* Multisig Governance Status */}
+        <div
+          style={{
+            background: 'var(--bg-surface-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderLeft: `4px solid ${isMultisig ? 'var(--accent-green)' : '#f59e0b'}`,
+            borderRadius: '8px',
+            padding: '0.85rem 1rem',
+            marginBottom: '1.25rem',
+            fontSize: '0.8rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+            <span style={{ fontWeight: 700, color: isMultisig ? 'var(--accent-green)' : '#f59e0b' }}>
+              {isMultisig ? '🛡️ Protection Multisig 2/2 Active' : 'ℹ️ Compte Standard (Sans Multisig)'}
+            </span>
+            {!isMultisig && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleActivateMultisig}
+                disabled={isActivatingMultisig}
+                style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+              >
+                {isActivatingMultisig ? 'Activation 2/2...' : 'Activer Protection 2/2'}
+              </button>
+            )}
+          </div>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+            {isMultisig
+              ? "Ce compte est sécurisé par un Multisig 2-sur-2 avec l'Enforcer. Tout retrait de coupons est automatiquement validé. Le retrait de principal requiert que le prêt soit remboursé/clôturé."
+              : "Option de sécurisation : activez le Multisig 2/2 pour garantir qu'aucun retrait non autorisé de votre principal ne puisse être forcé en direct sur la blockchain."}
+          </p>
+        </div>
+
         {/* Withdrawal Mode Picker */}
         <div className="form-group">
           <label className="form-label">Select Redemption Mechanism</label>
@@ -161,7 +220,11 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
 
         {guardrailError && (
           <div className="alert alert-danger" style={{ whiteSpace: 'pre-wrap', fontSize: '0.8rem' }}>
-            <strong>[Guardrail Verified]</strong>
+            <strong>
+              {guardrailError.includes('[Multisig Enforcer Protection]')
+                ? '🛡️ [Protection Multisig Enforcer Active]'
+                : '[Guardrail Verified]'}
+            </strong>
             <p style={{ marginTop: '0.4rem' }}>{guardrailError}</p>
           </div>
         )}
