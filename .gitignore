@@ -1,2 +1,5 @@
 xrpl-devex-hook/
 GEMINI.md
+node_modules/
+.xrpl-devex/
+.claude/settings.local.json
