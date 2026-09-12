@@ -8,9 +8,12 @@ import type {
   TxReceipt,
   WithdrawRequest as RawWithdrawRequest,
   LoanStatus,
+  AccountRole,
+  DbAccount,
 } from '@shared/types'
 
-export type { Bid, Ask, TxReceipt }
+export type { Bid, Ask, TxReceipt, AccountRole, DbAccount }
+
 
 export interface VaultState extends RawVaultState {
   borrowerAddress: string
@@ -613,7 +616,7 @@ export class ChainBackendClient {
     }
   }
 
-  async listAccounts(role?: 'borrower' | 'lender' | 'unassigned') {
+  async listAccounts(role?: AccountRole) {
     try {
       return await baseChain.read.listAccounts(role)
     } catch {
@@ -621,7 +624,7 @@ export class ChainBackendClient {
     }
   }
 
-  async createAccount(params: { role?: 'borrower' | 'lender' | 'unassigned'; name?: string; company?: string; firstName?: string; userRole?: string }) {
+  async createAccount(params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) {
     return await baseChain.tx.createAccount(params)
   }
 
@@ -629,8 +632,32 @@ export class ChainBackendClient {
     return await baseChain.tx.createRandomAccount(name)
   }
 
-  async updateAccount(params: { address: string; role?: 'borrower' | 'lender' | 'unassigned'; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) {
+  async updateAccount(params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) {
     return await baseChain.tx.updateAccount(params)
+  }
+
+  async depositCover(loanBrokerId: string, amountXrp: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    try {
+      const r = await baseChain.tx.depositCover(loanBrokerId, amountXrp)
+      this.notify()
+      if (r.result === 'tesSUCCESS') {
+        notifyTx({
+          title: 'First-Loss Capital Déposé',
+          message: `${amountXrp} XRP ajoutés à la couverture du courtier sur le ledger.`,
+          txHash: r.hash,
+          type: 'success',
+        })
+        return { success: true, txHash: r.hash }
+      }
+      return { success: false, error: r.result }
+    } catch (err: any) {
+      notifyTx({
+        title: 'Erreur dépôt de couverture',
+        message: err.message,
+        type: 'error',
+      })
+      return { success: false, error: err.message }
+    }
   }
 }
 

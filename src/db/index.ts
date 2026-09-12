@@ -3,9 +3,11 @@ import path from "node:path";
 import fs from "node:fs";
 import { Wallet } from "xrpl";
 
+export type AccountRole = "borrower" | "lender" | "broker" | "unassigned";
+
 export interface DbAccount {
   address: string;
-  role: "borrower" | "lender" | "unassigned";
+  role: AccountRole;
   name: string;
   seed: string;
   company?: string;
@@ -25,14 +27,14 @@ if (!fs.existsSync(DATA_DIR)) {
 const DB_PATH = path.join(DATA_DIR, "accounts.db");
 const db = new Database(DB_PATH);
 
-// Check if migration is needed to support 'unassigned' role
+// Check if migration is needed to support 'broker' role
 try {
   const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'").get() as { sql: string } | undefined;
-  if (tableSql?.sql && !tableSql.sql.includes("'unassigned'")) {
+  if (tableSql?.sql && !tableSql.sql.includes("'broker'")) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS accounts_new (
         address TEXT PRIMARY KEY,
-        role TEXT NOT NULL DEFAULT 'unassigned' CHECK(role IN ('borrower', 'lender', 'unassigned')),
+        role TEXT NOT NULL DEFAULT 'unassigned' CHECK(role IN ('borrower', 'lender', 'broker', 'unassigned')),
         name TEXT NOT NULL,
         seed TEXT NOT NULL,
         company TEXT,
@@ -57,7 +59,7 @@ try {
 db.exec(`
   CREATE TABLE IF NOT EXISTS accounts (
     address TEXT PRIMARY KEY,
-    role TEXT NOT NULL DEFAULT 'unassigned' CHECK(role IN ('borrower', 'lender', 'unassigned')),
+    role TEXT NOT NULL DEFAULT 'unassigned' CHECK(role IN ('borrower', 'lender', 'broker', 'unassigned')),
     name TEXT NOT NULL,
     seed TEXT NOT NULL,
     company TEXT,
@@ -71,7 +73,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_accounts_role ON accounts(role);
 `);
 
-export function listAccounts(role?: "borrower" | "lender" | "unassigned"): DbAccount[] {
+export function listAccounts(role?: AccountRole): DbAccount[] {
   if (role) {
     const stmt = db.prepare("SELECT * FROM accounts WHERE role = ? ORDER BY createdAt ASC");
     return stmt.all(role) as DbAccount[];
@@ -83,6 +85,7 @@ export function listAccounts(role?: "borrower" | "lender" | "unassigned"): DbAcc
 export function getAccount(address: string): DbAccount | null {
   const stmt = db.prepare("SELECT * FROM accounts WHERE address = ?");
   const row = stmt.get(address);
+
   return (row as DbAccount) ?? null;
 }
 
@@ -146,4 +149,37 @@ export function deleteAccount(address: string): void {
   stmt.run(address);
 }
 
+/** Seed platform broker into SQLite DB if available in .env */
+export function seedBrokerIfMissing(): void {
+  try {
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (!fs.existsSync(envPath)) return;
+    const content = fs.readFileSync(envPath, "utf8");
+    const m = content.match(/BROKER_SEED=([^\s]+)/);
+    if (m && m[1]) {
+      const wallet = Wallet.fromSeed(m[1].trim());
+      const existing = getAccount(wallet.classicAddress);
+      if (!existing) {
+        saveAccount({
+          address: wallet.classicAddress,
+          role: "broker",
+          name: "Courtier Plateforme (Broker)",
+          seed: wallet.seed!,
+          company: "BSA Platform Structurer",
+          firstName: "Courtier Principal",
+          userRole: "Structurateur & Risque",
+          multisigActive: 0,
+          createdAt: new Date().toISOString(),
+        });
+      } else if (existing.role !== "broker") {
+        updateAccount(wallet.classicAddress, { role: "broker" });
+      }
+    }
+  } catch (err) {
+    // Ignore error
+  }
+}
+seedBrokerIfMissing();
+
 export { db };
+

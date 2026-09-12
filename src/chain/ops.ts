@@ -3,7 +3,7 @@ import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, c
 import type { Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
 import { loadAccounts, fundNewAccount } from "./accounts.js";
-import { getAccount, listAccounts, saveAccount, updateAccount, type DbAccount } from "../db/index.js";
+import { getAccount, listAccounts, saveAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
 import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
 import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
@@ -249,9 +249,16 @@ export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<T
   return toReceipt(dm);
 }
 
+/** 2.12 depositCover: Broker deposits First-Loss capital into LoanBroker. */
+export async function depositCover(loanBrokerId: string, amountXrp: string): Promise<TxReceipt> {
+  const client = await getClient();
+  const drops = xrpToDrops(amountXrp);
+  return toReceipt(await submit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(drops) }, broker()));
+}
+
 /** Dynamic account creation funded on Devnet and stored in SQLite DB. */
 export async function createDbAccount(params: {
-  role?: "borrower" | "lender" | "unassigned";
+  role?: AccountRole;
   name?: string;
   company?: string;
   firstName?: string;
@@ -269,14 +276,22 @@ export async function createDbAccount(params: {
   }
 
   const count = listAccounts().length + 1;
+  const defaultName = role === "borrower"
+    ? "Emprunteur"
+    : role === "lender"
+    ? "Prêteur"
+    : role === "broker"
+    ? "Courtier Plateforme"
+    : `Compte Aléatoire #${count}`;
+
   const newAcc: DbAccount = {
     address: wallet.classicAddress,
     role,
-    name: params.name || (role === "borrower" ? "Emprunteur" : role === "lender" ? "Prêteur" : `Compte Aléatoire #${count}`),
+    name: params.name || defaultName,
     seed: wallet.seed!,
-    company: params.company,
+    company: params.company || (role === "broker" ? "BSA Platform Structurer" : undefined),
     firstName: params.firstName,
-    userRole: params.userRole,
+    userRole: params.userRole || (role === "broker" ? "Structurateur & Risque" : undefined),
     operatorAddress,
     operatorSeed,
     multisigActive: 0,
@@ -314,7 +329,7 @@ export async function createRandomAccount(name?: string): Promise<DbAccount> {
 /** Update an account's role and details in SQLite DB. */
 export async function updateDbAccount(params: {
   address: string;
-  role?: "borrower" | "lender" | "unassigned";
+  role?: AccountRole;
   name?: string;
   company?: string;
   firstName?: string;
@@ -326,3 +341,4 @@ export async function updateDbAccount(params: {
 }
 
 export { dropsToXrp };
+

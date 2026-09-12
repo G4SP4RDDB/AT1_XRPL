@@ -4,8 +4,8 @@ import { network } from '@/lib/xrpl'
 import { useBorrowerProfile } from '@/lib/borrowerProfile'
 
 interface NavbarProps {
-  activeTab: 'issue' | 'finance' | 'positions'
-  setActiveTab: (tab: 'issue' | 'finance' | 'positions') => void
+  activeTab: 'issue' | 'finance' | 'positions' | 'broker'
+  setActiveTab: (tab: 'issue' | 'finance' | 'positions' | 'broker') => void
   onOpenBorrowerProfile?: () => void
 }
 
@@ -59,13 +59,42 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowe
             >
               My Positions
             </button>
+            <button
+              className={`nav-tab ${activeTab === 'broker' ? 'active' : ''}`}
+              onClick={() => setActiveTab('broker')}
+              style={currentAccount?.role === 'broker' ? { borderColor: '#9333ea', color: '#9333ea', fontWeight: 700 } : {}}
+            >
+              🏛️ Broker Hub
+            </button>
           </nav>
         )}
 
         <div className="wallet-badge-group">
           {isConnected && currentAccount ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              {borrowerProfile ? (
+              {currentAccount.role === 'broker' ? (
+                <div
+                  className="account-pill"
+                  onClick={onOpenBorrowerProfile}
+                  style={{ cursor: 'pointer', background: 'rgba(147, 51, 234, 0.1)', borderColor: 'rgba(147, 51, 234, 0.3)' }}
+                  title="Rôle Courtier Plateforme / Broker (Cliquer pour modifier)"
+                >
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#9333ea' }}>
+                    🏛️ Courtier (Broker)
+                  </span>
+                </div>
+              ) : currentAccount.role === 'lender' ? (
+                <div
+                  className="account-pill"
+                  onClick={onOpenBorrowerProfile}
+                  style={{ cursor: 'pointer', background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.3)' }}
+                  title="Rôle Prêteur / Investisseur (Cliquer pour modifier)"
+                >
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-green)' }}>
+                    💰 Prêteur (Lender)
+                  </span>
+                </div>
+              ) : borrowerProfile ? (
                 <div
                   className="account-pill"
                   onClick={onOpenBorrowerProfile}
@@ -73,7 +102,7 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowe
                   title="Profil Emprunteur & Statut Multisig (Cliquer pour modifier)"
                 >
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-blue)' }}>
-                    👤 {borrowerProfile.firstName}
+                    🏢 {borrowerProfile.firstName}
                   </span>
                   <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                     ({borrowerProfile.role})
@@ -90,7 +119,7 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowe
                   className="btn btn-secondary btn-sm"
                   onClick={onOpenBorrowerProfile}
                   style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                  title="Définir personnellement le rôle (Emprunteur / Prêteur) de ce compte"
+                  title="Définir personnellement le rôle (Emprunteur, Prêteur ou Courtier) de ce compte"
                 >
                   <span>⚙️</span>
                   <span>Gérer le Rôle</span>

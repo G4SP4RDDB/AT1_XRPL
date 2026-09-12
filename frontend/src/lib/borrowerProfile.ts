@@ -6,7 +6,9 @@ export interface BorrowerProfile {
   company: string
   address: string
   multisigActive: boolean
-  configuredAt: string
+  configuredAt?: string
+  onboardingCompleted?: boolean
+  txHash?: string
 }
 
 const PROFILE_EVENT = 'at1_borrower_profile_updated'

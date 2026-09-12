@@ -4,6 +4,7 @@ import { chainClient } from '@/lib/chainClient'
 import { useWallet } from '@/lib/wallet'
 import { notifyTx } from '@/lib/notifications'
 import { type BorrowerProfile, saveStoredBorrowerProfile } from '@/lib/borrowerProfile'
+import type { AccountRole } from '@shared/types'
 
 export type { BorrowerProfile }
 
@@ -29,7 +30,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   onSuccess,
 }) => {
   const { currentAccount } = useWallet()
-  const [accountRole, setAccountRole] = useState<'borrower' | 'lender' | 'unassigned'>('borrower')
+  const [accountRole, setAccountRole] = useState<AccountRole>('borrower')
   const [firstName, setFirstName] = useState('')
   const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0])
   const [customRole, setCustomRole] = useState('')
@@ -66,7 +67,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
 
   if (!isOpen) return null
 
-  const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || (accountRole === 'borrower' ? 'Emprunteur' : 'Investisseur')) : selectedRole
+  const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : 'Investisseur')) : selectedRole
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -83,8 +84,8 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         userRole: effectiveRole,
         company: company.trim() || undefined,
         name: firstName.trim()
-          ? `${firstName.trim()} (${company.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Compte')})`
-          : accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
+          ? `${firstName.trim()} (${company.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier Plateforme' : accountRole === 'lender' ? 'Prêteur' : 'Compte')})`
+          : accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier Plateforme' : accountRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
       })
 
       // 2. If borrower and not yet multisig, trigger multisig configuration
@@ -99,19 +100,22 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
       }
 
       const profile: BorrowerProfile = {
-        firstName: firstName.trim() || (accountRole === 'borrower' ? 'Emprunteur' : 'Investisseur'),
+        firstName: firstName.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : 'Investisseur'),
         role: effectiveRole,
-        company: company.trim() || (accountRole === 'borrower' ? 'Corporate Issuer' : 'Asset Management'),
+        company: company.trim() || (accountRole === 'borrower' ? 'Corporate Issuer' : accountRole === 'broker' ? 'BSA Structurer' : 'Asset Management'),
         address: currentAccount.address,
+        onboardingCompleted: true,
         multisigActive: isAlreadyMultisig || (accountRole === 'borrower'),
         configuredAt: new Date().toISOString(),
+        txHash,
       }
 
       saveStoredBorrowerProfile(profile)
+      onSuccess?.(profile)
 
       notifyTx({
-        title: 'Rôle & Profil Enregistrés',
-        message: `Compte configuré en tant que ${accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Libre'} dans la base SQLite.`,
+        title: 'Profil & Rôle mis à jour',
+        message: `Compte configuré en tant que ${accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : accountRole === 'lender' ? 'Prêteur' : 'Libre'} dans la base SQLite.`,
         txHash: txHash || undefined,
         type: 'success',
       })
@@ -161,33 +165,42 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
               Rôle attribué à ce compte <span style={{ color: 'var(--accent-red)' }}>*</span>
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
               <button
                 type="button"
                 className={`btn btn-sm ${accountRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setAccountRole('borrower')}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem' }}
               >
                 <span style={{ fontSize: '1.1rem' }}>🏢</span>
-                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Emprunteur</span>
+                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Emprunteur</span>
               </button>
               <button
                 type="button"
                 className={`btn btn-sm ${accountRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setAccountRole('lender')}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem' }}
               >
                 <span style={{ fontSize: '1.1rem' }}>💰</span>
-                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Prêteur</span>
+                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Prêteur</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${accountRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAccountRole('broker')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem', borderColor: accountRole === 'broker' ? '#9333ea' : undefined, background: accountRole === 'broker' ? '#9333ea' : undefined }}
+              >
+                <span style={{ fontSize: '1.1rem' }}>🏛️</span>
+                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Courtier</span>
               </button>
               <button
                 type="button"
                 className={`btn btn-sm ${accountRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setAccountRole('unassigned')}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem' }}
               >
                 <span style={{ fontSize: '1.1rem' }}>⚪</span>
-                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Non assigné</span>
+                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Libre</span>
               </button>
             </div>
           </div>

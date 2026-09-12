@@ -149,7 +149,7 @@ export async function listVaultsOf(client: Client): Promise<VaultState[]> {
   return out;
 }
 
-import { listAccounts, getAccount, type DbAccount } from "../db/index.js";
+import { listAccounts, getAccount, type DbAccount, type AccountRole } from "../db/index.js";
 
 /** Redact private seeds so keys are NEVER transmitted over HTTP / network */
 function sanitizeAccount(acc: DbAccount): DbAccount {
@@ -166,7 +166,7 @@ export const read = {
   listVaults: async () => listVaultsOf(await getClient()),
   brokerAddress: async () => ({ address: loadAccounts().broker.classicAddress }),
   roles: async () => Object.fromEntries(Object.entries(loadAccounts()).map(([k, v]) => [k, v.classicAddress])),
-  listAccounts: async (role?: "borrower" | "lender" | "unassigned") => listAccounts(role).map(sanitizeAccount),
+  listAccounts: async (role?: AccountRole) => listAccounts(role).map(sanitizeAccount),
   getAccount: async (address: string) => {
     const acc = getAccount(address);
     return acc ? sanitizeAccount(acc) : null;

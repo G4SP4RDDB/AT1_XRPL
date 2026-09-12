@@ -98,9 +98,11 @@ export interface TxReceipt {
 
 export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
 
+export type AccountRole = "borrower" | "lender" | "broker" | "unassigned";
+
 export interface DbAccount {
   address: Address;
-  role: "borrower" | "lender" | "unassigned";
+  role: AccountRole;
   name: string;
   seed: string;
   company?: string;
@@ -111,3 +113,4 @@ export interface DbAccount {
   multisigActive: number;
   createdAt: string;
 }
+

@@ -4,7 +4,7 @@ import { useWallet } from '@/lib/wallet'
 import { walletManager } from '@/lib/xrplConnect'
 import { chainClient } from '@/lib/chainClient'
 import { notifyTx } from '@/lib/notifications'
-import type { DbAccount } from '@shared/types'
+import type { DbAccount, AccountRole } from '@shared/types'
 
 interface ConnectWalletModalProps {
   isOpen: boolean
@@ -21,17 +21,18 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
 
   // In-line role editing state
   const [editingAddress, setEditingAddress] = useState<string | null>(null)
-  const [editRole, setEditRole] = useState<'borrower' | 'lender' | 'unassigned'>('unassigned')
+  const [editRole, setEditRole] = useState<AccountRole>('unassigned')
   const [editFirstName, setEditFirstName] = useState('')
   const [editUserRole, setEditUserRole] = useState('')
   const [editCompany, setEditCompany] = useState('')
   const [isSavingRole, setIsSavingRole] = useState(false)
 
   // Account creation state
-  const [newRole, setNewRole] = useState<'borrower' | 'lender'>('borrower')
+  const [newRole, setNewRole] = useState<AccountRole>('borrower')
   const [newFirstName, setNewFirstName] = useState('')
   const [newCompany, setNewCompany] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+
 
   // WalletConnect state
   const [pairingUri, setPairingUri] = useState<string | null>(null)
@@ -120,13 +121,13 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
         userRole: editUserRole.trim() || undefined,
         company: editCompany.trim() || undefined,
         name: editFirstName.trim()
-          ? `${editFirstName.trim()} (${editCompany.trim() || (editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Compte')})`
-          : editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
+          ? `${editFirstName.trim()} (${editCompany.trim() || (editRole === 'borrower' ? 'Emprunteur' : editRole === 'broker' ? 'Courtier' : editRole === 'lender' ? 'Prêteur' : 'Compte')})`
+          : editRole === 'borrower' ? 'Emprunteur' : editRole === 'broker' ? 'Courtier Plateforme' : editRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
       })
 
       notifyTx({
         title: 'Rôle & Profil mis à jour',
-        message: `Le compte ${updated.address.slice(0, 8)}... est maintenant configuré en tant que ${editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Non assigné'}.`,
+        message: `Le compte ${updated.address.slice(0, 8)}... est maintenant configuré en tant que ${editRole === 'borrower' ? 'Emprunteur' : editRole === 'broker' ? 'Courtier (Broker)' : editRole === 'lender' ? 'Prêteur' : 'Non assigné'}.`,
         type: 'success',
       })
 
@@ -173,14 +174,18 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
     try {
       const created = await chainClient.createAccount({
         role: newRole,
-        name: newRole === 'borrower' ? `${newFirstName || 'Emprunteur'} (${newCompany || 'Société'})` : `${newFirstName || 'Investisseur'} (${newCompany || 'Fonds'})`,
+        name: newRole === 'borrower'
+          ? `${newFirstName || 'Emprunteur'} (${newCompany || 'Société'})`
+          : newRole === 'broker'
+          ? `${newFirstName || 'Courtier'} (${newCompany || 'Plateforme'})`
+          : `${newFirstName || 'Investisseur'} (${newCompany || 'Fonds'})`,
         company: newCompany.trim() || undefined,
         firstName: newFirstName.trim() || undefined,
-        userRole: newRole === 'borrower' ? 'Directeur Financier (CFO)' : 'Gestionnaire de Portefeuille',
+        userRole: newRole === 'borrower' ? 'Directeur Financier (CFO)' : newRole === 'broker' ? 'Structurateur & Risque' : 'Gestionnaire de Portefeuille',
       })
 
       notifyTx({
-        title: `Compte ${newRole === 'borrower' ? 'Emprunteur' : 'Prêteur'} créé !`,
+        title: `Compte ${newRole === 'borrower' ? 'Emprunteur' : newRole === 'broker' ? 'Courtier' : 'Prêteur'} créé !`,
         message: `Adresse ${created.address.slice(0, 8)}... financée avec 1 000 XRP via le faucet Devnet.`,
         type: 'success',
       })
@@ -189,6 +194,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
       connectAccount({
         address: created.address,
         name: created.name,
+        role: created.role,
       })
       onClose()
     } catch (err: any) {
@@ -281,6 +287,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                   const isEditing = editingAddress === acc.address
                   const isBorrower = acc.role === 'borrower'
                   const isLender = acc.role === 'lender'
+                  const isBroker = acc.role === 'broker'
 
                   return (
                     <div
@@ -306,15 +313,19 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                                   ? 'rgba(37, 99, 235, 0.15)'
                                   : isLender
                                   ? 'rgba(16, 185, 129, 0.15)'
+                                  : isBroker
+                                  ? 'rgba(147, 51, 234, 0.15)'
                                   : 'rgba(100, 116, 139, 0.15)',
                                 color: isBorrower
                                   ? 'var(--accent-blue)'
                                   : isLender
                                   ? 'var(--accent-green)'
+                                  : isBroker
+                                  ? '#9333ea'
                                   : 'var(--text-muted)',
                               }}
                             >
-                              {isBorrower ? '🏢 EMPRUNTEUR' : isLender ? '💰 PRÊTEUR' : '⚪ NON ASSIGNÉ'}
+                              {isBorrower ? '🏢 EMPRUNTEUR' : isLender ? '💰 PRÊTEUR' : isBroker ? '🏛️ COURTIER' : '⚪ NON ASSIGNÉ'}
                             </span>
                             <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
                               {acc.firstName ? `${acc.firstName} ${acc.userRole ? `(${acc.userRole})` : ''}` : acc.name}
@@ -353,6 +364,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                               connectAccount({
                                 address: acc.address,
                                 name: acc.name,
+                                role: acc.role,
                               })
                             }}
                           >
@@ -376,7 +388,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                             Définir personnellement le rôle de ce compte :
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
                             <button
                               type="button"
                               className={`btn btn-sm ${editRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -395,11 +407,19 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                             </button>
                             <button
                               type="button"
+                              className={`btn btn-sm ${editRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setEditRole('broker')}
+                              style={{ fontSize: '0.75rem', padding: '0.4rem', borderColor: editRole === 'broker' ? '#9333ea' : undefined, background: editRole === 'broker' ? '#9333ea' : undefined }}
+                            >
+                              🏛️ Courtier
+                            </button>
+                            <button
+                              type="button"
                               className={`btn btn-sm ${editRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
                               onClick={() => setEditRole('unassigned')}
                               style={{ fontSize: '0.75rem', padding: '0.4rem' }}
                             >
-                              ⚪ Libre / Non assigné
+                              ⚪ Libre
                             </button>
                           </div>
 
@@ -509,12 +529,12 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
                   Rôle initial
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
                   <button
                     type="button"
                     className={`btn btn-sm ${newRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setNewRole('borrower')}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.5rem' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.5rem' }}
                   >
                     <span>🏢</span>
                     <span style={{ fontWeight: 600 }}>Emprunteur</span>
@@ -523,10 +543,19 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                     type="button"
                     className={`btn btn-sm ${newRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setNewRole('lender')}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.5rem' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.5rem' }}
                   >
                     <span>💰</span>
                     <span style={{ fontWeight: 600 }}>Prêteur</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${newRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setNewRole('broker')}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.5rem', borderColor: newRole === 'broker' ? '#9333ea' : undefined, background: newRole === 'broker' ? '#9333ea' : undefined }}
+                  >
+                    <span>🏛️</span>
+                    <span style={{ fontWeight: 600 }}>Courtier</span>
                   </button>
                 </div>
               </div>

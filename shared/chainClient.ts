@@ -1,6 +1,6 @@
 // Browser-safe, typed client for the chain shim. Person B imports this; nothing here signs or touches the ledger.
 // Usage:  const chain = createChainClient(import.meta.env.VITE_CHAIN_URL ?? "http://localhost:8787")
-import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount } from "./types.js";
+import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount, AccountRole } from "./types.js";
 
 export type ChainClient = ReturnType<typeof createChainClient>;
 
@@ -38,7 +38,7 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       /** Checks if the master key of an account is disabled. */
       isMasterDisabled: (address: string) => call<{ masterDisabled: boolean }>("/read/isMasterDisabled", [address]),
       /** List stored accounts from the database, optionally filtered by role. */
-      listAccounts: (role?: "borrower" | "lender" | "unassigned") => call<DbAccount[]>("/read/listAccounts", [role]),
+      listAccounts: (role?: AccountRole) => call<DbAccount[]>("/read/listAccounts", [role]),
       /** Get a stored account from the database by address. */
       getAccount: (address: string) => call<DbAccount | null>("/read/getAccount", [address]),
     },
@@ -46,17 +46,20 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       /** Register a wallet seed dynamically for the current session. */
       registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
       /** Create a new funded account on Devnet and save to DB. */
-      createAccount: (params: { role?: "borrower" | "lender" | "unassigned"; name?: string; company?: string; firstName?: string; userRole?: string }) =>
+      createAccount: (params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) =>
         call<DbAccount>("/tx/createAccount", [params]),
       /** Instant 1-click creation of a random funded account on Devnet. */
       createRandomAccount: (name?: string) => call<DbAccount>("/tx/createRandomAccount", [name]),
       /** Update an account's role and profile details in DB. */
-      updateAccount: (params: { address: string; role?: "borrower" | "lender" | "unassigned"; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) =>
+      updateAccount: (params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) =>
         call<DbAccount>("/tx/updateAccount", [params]),
       /** Configure 2-of-2 Multisig on borrower account with master key disabled. */
       setupBorrowerMultisig: (borrowerAddress?: string) => call<TxReceipt>("/tx/setupBorrowerMultisig", [borrowerAddress]),
+      /** Deposit First-Loss cover capital into a LoanBroker. */
+      depositCover: (loanBrokerId: string, amount: string) => call<TxReceipt>("/tx/depositCover", [loanBrokerId, amount]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
       createBond: (bid: Bid) => call<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }>("/tx/createBond", [bid]),
+
       /** Matched ask becomes a VaultDeposit. amount in XRP, e.g. "1000". */
       deposit: (lenderAddress: string, vaultId: string, amount: string) => call<TxReceipt>("/tx/deposit", [lenderAddress, vaultId, amount]),
       /** LoanSet with the multisig borrower; principal moves in this transaction. Keep loanId on the bid. */

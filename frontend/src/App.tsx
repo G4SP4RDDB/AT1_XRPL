@@ -9,27 +9,39 @@ import { MyPositions } from '@/components/MyPositions'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { NotificationToastContainer } from '@/components/NotificationToast'
 import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
+import { BrokerHub } from '@/components/BrokerHub'
 import { chainClient } from '@/lib/chainClient'
 import { getStoredBorrowerProfile } from '@/lib/borrowerProfile'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
-  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions'>('finance')
+  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions' | 'broker'>('finance')
   const [isBorrowerModalOpen, setIsBorrowerModalOpen] = useState(false)
 
-  // Prompt borrower onboarding automatically when borrower connects without a profile
+  // Switch tab or prompt borrower onboarding depending on connected role
   useEffect(() => {
-    if (isConnected && currentAccount?.address) {
-      chainClient.getRoles().then((roles) => {
-        if (roles.borrower && roles.borrower === currentAccount.address) {
-          const profile = getStoredBorrowerProfile(currentAccount.address)
-          if (!profile) {
-            setIsBorrowerModalOpen(true)
+    if (isConnected && currentAccount) {
+      if (currentAccount.role === 'broker') {
+        setActiveTab('broker')
+      } else if (currentAccount.role === 'borrower') {
+        setActiveTab('issue')
+      } else if (currentAccount.role === 'lender') {
+        setActiveTab('finance')
+      }
+
+      if (currentAccount.address) {
+        chainClient.getRoles().then((roles) => {
+          if (roles.borrower && roles.borrower === currentAccount.address) {
+            const profile = getStoredBorrowerProfile(currentAccount.address)
+            if (!profile) {
+              setIsBorrowerModalOpen(true)
+            }
           }
-        }
-      })
+        })
+      }
     }
-  }, [isConnected, currentAccount?.address])
+  }, [isConnected, currentAccount?.address, currentAccount?.role])
+
 
   useEffect(() => {
     const initConnector = () => {
@@ -106,6 +118,7 @@ const MainContent: FC = () => {
               />
             )}
             {activeTab === 'positions' && <MyPositions />}
+            {activeTab === 'broker' && <BrokerHub />}
           </>
         )}
       </main>
