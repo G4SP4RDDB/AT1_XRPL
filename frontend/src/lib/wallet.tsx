@@ -18,6 +18,7 @@ interface WalletContextType {
   closeModal: () => void
   connectWalletConnect: (onUri?: (uri: string) => void) => Promise<void>
   selectRoleAccount: (role: 'borrower' | 'lender1' | 'lender2' | 'broker') => void
+  connectAccount: (account: { address: string; name: string }) => void
   refreshBalance: () => Promise<void>
   disconnect: () => Promise<void>
 }
@@ -185,6 +186,20 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     })
   }
 
+  const connectAccount = (account: { address: string; name: string }) => {
+    const connected: ConnectedAccount = {
+      address: account.address,
+      name: account.name,
+      balance: '...',
+    }
+    setCurrentAccount(connected)
+    localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
+    setIsModalOpen(false)
+    fetchLiveBalance(account.address).then((bal) => {
+      setCurrentAccount((prev) => (prev?.address === account.address ? { ...prev, balance: bal } : prev))
+    })
+  }
+
   const disconnect = async () => {
     try {
       await walletManager.disconnect()
@@ -206,6 +221,7 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
         closeModal,
         connectWalletConnect,
         selectRoleAccount,
+        connectAccount,
         refreshBalance,
         disconnect,
       }}

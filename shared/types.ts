@@ -97,3 +97,17 @@ export interface TxReceipt {
 }
 
 export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
+
+export interface DbAccount {
+  address: Address;
+  role: "borrower" | "lender";
+  name: string;
+  seed: string;
+  company?: string;
+  firstName?: string;
+  userRole?: string;
+  operatorAddress?: string;
+  operatorSeed?: string;
+  multisigActive: number;
+  createdAt: string;
+}

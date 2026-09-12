@@ -14,6 +14,7 @@ export const tx = {
   impair: (loanId: string): Promise<TxReceipt> => ops.impair(loanId),
   unimpair: (loanId: string): Promise<TxReceipt> => ops.unimpair(loanId),
   setupBorrowerMultisig: (borrowerAddress?: string): Promise<TxReceipt> => ops.setupBorrowerMultisig(borrowerAddress),
+  createAccount: (params: { role: "borrower" | "lender"; name: string; company?: string; firstName?: string; userRole?: string }) => ops.createDbAccount(params),
   // ops.registerWallet is synchronous (in-memory Map); wrap so every tx.* value returns a Promise, as server.ts's shim requires.
   registerWallet: async (seed: string) => ops.registerWallet(seed),
 };

@@ -2,7 +2,8 @@
 import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, combineLoanSetCounterpartySigners } from "xrpl";
 import type { Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
-import { loadAccounts } from "./accounts.js";
+import { loadAccounts, fundNewAccount } from "./accounts.js";
+import { getAccount, listAccounts, saveAccount, updateAccount, type DbAccount } from "../db/index.js";
 import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
 import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
@@ -40,12 +41,24 @@ export function registerWallet(seed: string): { address: string } {
 function walletFor(address: string): Wallet {
   const dynamic = dynamicWallets.get(address);
   if (dynamic) return dynamic;
-  const hit = Object.values(loadAccounts()).find((w) => w.classicAddress === address);
-  if (!hit) throw new Error(`no seed for ${address} in .env or registered session`);
+  const dbAcc = getAccount(address);
+  if (dbAcc?.seed) return Wallet.fromSeed(dbAcc.seed);
+  const hit = Object.values(loadAccounts()).find((w) => w?.classicAddress === address);
+  if (!hit) throw new Error(`no seed for ${address} in database or registered session`);
   return hit;
 }
+
+function getBorrowerOpFor(borrowerAddress?: string): Wallet {
+  if (borrowerAddress) {
+    const dbAcc = getAccount(borrowerAddress);
+    if (dbAcc?.operatorSeed) return Wallet.fromSeed(dbAcc.operatorSeed);
+  }
+  const acc = loadAccounts();
+  if (acc.borrowerOp) return acc.borrowerOp;
+  throw new Error(`no operator key found for borrower ${borrowerAddress || "default"}`);
+}
+
 const broker = () => loadAccounts().broker;
-const borrowerOp = () => loadAccounts().borrowerOp;
 
 /** Loan terms derived from a bid: PaymentTotal fixed, interval from the call date (min 60 s). */
 export function termsFromBid(bid: Bid, nowRipple: number) {
@@ -103,7 +116,8 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   const prepared = await client.autofill(tx);
   prepared.Fee = String(Number(prepared.Fee) * 5);
   const first = broker().sign(prepared);
-  const s1 = signLoanSetByCounterparty(borrowerOp(), first.tx_blob, { multisign: true });
+  const op = getBorrowerOpFor(bid.borrowerAddress);
+  const s1 = signLoanSetByCounterparty(op, first.tx_blob, { multisign: true });
   const enf = await enforcerCounterSign(first.tx_blob);
   const combined = combineLoanSetCounterpartySigners([s1.tx, enf]);
   const r = await submitBlob(client, combined.tx_blob);
@@ -116,7 +130,8 @@ async function borrowerSubmit(tx: Record<string, any>): Promise<TxReceipt | Bloc
   const prepared = await client.autofill(tx as any, 2);
   const decision = await enforcerCosign(client, prepared);
   if (!decision.ok) return { blocked: decision.blocked, reason: decision.reason };
-  const opBlob = borrowerOp().sign(prepared as any, true).tx_blob;
+  const op = getBorrowerOpFor(tx.Account);
+  const opBlob = op.sign(prepared as any, true).tx_blob;
   return toReceipt(await submitBlob(client, multisign([opBlob, decision.blob])));
 }
 
@@ -193,11 +208,19 @@ export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<T
   const client = await getClient();
   const acc = loadAccounts();
   const borrowerWallet = borrowerAddress ? walletFor(borrowerAddress) : acc.borrower;
+  const dbAcc = borrowerAddress ? getAccount(borrowerAddress) : null;
+  const opAddress = dbAcc?.operatorAddress ?? acc.borrowerOp?.classicAddress;
+  const enforcerAddress = acc.brokerEnforcer?.classicAddress;
+
+  if (!opAddress || !enforcerAddress) {
+    throw new Error("Cannot configure multisig: missing borrower operator or platform enforcer address");
+  }
 
   // Check if master key is already disabled
   const ai: any = await client.request({ command: "account_info", account: borrowerWallet.classicAddress, ledger_index: "validated" } as any);
   const masterDisabled = ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0;
   if (masterDisabled) {
+    if (borrowerAddress) updateAccount(borrowerAddress, { multisigActive: 1 });
     return { hash: "", result: "tesSUCCESS", explorerUrl: "", ledgerIndex: ai.result.ledger_index ?? 0 };
   }
 
@@ -207,8 +230,8 @@ export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<T
     Account: borrowerWallet.classicAddress,
     SignerQuorum: 2,
     SignerEntries: [
-      { SignerEntry: { Account: acc.borrowerOp.classicAddress, SignerWeight: 1 } },
-      { SignerEntry: { Account: acc.brokerEnforcer.classicAddress, SignerWeight: 1 } },
+      { SignerEntry: { Account: opAddress, SignerWeight: 1 } },
+      { SignerEntry: { Account: enforcerAddress, SignerWeight: 1 } },
     ],
   }, borrowerWallet);
 
@@ -219,7 +242,47 @@ export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<T
     SetFlag: 4, // asfDisableMaster
   }, borrowerWallet);
 
+  if (borrowerAddress) {
+    updateAccount(borrowerAddress, { multisigActive: 1 });
+  }
+
   return toReceipt(dm);
+}
+
+/** Dynamic account creation (borrower or lender) funded on Devnet and stored in SQLite DB. */
+export async function createDbAccount(params: {
+  role: "borrower" | "lender";
+  name: string;
+  company?: string;
+  firstName?: string;
+  userRole?: string;
+}): Promise<DbAccount> {
+  const { wallet } = await fundNewAccount();
+  let operatorAddress: string | undefined;
+  let operatorSeed: string | undefined;
+
+  if (params.role === "borrower") {
+    const opWallet = Wallet.generate();
+    operatorAddress = opWallet.classicAddress;
+    operatorSeed = opWallet.seed;
+  }
+
+  const newAcc: DbAccount = {
+    address: wallet.classicAddress,
+    role: params.role,
+    name: params.name || (params.role === "borrower" ? "New Corporate Issuer" : "New Institutional Investor"),
+    seed: wallet.seed!,
+    company: params.company,
+    firstName: params.firstName,
+    userRole: params.userRole,
+    operatorAddress,
+    operatorSeed,
+    multisigActive: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  saveAccount(newAcc);
+  return newAcc;
 }
 
 export { dropsToXrp };

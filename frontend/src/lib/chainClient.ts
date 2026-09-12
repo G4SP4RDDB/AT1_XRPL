@@ -612,6 +612,18 @@ export class ChainBackendClient {
       return false
     }
   }
+
+  async listAccounts(role?: 'borrower' | 'lender') {
+    try {
+      return await baseChain.read.listAccounts(role)
+    } catch {
+      return []
+    }
+  }
+
+  async createAccount(params: { role: 'borrower' | 'lender'; name: string; company?: string; firstName?: string; userRole?: string }) {
+    return await baseChain.tx.createAccount(params)
+  }
 }
 
 export const chainClient = new ChainBackendClient()

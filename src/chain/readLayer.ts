@@ -149,12 +149,16 @@ export async function listVaultsOf(client: Client): Promise<VaultState[]> {
   return out;
 }
 
+import { listAccounts, getAccount } from "../db/index.js";
+
 export const read = {
   vaultState: async (vaultId: string) => vaultStateOf(await getClient(), vaultId),
   position: async (address: string, vaultId: string) => positionOf(await getClient(), address, vaultId),
   listVaults: async () => listVaultsOf(await getClient()),
   brokerAddress: async () => ({ address: loadAccounts().broker.classicAddress }),
   roles: async () => Object.fromEntries(Object.entries(loadAccounts()).map(([k, v]) => [k, v.classicAddress])),
+  listAccounts: async (role?: "borrower" | "lender") => listAccounts(role),
+  getAccount: async (address: string) => getAccount(address),
   isMasterDisabled: async (address: string) => {
     const client = await getClient();
     try {

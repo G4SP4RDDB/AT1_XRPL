@@ -1,6 +1,6 @@
 // Browser-safe, typed client for the chain shim. Person B imports this; nothing here signs or touches the ledger.
 // Usage:  const chain = createChainClient(import.meta.env.VITE_CHAIN_URL ?? "http://localhost:8787")
-import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked } from "./types.js";
+import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount } from "./types.js";
 
 export type ChainClient = ReturnType<typeof createChainClient>;
 
@@ -37,10 +37,17 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       roles: () => call<Record<string, string>>("/read/roles"),
       /** Checks if the master key of an account is disabled. */
       isMasterDisabled: (address: string) => call<{ masterDisabled: boolean }>("/read/isMasterDisabled", [address]),
+      /** List stored borrower or lender accounts from the database. */
+      listAccounts: (role?: "borrower" | "lender") => call<DbAccount[]>("/read/listAccounts", [role]),
+      /** Get a stored account from the database by address. */
+      getAccount: (address: string) => call<DbAccount | null>("/read/getAccount", [address]),
     },
     tx: {
       /** Register a wallet seed dynamically for the current session. */
       registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
+      /** Create a new funded account (borrower or lender) on Devnet and save to DB. */
+      createAccount: (params: { role: "borrower" | "lender"; name: string; company?: string; firstName?: string; userRole?: string }) =>
+        call<DbAccount>("/tx/createAccount", [params]),
       /** Configure 2-of-2 Multisig on borrower account with master key disabled. */
       setupBorrowerMultisig: (borrowerAddress?: string) => call<TxReceipt>("/tx/setupBorrowerMultisig", [borrowerAddress]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */

@@ -62,14 +62,49 @@ export async function ensureBalance(client: import("xrpl").Client, address: stri
   return hashes;
 }
 
-/** Wallets for every role, from .env. Throws if one is missing (run `npm run fund`). */
+import { listAccounts } from "../db/index.js";
+
+/** Wallets for platform roles. Only BROKER_SEED is required in .env. Other roles are resolved dynamically from the database. */
 export function loadAccounts(): Record<Role, Wallet> {
   const env = readEnv();
   const out = {} as Record<Role, Wallet>;
-  for (const role of ROLES) {
-    const seed = env[`${role.toUpperCase()}_SEED`];
-    if (!seed) throw new Error(`missing ${role.toUpperCase()}_SEED in .env, run: npm run fund`);
-    out[role] = Wallet.fromSeed(seed);
+  
+  if (!env.BROKER_SEED) {
+    throw new Error("missing BROKER_SEED in .env: platform broker account is required");
   }
+  out.broker = Wallet.fromSeed(env.BROKER_SEED);
+
+  if (env.BROKERENFORCER_SEED) {
+    out.brokerEnforcer = Wallet.fromSeed(env.BROKERENFORCER_SEED);
+  }
+
+  // Check optional .env overrides or resolve from SQLite DB
+  const dbBorrowers = listAccounts("borrower");
+  const dbLenders = listAccounts("lender");
+
+  if (env.BORROWER_SEED) {
+    out.borrower = Wallet.fromSeed(env.BORROWER_SEED);
+  } else if (dbBorrowers[0]?.seed) {
+    out.borrower = Wallet.fromSeed(dbBorrowers[0].seed);
+  }
+
+  if (env.BORROWEROP_SEED) {
+    out.borrowerOp = Wallet.fromSeed(env.BORROWEROP_SEED);
+  } else if (dbBorrowers[0]?.operatorSeed) {
+    out.borrowerOp = Wallet.fromSeed(dbBorrowers[0].operatorSeed);
+  }
+
+  if (env.LENDER1_SEED) {
+    out.lender1 = Wallet.fromSeed(env.LENDER1_SEED);
+  } else if (dbLenders[0]?.seed) {
+    out.lender1 = Wallet.fromSeed(dbLenders[0].seed);
+  }
+
+  if (env.LENDER2_SEED) {
+    out.lender2 = Wallet.fromSeed(env.LENDER2_SEED);
+  } else if (dbLenders[1]?.seed) {
+    out.lender2 = Wallet.fromSeed(dbLenders[1].seed);
+  }
+
   return out;
 }

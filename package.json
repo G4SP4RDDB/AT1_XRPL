@@ -34,10 +34,12 @@
   },
   "homepage": "https://github.com/G4SP4RDDB/AT1_XRPL#readme",
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "xrpl": "^5.2.0",
     "xrpl-connect": "^0.8.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.2",
     "dotenv": "^17.4.2",
     "tsx": "^4.23.13",
