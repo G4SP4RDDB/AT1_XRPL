@@ -1,0 +1,138 @@
+import { useState } from 'react'
+import type { FC, FormEvent } from 'react'
+import { useWallet } from '@/lib/wallet'
+import { chainClient } from '@/lib/chainClient'
+
+interface IssueBondProps {
+  onSuccess: () => void
+}
+
+export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
+  const { currentAccount } = useWallet()
+  const [amount, setAmount] = useState('')
+  const [yieldRate, setYieldRate] = useState('')
+  const [callDate, setCallDate] = useState('')
+  const [description, setDescription] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!currentAccount) return
+    setIsSubmitting(true)
+    setSuccessMsg(null)
+
+    try {
+      await chainClient.createBid({
+        borrowerAddress: currentAccount.address,
+        borrowerName: currentAccount.name,
+        amount,
+        yieldRate: parseFloat(yieldRate),
+        callDate,
+        description,
+      })
+      setSuccessMsg(`The ${Number(amount).toLocaleString()} XRP bond issuance has been created successfully! It is now open for funding.`)
+      onSuccess()
+    } catch (err: any) {
+      alert(`Error: ${err.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h3 className="card-title">Issue AT1 Bond</h3>
+            <p className="section-subtitle">
+              Create a bond issuance and provision an isolated Single Asset Vault on XRPL
+            </p>
+          </div>
+        </div>
+
+        {successMsg && (
+          <div className="alert alert-success" style={{ marginBottom: '1.25rem' }}>
+            {successMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Connected Issuer Account</label>
+            <input
+              type="text"
+              className="form-input"
+              value={currentAccount?.address || ''}
+              disabled
+              style={{ opacity: 0.8, fontFamily: 'monospace' }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Principal Amount to Raise (XRP)</label>
+            <input
+              type="number"
+              className="form-input"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+              min="1000"
+              step="1000"
+              placeholder="e.g. 500000"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label className="form-label">Offered Coupon Rate (% APY)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={yieldRate}
+                onChange={(e) => setYieldRate(e.target.value)}
+                required
+                min="0.5"
+                max="50"
+                step="0.1"
+                placeholder="e.g. 8.5"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Call Date / Maturity</label>
+              <input
+                type="date"
+                className="form-input"
+                value={callDate}
+                onChange={(e) => setCallDate(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Issuance Description / Note Terms</label>
+            <textarea
+              className="form-textarea"
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Financing purpose, subordination covenants..."
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={isSubmitting}
+            style={{ marginTop: '0.5rem', padding: '0.85rem' }}
+          >
+            {isSubmitting ? 'Publishing Issuance...' : 'Issue Bond'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}

@@ -11,3 +11,6 @@ node_modules/
 .grok/
 xrpl-lending-notion.md
 .enforcer.env
+.idea/
+.gemini/
+.github/

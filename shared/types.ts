@@ -16,6 +16,8 @@ export interface Bid {
   vaultId?: string;
   loanBrokerId?: string;
   loanId?: string;
+  borrowerName?: string;
+  description?: string;
 }
 
 export interface Ask {
@@ -24,9 +26,12 @@ export interface Ask {
   amount: string;        // XRP offered
   indicated: boolean;    // purely indicative, nothing on-chain until matched
   matchedBidId?: string;
+  lenderName?: string;
+  targetYield?: number;
+  status?: "pending" | "matched" | "deposited";
 }
 
-export type LoanStatus = "none" | "active" | "impaired" | "defaulted" | "closed";
+export type LoanStatus = "none" | "active" | "impaired" | "defaulted" | "closed" | "repaid";
 
 export interface LoanState {
   loanId: string;
@@ -49,6 +54,16 @@ export interface VaultState {
   callDate: IsoDate;
   loan?: LoanState;
   stub?: true;              // present while the chain layer returns fixtures
+  bidId?: string;
+  borrowerAddress?: Address;
+  brokerAddress?: Address;
+  liquidAssets?: string;
+  loanPrincipal?: string;
+  loanInterestRate?: number;
+  loanStatus?: LoanStatus;
+  firstLossCover?: string;
+  isCallDateReached?: boolean;
+  isLiquidityLocked?: boolean;
 }
 
 export interface Position {
@@ -60,7 +75,12 @@ export interface Position {
   accruedYield: string;
   yieldShares: string;      // shares redeemable without touching principal
   stub?: true;
+  accountAddress?: Address;
+  sharesOwned?: string;
+  yieldEquivalentShares?: string;
 }
+
+export type UserPosition = Position;
 
 export interface WithdrawRequest {
   depositorAddress: Address;

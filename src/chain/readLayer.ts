@@ -64,10 +64,33 @@ export async function vaultStateOf(client: Client, vaultId: string): Promise<Vau
   const data = await vaultData(client, v);
   const lb = await brokerFor(client, vaultId);
   const loan = await findLoan(client, data.b, lb?.index);
+  // A closed loan omits PaymentRemaining rather than serializing it as 0 (see loanState above); `?? 0` keeps
+  // callDate falling back to the vault's Data-stored bid call date once the loan is gone, instead of NaN > 0.
   const callDate = loan && Number(loan.PaymentRemaining ?? 0) > 0 ? rippleToIso(callDateRipple(loan)) : (data.c ?? "");
+  const liquidAssets = xrp(v.assetsAvailable);
+  const principalOutstanding = loan ? xrp(loan.PrincipalOutstanding) : "0";
+  const isLiquidityLocked = Number(principalOutstanding) > 0 && Number(liquidAssets) < Number(principalOutstanding);
+  const isCallDateReached = callDate ? new Date(callDate).getTime() <= Date.now() : false;
   return {
-    vaultId, asset: "XRP", assetsTotal: xrp(v.assetsTotal), assetsAvailable: xrp(v.assetsAvailable), lossUnrealized: xrp(v.lossUnrealized),
-    sharesTotal: v.sharesOutstanding, pps: v.pps, callDate, loan: loan ? loanState(loan) : undefined,
+    vaultId,
+    asset: "XRP",
+    assetsTotal: xrp(v.assetsTotal),
+    assetsAvailable: liquidAssets,
+    lossUnrealized: xrp(v.lossUnrealized),
+    sharesTotal: v.sharesOutstanding,
+    pps: v.pps,
+    callDate,
+    loan: loan ? loanState(loan) : undefined,
+    bidId: data.id,
+    borrowerAddress: data.b,
+    brokerAddress: lb?.Owner ?? loadAccounts().broker.classicAddress,
+    liquidAssets,
+    loanPrincipal: data.a ?? (loan ? principalOutstanding : "0"),
+    loanInterestRate: data.y,
+    loanStatus: loan ? loanState(loan).status : "none",
+    firstLossCover: lb?.CoverAvailable ? xrp(lb.CoverAvailable) : "0",
+    isCallDateReached,
+    isLiquidityLocked,
   };
 }
 
