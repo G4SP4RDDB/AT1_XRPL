@@ -4,8 +4,8 @@ import { network } from '@/lib/xrpl'
 import { useBankName } from '@/lib/bankProfiles'
 
 interface NavbarProps {
-  activeTab: 'issue' | 'finance' | 'positions'
-  setActiveTab: (tab: 'issue' | 'finance' | 'positions') => void
+  activeTab: 'issue' | 'finance' | 'positions' | 'orderbook'
+  setActiveTab: (tab: 'issue' | 'finance' | 'positions' | 'orderbook') => void
   onEditBankProfile: () => void
 }
 
@@ -41,6 +41,12 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankPro
 
         {isConnected && (
           <nav className="nav-links">
+            <button
+              className={`nav-tab ${activeTab === 'orderbook' ? 'active' : ''}`}
+              onClick={() => setActiveTab('orderbook')}
+            >
+              Order Book
+            </button>
             <button
               className={`nav-tab ${activeTab === 'finance' ? 'active' : ''}`}
               onClick={() => setActiveTab('finance')}

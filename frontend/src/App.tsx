@@ -6,6 +6,7 @@ import { Navbar } from '@/components/Navbar'
 import { FinanceBonds } from '@/components/FinanceBonds'
 import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
+import { TrancheBook } from '@/components/TrancheBook'
 import { DevExPanel } from '@/components/DevExPanel'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { BankProfileModal } from '@/components/BankProfileModal'
@@ -13,7 +14,7 @@ import { loadProfile } from '@/lib/bankProfiles'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
-  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions'>('finance')
+  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions' | 'orderbook'>('finance')
   const [isBankProfileModalOpen, setIsBankProfileModalOpen] = useState(false)
   const [onboardedAddress, setOnboardedAddress] = useState<string | null>(null)
 
@@ -104,6 +105,7 @@ const MainContent: FC = () => {
               <IssueBond onSuccess={() => setActiveTab('finance')} />
             )}
             {activeTab === 'positions' && <MyPositions />}
+            {activeTab === 'orderbook' && <TrancheBook />}
           </>
         )}
       </main>

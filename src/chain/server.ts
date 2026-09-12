@@ -4,9 +4,10 @@ import http from "node:http";
 import { read, tx } from "./index.js";
 import { loadAccounts } from "./accounts.js";
 import * as profile from "./profileStore.js";
+import * as book from "./trancheBookStore.js";
 
 const PORT = Number(process.env.CHAIN_PORT ?? 8787);
-const groups: Record<string, Record<string, (...a: any[]) => Promise<unknown>>> = { read, tx, profile };
+const groups: Record<string, Record<string, (...a: any[]) => Promise<unknown>>> = { read, tx, profile, book };
 
 http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");

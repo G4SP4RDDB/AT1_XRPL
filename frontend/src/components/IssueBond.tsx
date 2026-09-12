@@ -13,6 +13,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
   const [yieldRate, setYieldRate] = useState('')
   const [callDate, setCallDate] = useState('')
   const [description, setDescription] = useState('')
+  const [urgency, setUrgency] = useState<'urgent' | 'standard' | 'flexible'>('standard')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
@@ -30,6 +31,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
         yieldRate: parseFloat(yieldRate),
         callDate,
         description,
+        urgency,
       })
       setSuccessMsg(`The ${Number(amount).toLocaleString()} XRP bond issuance has been created successfully! It is now open for funding.`)
       onSuccess()
@@ -110,6 +112,19 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
                 required
               />
             </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Funding Urgency</label>
+            <select
+              className="form-select"
+              value={urgency}
+              onChange={(e) => setUrgency(e.target.value as 'urgent' | 'standard' | 'flexible')}
+            >
+              <option value="urgent">Urgent — need capital now, willing to pay up</option>
+              <option value="standard">Standard</option>
+              <option value="flexible">Flexible — can wait for a better rate</option>
+            </select>
           </div>
 
           <div className="form-group">

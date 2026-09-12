@@ -97,6 +97,36 @@ Upsert. Throws if `address` or `bankName` is missing/blank.
 ### `profile.list(): BankProfile[]`
 Every known profile.
 
+## `book` — off-chain tranche order book, no signing
+
+Shared state so every browser (the bank's and every LP's) sees the same tranche list and
+bid depth instead of each browser's own private copy. Stored in `data/order-book.json`
+(gitignored). Two collections:
+- **tranches** — off-chain-authored `Bid` fields (`borrowerName`, `description`, `urgency`)
+  that the ledger itself doesn't carry. The frontend merges this with live on-chain vault
+  state (`read.listVaults()`) to render the book; the ledger stays the source of truth for
+  amount/rate/status once a vault exists.
+- **bids** — LP commitments against a tranche (an `Ask` with `matchedBidId` pointing at the
+  tranche id). `"pending"` until an LP actually funds it via a real `tx.deposit`
+  (`VaultDeposit`), then `"deposited"`. A pending bid is purely indicative — nothing
+  prevents one from exceeding the tranche's remaining capacity; that's enforced natively by
+  the vault's own `AssetsMaximum` cap when the deposit is actually submitted, not by this
+  store.
+
+### `book.listTranches(): Bid[]`
+### `book.upsertTranche(tranche: Bid): Bid`
+Called right after `tx.createBond` succeeds, so the tranche's off-chain metadata is visible
+to every browser, not just the one that created it.
+
+### `book.listBids(trancheId?: string): Ask[]`
+Every LP bid, or scoped to one tranche.
+
+### `book.createBid(bid: Ask): Ask`
+Throws if `bid.id` or `bid.matchedBidId` (the target tranche id) is missing.
+
+### `book.updateBidStatus(id: string, status: Ask["status"]): Ask`
+Throws if the bid id is unknown.
+
 ## Blocked shape
 
 ```ts

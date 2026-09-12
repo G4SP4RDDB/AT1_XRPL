@@ -18,6 +18,7 @@ export interface Bid {
   loanId?: string;
   borrowerName?: string;
   description?: string;
+  urgency?: "urgent" | "standard" | "flexible"; // display-only signal for how quickly the tranche needs to fill
 }
 
 export interface Ask {

@@ -40,49 +40,20 @@ export interface WithdrawRequest {
 const CHAIN_URL = import.meta.env.VITE_CHAIN_URL || 'http://localhost:8787'
 const baseChain = createChainClient(CHAIN_URL)
 
-const BIDS_KEY = 'at1_bids_v3'
-const ASKS_KEY = 'at1_asks_v3'
-
-function loadBids(): Bid[] {
-  try {
-    const raw = localStorage.getItem(BIDS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    }
-  } catch (e) {
-    console.warn('Failed to parse stored bids:', e)
+// Order-book state (tranche metadata + LP bids) lives on the chain shim's /book/* routes,
+// backed by a shared JSON file (src/chain/trancheBookStore.ts) — not localStorage, so every
+// browser (the bank's and every LP's) sees the same book instead of its own private copy.
+async function callBookRoute<T>(fn: string, args: unknown[]): Promise<T> {
+  const res = await fetch(`${CHAIN_URL}/book/${fn}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ args }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error || `book.${fn} failed: ${res.status}`)
   }
-  return []
-}
-
-function saveBids(bids: Bid[]) {
-  try {
-    localStorage.setItem(BIDS_KEY, JSON.stringify(bids))
-  } catch (e) {
-    console.warn('Failed to save bids:', e)
-  }
-}
-
-function loadAsks(): Ask[] {
-  try {
-    const raw = localStorage.getItem(ASKS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : []
-    }
-  } catch (e) {
-    console.warn('Failed to parse stored asks:', e)
-  }
-  return []
-}
-
-function saveAsks(asks: Ask[]) {
-  try {
-    localStorage.setItem(ASKS_KEY, JSON.stringify(asks))
-  } catch (e) {
-    console.warn('Failed to save asks:', e)
-  }
+  return res.json()
 }
 
 function normalizeVault(raw: RawVaultState, knownBid?: Bid): VaultState {
@@ -115,8 +86,8 @@ function normalizePosition(raw: RawPosition): UserPosition {
 }
 
 export class ChainBackendClient {
-  private bids: Bid[] = loadBids()
-  private asks: Ask[] = loadAsks()
+  private bids: Bid[] = []
+  private asks: Ask[] = []
   private listeners: Array<() => void> = []
 
   subscribe(listener: () => void) {
@@ -137,6 +108,17 @@ export class ChainBackendClient {
   }
 
   async getBids(): Promise<Bid[]> {
+    // Off-chain-authored metadata (borrowerName, description, urgency) is shared across
+    // browsers via the order-book store, not localStorage — refresh our cache from it.
+    try {
+      const shared = await callBookRoute<Bid[]>('listTranches', [])
+      const cached = new Map(this.bids.map((b) => [b.id, b]))
+      for (const b of shared) cached.set(b.id, { ...cached.get(b.id), ...b })
+      this.bids = Array.from(cached.values())
+    } catch (err) {
+      console.warn('Order book unreachable, using local tranche cache:', err)
+    }
+
     try {
       const vaults = await this.getAllVaults()
       const onChainBids: Bid[] = vaults.map((v) => {
@@ -167,6 +149,7 @@ export class ChainBackendClient {
           ...b,
           borrowerName: existing?.borrowerName || b.borrowerName,
           description: existing?.description,
+          urgency: existing?.urgency,
         })
       }
 
@@ -177,8 +160,17 @@ export class ChainBackendClient {
     }
   }
 
-  async getAsks(): Promise<Ask[]> {
-    return [...this.asks]
+  /** LP bids (an `Ask` targeting a tranche via `matchedBidId`). Pass a tranche id to scope
+   * to one tranche's depth list, or omit for the whole shared book. */
+  async getAsks(trancheId?: string): Promise<Ask[]> {
+    try {
+      const shared = await callBookRoute<Ask[]>('listBids', trancheId ? [trancheId] : [])
+      if (!trancheId) this.asks = shared
+      return shared
+    } catch (err) {
+      console.warn('Order book unreachable, using local bid cache:', err)
+      return trancheId ? this.asks.filter((a) => a.matchedBidId === trancheId) : [...this.asks]
+    }
   }
 
   async getAllVaults(): Promise<VaultState[]> {
@@ -196,7 +188,6 @@ export class ChainBackendClient {
           if (v.loan && b.status !== 'originated') {
             b.status = 'originated'
             b.loanId = v.loan.loanId
-            saveBids(this.bids)
           }
         }
       }
@@ -237,6 +228,7 @@ export class ChainBackendClient {
     yieldRate: number
     callDate: string
     description?: string
+    urgency?: Bid['urgency']
   }): Promise<Bid> {
     const callDateIso = new Date(bidInput.callDate).toISOString()
     const newBid: Bid = {
@@ -249,6 +241,7 @@ export class ChainBackendClient {
     }
     ;(newBid as any).borrowerName = bidInput.borrowerName || 'AT1 Bond'
     ;(newBid as any).description = bidInput.description
+    ;(newBid as any).urgency = bidInput.urgency
 
     try {
       // Execute on-chain provision via backend: VaultCreate + LoanBrokerSet + CoverDeposit
@@ -260,12 +253,19 @@ export class ChainBackendClient {
       throw new Error(`Failed to create bond vault on-chain: ${err.message}`)
     }
 
+    try {
+      await callBookRoute('upsertTranche', [newBid])
+    } catch (err) {
+      console.warn('Tranche created on-chain but failed to sync metadata to shared order book:', err)
+    }
+
     this.bids.unshift(newBid)
-    saveBids(this.bids)
     this.notify()
     return newBid
   }
 
+  /** LP places an off-chain, indicative bid against a tranche. Nothing on-chain yet —
+   * call `acceptBid` to actually fund it via a real VaultDeposit. */
   async createAsk(askInput: {
     lenderAddress: string
     lenderName?: string
@@ -282,11 +282,72 @@ export class ChainBackendClient {
       status: 'pending',
     }
     ;(newAsk as any).lenderName = askInput.lenderName || 'Investor'
+    ;(newAsk as any).targetYield = askInput.targetYield
+
+    await callBookRoute('createBid', [newAsk])
 
     this.asks.unshift(newAsk)
-    saveAsks(this.asks)
     this.notify()
     return newAsk
+  }
+
+  /** Convert one pending LP bid into a real on-chain VaultDeposit, up to whatever capacity
+   * the vault's AssetsMaximum cap still allows — first-come-first-served; a bid that no
+   * longer fits is rejected on-chain (tecINSUFFICIENT_FUNDS-style guardrail), not silently
+   * dropped. No loan origination here — call `originateTranche` separately once ready. */
+  async acceptBid(askId: string): Promise<{ vaultId: string; txHash: string }> {
+    const ask = this.asks.find((a) => a.id === askId) ?? (await this.getAsks()).find((a) => a.id === askId)
+    if (!ask) throw new Error('Bid not found')
+    const trancheId = ask.matchedBidId
+    if (!trancheId) throw new Error('Bid is not targeting a tranche')
+
+    const [bids, vaults] = await Promise.all([this.getBids(), this.getAllVaults()])
+    const bid = bids.find((b) => b.id === trancheId)
+    const vault = vaults.find((v) => v.bidId === trancheId || v.vaultId === bid?.vaultId)
+    const vaultId = vault?.vaultId || bid?.vaultId
+    if (!vaultId) throw new Error('Tranche vault not found on ledger')
+
+    const receipt = await baseChain.tx.deposit(ask.lenderAddress, vaultId, ask.amount)
+    if (receipt.result !== 'tesSUCCESS') {
+      throw new Error(`Deposit failed on-chain: ${receipt.result}`)
+    }
+
+    ask.status = 'deposited'
+    try {
+      await callBookRoute('updateBidStatus', [ask.id, 'deposited'])
+    } catch (err) {
+      console.warn('Deposit succeeded on-chain but failed to sync bid status to shared order book:', err)
+    }
+
+    this.notify()
+    return { vaultId, txHash: receipt.hash }
+  }
+
+  /** Broker/borrower triggers loan origination (LoanSet) once a tranche has collected
+   * enough deposits. Safe to call even if not fully filled — the ledger enforces
+   * `assetsAvailable >= amount` and returns a normal on-ledger rejection otherwise. */
+  async originateTranche(trancheId: string): Promise<{ loanId?: string; txHash: string }> {
+    const [bids, vaults] = await Promise.all([this.getBids(), this.getAllVaults()])
+    const bid = bids.find((b) => b.id === trancheId)
+    if (!bid) throw new Error('Tranche not found')
+    const vault = vaults.find((v) => v.bidId === trancheId || v.vaultId === bid.vaultId)
+    const vaultId = vault?.vaultId || bid.vaultId
+    if (!vaultId) throw new Error('Tranche vault not found on ledger')
+
+    const bidObj: Bid = {
+      id: bid.id,
+      borrowerAddress: vault?.borrowerAddress || bid.borrowerAddress,
+      amount: vault?.loanPrincipal || bid.amount,
+      yieldRate: vault?.loanInterestRate ?? bid.yieldRate,
+      callDate: vault?.callDate || bid.callDate,
+      vaultId,
+      loanBrokerId: bid.loanBrokerId,
+      status: 'matched',
+    }
+
+    const receipt = await baseChain.tx.originate(bidObj)
+    this.notify()
+    return { loanId: receipt.loanId, txHash: receipt.hash }
   }
 
   async fundBond(bidId: string, lenderAddress: string, amount: string): Promise<{ vaultId: string; txHash: string }> {
@@ -322,7 +383,6 @@ export class ChainBackendClient {
         if (bid) {
           bid.loanId = origReceipt.loanId
           bid.status = 'originated'
-          saveBids(this.bids)
         }
       }
     } catch (err: any) {
@@ -334,17 +394,6 @@ export class ChainBackendClient {
       vaultId: targetVaultId,
       txHash: depositReceipt.hash,
     }
-  }
-
-  async matchAndDeposit(bidId: string, askId: string): Promise<{ vaultId: string; txHash: string }> {
-    const ask = this.asks.find((a) => a.id === askId)
-    if (!ask) throw new Error('Ask not found')
-    const res = await this.fundBond(bidId, ask.lenderAddress, ask.amount)
-    ask.matchedBidId = bidId
-    ask.status = 'matched'
-    saveAsks(this.asks)
-    this.notify()
-    return res
   }
 
   async payCoupon(vaultId: string, _amount?: string): Promise<{ newPps: number; txHash: string }> {
