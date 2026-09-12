@@ -35,17 +35,27 @@ This platform implements AT1 bonds natively on XRPL:
 
 ---
 
-## 3. Platform Broker Identity
+## 3. Platform Broker & Multisig Enforcer Architecture
 
-The platform operates an institutional loan broker configured on the Custom Hackathon Devnet:
+The platform cleanly separates **business ownership** from **cryptographic enforcement** following the principle of least privilege:
 
 ```text
-🛡️ PLATFORM BROKER ADDRESS: r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4
+🛡️ PLATFORM BROKER ADDRESS : r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4
+🔐 ENFORCER SIGNER ADDRESS : rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn
 ```
 
-- **Startup Banner**: Displayed automatically when running `npm run serve`.
-- **Frontend Header**: Displayed in the navigation bar with a 1-click address copy button.
-- **API Endpoint**: Queryable via `POST /read/brokerAddress`.
+### Broker vs. Signer: Understanding the Separation
+
+| Component | Account Address | Key Location | Protocol & System Role |
+|---|---|---|---|
+| **Platform Broker** | `r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4` | `BROKER_SEED` in `.env` | **Business & Vault Owner**: Creates the open-ended Vault (`VaultCreate`), manages broker fees (`LoanBrokerSet`), holds the first-loss risk buffer (`CoverAvailable`), and has sole authority to trigger loan write-downs / liquidations (`tfLoanImpair`). |
+| **Enforcer Signer** | `rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn` | `ENFORCER_SEED` in `.enforcer.env` | **Autonomous Multisig Guardian**: Holds the 2nd seat on the corporate borrower's 2-of-2 multisig (`SignerListSet`). Verifies ledger time against the bond's Call Date before co-signing repayment transactions. |
+
+### How Loan Liquidation & Write-Downs Work
+Under XLS-66, if a borrower is delinquent on coupon payments (`now > NextPaymentDueDate`), the broker can absorb the loss using first-loss capital:
+- **Transaction**: `LoanManage` with flag `tfLoanImpair` (`0x00020000`).
+- **Authorization**: Signed exclusively by the **Broker** (`BROKER_SEED=sEdVBUaPMamhH5uTWHz3mPYj1ZsPqWa` in `.env`).
+- **Trigger via API**: `POST http://localhost:8787/tx/impair` with `{ "args": ["<LOAN_ID_HEX>"] }`.
 
 ---
 
@@ -118,75 +128,137 @@ flowchart TD
 ### Prerequisites
 - **Node.js**: `v20.x` or `v22.x`
 - **npm**: `v10.x` or higher
+- **tmux**: Installed (`sudo apt install tmux` on Ubuntu/Debian)
 - Git with SSH key configured
 
-### Step 1: Clone and Install Dependencies
+---
 
+### Method 1: The Automated Pipeline (Recommended) 🚀
+
+This single command executes the complete end-to-end launch pipeline in **5 automated steps**:
+
+```bash
+npm run dev:tmux
+```
+
+#### What happens under the hood:
+1. **⚡ Account Generation & Funding** (`scripts/fund-and-setup.ts`):
+   - Requests 8 fresh accounts from the Custom Devnet faucet (1,000 XRP each).
+   - Writes the new private seeds to `.env` (`BROKER_SEED`, `LENDER1_SEED`, `BORROWER_SEED`, etc.).
+   - Writes `.enforcer.env` with the new Broker address and Enforcer seed.
+   - Waits for ledger validation and deploys the **2-of-2 Multisig rule** (`SignerListSet`) on the borrower with the master key disabled (`asfDisableMaster`).
+2. **🧪 Test Suite**: Runs all 24 backend tests and 19 frontend Vitest tests.
+3. **⚙️ Compilation & Typecheck**: Compiles TypeScript (`tsc --noEmit`) and creates a production bundle (`vite build`).
+4. **🧹 Port Cleanup**: Automatically frees ports 8788, 8787, and 5173.
+5. **🖥️ Split-Screen tmux**: Launches a detached session (`at1`) with 3 synchronized panes:
+   - **Pane 0** (Left): Autonomous Enforcer Daemon (`:8788`)
+   - **Pane 1** (Top-Right): Chain Shim JSON API (`:8787`)
+   - **Pane 2** (Bottom-Right): Frontend Dev Server (`:5173`)
+
+#### Managing the tmux session:
+```bash
+# Attach and view the split dashboard:
+tmux attach -t at1
+
+# Useful shortcuts inside tmux:
+# - Click on any pane with your mouse (mouse support is enabled)
+# - Ctrl+b then arrow keys : navigate between panes
+# - Ctrl+b then z          : toggle fullscreen zoom on the active pane
+# - Ctrl+b then d          : detach from tmux (services remain running)
+
+# Stop all 3 services and kill the session cleanly:
+npm run stop:tmux
+```
+
+> **Tip**: If you want to restart the services with your **existing accounts** without re-funding from the faucet, simply run:
+> ```bash
+> SKIP_FUND=1 npm run dev:tmux
+> ```
+
+---
+
+### Method 2: Step-by-Step Manual Setup (Terminal by Terminal) 🛠️
+
+For developers who prefer manual control over each individual service:
+
+#### Step 1: Clone and Install Dependencies
 ```bash
 # Clone the repository
 git clone git@github.com:G4SP4RDDB/AT1_XRPL.git
 cd AT1_XRPL
 
-# Install root dependencies
+# Install root & backend dependencies
 npm install
 
 # Install frontend dependencies
 cd frontend && npm install && cd ..
 ```
 
-### Step 2: Configure Environment Variables
-
+#### Step 2: Configure Environment Files
 ```bash
-# Copy example environment files
 cp .env.example .env
 cp frontend/.env.example frontend/.env
 ```
 
-To automatically fund development roles (Broker, Borrower, Lenders) on the Custom Hackathon Devnet:
+#### Step 3: Fund Accounts & Configure On-Chain Multisig
+Generate fresh roles from the Devnet faucet, populate `.env` / `.enforcer.env`, and submit the multisig configuration:
 ```bash
-npm run fund
+npm run fund:setup
 ```
 
-To create arbitrary fresh accounts funded with 1,000 XRP and display their addresses and seeds:
+*(Optional: To create additional throwaway funded test accounts at any time:)*
 ```bash
 npm run create-accounts 4
 ```
 
-Example output:
-```text
-Compte #1:
-  Adresse : r3eTV9eUXtYBhtgLmpo1Bpais8Nvjfq9bF
-  Seed    : sEdSxasgJ4H92qPru2dtJv3utVVU8YF
-  Solde   : 1000 XRP (validated)
-...
-```
-
-### Step 3: Launch the Services
-
-Start the three services in separate terminals (or in the background):
-
+To verify on-chain balances across all configured accounts:
 ```bash
-# 1. Start the Autonomous Multisig Enforcer (Port 8788)
-npm run enforcer
-
-# 2. Start the Chain Shim API (Port 8787)
-ENFORCER_URL=http://localhost:8788 npm run serve
-
-# 3. Start the Frontend Dev Server (Port 5173)
-cd frontend
-npm run dev
+npm run balances
 ```
 
+#### Step 4: Run Tests & Compile Codebase
+```bash
+# Run backend test suite (24 tests)
+npm test
+
+# Run frontend tests & strict typecheck
+cd frontend
+npm test
+npm run typecheck
+npm run build
+cd ..
+```
+
+#### Step 5: Start the 3 Services in Separate Terminals
+
+- **Terminal 1 — Autonomous Multisig Enforcer (Port 8788)**:
+  ```bash
+  npm run enforcer
+  ```
+  *(Healthcheck: `curl http://localhost:8788/health`)*
+
+- **Terminal 2 — Chain Shim Service (Port 8787)**:
+  ```bash
+  ENFORCER_URL=http://localhost:8788 npm run serve
+  ```
+  *(Prints the Platform Broker Address banner on startup)*
+
+- **Terminal 3 — Frontend Web Application (Port 5173)**:
+  ```bash
+  cd frontend
+  npm run dev
+  ```
+
+#### Step 6: Access the Application
 Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
 ## 7. Connecting Your Wallet & User Flow
 
-1. **Connect Wallet & Role Selection**:
+1. **Connect Wallet**:
    - Click **Connect Wallet** in the top-right corner.
-   - **Quick-Select On-Chain Role**: Choose between pre-configured on-chain roles (`Borrower`, `Lender 1`, `Lender 2`, or `Platform Broker`) backed by verified Devnet seeds.
-   - **External Wallet**: Connect via Xaman / Crossmark using the native `xrpl-connect` WalletConnect modal.
+   - Connect via your XRPL wallet (Xaman / Crossmark / GemWallet) using the native `xrpl-connect` WalletConnect URI or QR code.
 2. **Borrower Flow (Issuance)**:
    - Submit a **Debt Bid** specifying the principal amount, offered annual yield, and Call Date.
    - The platform automatically deploys an on-chain **Single Asset Vault** (`VaultCreate`) and configures the **Loan Broker** (`LoanBrokerSet`).
@@ -247,7 +319,29 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 
 ---
 
-## 10. Repository Structure
+## 10. Available Scripts & Cheatsheet
+
+| Command | Description |
+|---|---|
+| `npm run dev:tmux` | **All-in-One Launcher**: Runs all tests, compiles TS/Vite, clears ports, and launches Enforcer (`:8788`), Shim (`:8787`), and Frontend (`:5173`) in a 3-pane tmux session. |
+| `npm run stop:tmux` | Gracefully stops the `at1` tmux session and frees ports 8788, 8787, and 5173. |
+| `npm test` | Runs the 24 backend unit tests (math, policy, enforcer, share split). |
+| `npm run check` | Validates Devnet WSS connectivity and checks required protocol amendments (`SingleAssetVault`, `LendingProtocol`, `fixCleanup3_4_0`, etc.). |
+| `npm run balances` | Queries on-chain XRP balances and sequence numbers for all configured roles. |
+| `npm run all-balances` | Full diagnostic report of liquid and reserved XRP balances across all accounts. |
+| `npm run vaults` | Scans on-chain vaults, Price Per Share (PPS), outstanding loans, and call dates. |
+| `npm run create-accounts [N]` | Generates and funds `N` fresh Devnet accounts (1,000 XRP each) and outputs their addresses & seeds. |
+| `npm run fund` | Automatically funds and populates root `.env` demo seeds from the Devnet faucet. |
+| `npm run fund:setup` | Generates fresh accounts, updates `.env` & `.enforcer.env`, and configures borrower multisig on-chain. |
+| `npm run enforcer` | Starts the standalone Multisig Call-Date Enforcer daemon on port `8788`. |
+| `npm run serve` | Starts the Chain Shim JSON-over-HTTP API bridge on port `8787`. |
+| `cd frontend && npm test` | Runs the Vitest frontend unit test suite (19 tests). |
+| `cd frontend && npm run typecheck` | Strict TypeScript check (`tsc -b`) for the frontend. |
+| `cd frontend && npm run build` | Compiles the production bundle via Vite & Rolldown. |
+
+---
+
+## 11. Repository Structure
 
 ```text
 ├── docs/                       # Architectural specs, friction logs, and reports

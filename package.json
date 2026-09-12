@@ -6,6 +6,7 @@
   "scripts": {
     "check": "tsx scripts/check-devnet.ts",
     "fund": "tsx scripts/fund-accounts.ts",
+    "fund:setup": "tsx scripts/fund-and-setup.ts",
     "serve": "tsx src/chain/server.ts",
     "demo": "tsx scripts/demo-flow.ts",
     "balances": "tsx scripts/balances.ts",
@@ -15,7 +16,9 @@
     "objects": "tsx scripts/objects.ts",
     "enforcer": "tsx src/chain/enforcer/server.ts",
     "create-accounts": "tsx scripts/create-accounts.ts",
-    "e2e": "tsx scripts/e2e-full.ts"
+    "e2e": "tsx scripts/e2e-full.ts",
+    "dev:tmux": "bash scripts/start-all.sh",
+    "stop:tmux": "bash scripts/stop-tmux.sh"
   },
   "repository": {
     "type": "git",

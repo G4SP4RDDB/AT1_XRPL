@@ -9,7 +9,7 @@ interface ConnectWalletModalProps {
 }
 
 export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose }) => {
-  const { connectWalletConnect, selectRoleAccount, isConnected } = useWallet()
+  const { connectWalletConnect, isConnected } = useWallet()
   const [pairingUri, setPairingUri] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [isInitializing, setIsInitializing] = useState(false)
@@ -82,7 +82,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
         <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
           <div>
             <h3 className="card-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-              Select Account or Connect Wallet
+              Connect Wallet
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               XRPL Lending Hackathon Devnet
@@ -91,60 +91,6 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
-        </div>
-
-        {/* Quick Demo Role Picker */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            ⚡ Quick-Select On-Chain Role
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ padding: '0.65rem 0.8rem', textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' }}
-              onClick={() => selectRoleAccount('borrower')}
-            >
-              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>🏛️ Borrower</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Multisig Issuer (2-of-2)</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ padding: '0.65rem 0.8rem', textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' }}
-              onClick={() => selectRoleAccount('lender1')}
-            >
-              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--accent-green)' }}>💼 Lender 1</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Primary Depositor</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ padding: '0.65rem 0.8rem', textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' }}
-              onClick={() => selectRoleAccount('lender2')}
-            >
-              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--accent-blue)' }}>💼 Lender 2</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Secondary Investor</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ padding: '0.65rem 0.8rem', textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.2rem' }}
-              onClick={() => selectRoleAccount('broker')}
-            >
-              <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--accent-amber)' }}>🛡️ Platform Broker</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>First-Loss & Enforcer</span>
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', margin: '1rem 0', gap: '0.75rem' }}>
-          <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>OR WALLETCONNECT</span>
-          <div style={{ flex: 1, height: '1px', background: 'var(--border-subtle)' }} />
         </div>
 
         {errorMsg && (
