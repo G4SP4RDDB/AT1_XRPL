@@ -6,7 +6,6 @@ import { Navbar } from '@/components/Navbar'
 import { FinanceBonds } from '@/components/FinanceBonds'
 import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
-import { DevExPanel } from '@/components/DevExPanel'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 
 const MainContent: FC = () => {
@@ -87,8 +86,6 @@ const MainContent: FC = () => {
           </>
         )}
       </main>
-
-      <DevExPanel />
 
       <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
 
