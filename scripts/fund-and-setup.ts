@@ -33,26 +33,6 @@ fs.writeFileSync(
 );
 console.log("✓ Updated .enforcer.env with broker and enforcer credentials.");
 
-// 3. Initialize Random Accounts in SQLite DB if DB is empty
-if (listAccounts().length === 0) {
-  console.log("\n📦 Initializing random accounts in SQLite database (data/accounts.db)...");
-  
-  for (let i = 1; i <= 3; i++) {
-    const { wallet, balanceXrp } = await fundNewAccount();
-    const name = `Compte Aléatoire #${i}`;
-    saveAccount({
-      address: wallet.classicAddress,
-      role: "unassigned",
-      name,
-      seed: wallet.seed!,
-      multisigActive: 0,
-      createdAt: new Date().toISOString(),
-    });
-    console.log(`✓ ${name} généré et financé (${balanceXrp} XRP) : ${wallet.classicAddress} (Rôle: non assigné)`);
-  }
-  console.log("👉 Gérez personnellement le rôle (Emprunteur / Prêteur) de chaque compte depuis le frontend ou le profil !");
-}
-
 console.log("\n⏳ Waiting for broker accounts to validate on the XRP Ledger...");
 const client = await getClient();
 

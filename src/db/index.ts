@@ -121,24 +121,31 @@ export function saveAccount(account: DbAccount): void {
 
 export function updateAccount(address: string, fields: Partial<DbAccount>): DbAccount {
   const existing = getAccount(address);
-  if (!existing) throw new Error(`Account ${address} not found in database`);
   
-  let operatorAddress = fields.operatorAddress ?? existing.operatorAddress;
-  let operatorSeed = fields.operatorSeed ?? existing.operatorSeed;
+  let operatorAddress = fields.operatorAddress ?? existing?.operatorAddress;
+  let operatorSeed = fields.operatorSeed ?? existing?.operatorSeed;
+
+  const targetRole = fields.role ?? existing?.role ?? "unassigned";
 
   // Auto-generate operator key if promoted to borrower or lender and lacks one
-  if ((fields.role === "borrower" || fields.role === "lender") && !operatorAddress) {
+  if ((targetRole === "borrower" || targetRole === "lender") && !operatorAddress) {
     const opWallet = Wallet.generate();
     operatorAddress = opWallet.classicAddress;
     operatorSeed = opWallet.seed;
   }
 
   const updated: DbAccount = {
-    ...existing,
-    ...fields,
+    address,
+    role: targetRole,
+    name: fields.name ?? existing?.name ?? (targetRole === "borrower" ? "Emprunteur" : targetRole === "lender" ? "Prêteur" : targetRole === "broker" ? "Courtier Plateforme" : "Compte"),
+    seed: fields.seed ?? existing?.seed ?? "",
+    company: fields.company ?? existing?.company,
+    firstName: fields.firstName ?? existing?.firstName,
+    userRole: fields.userRole ?? existing?.userRole,
     operatorAddress,
     operatorSeed,
-    multisigActive: fields.multisigActive !== undefined ? (fields.multisigActive ? 1 : 0) : existing.multisigActive,
+    multisigActive: fields.multisigActive !== undefined ? (fields.multisigActive ? 1 : 0) : (existing?.multisigActive ?? 0),
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
   };
   saveAccount(updated);
   return updated;
@@ -148,38 +155,6 @@ export function deleteAccount(address: string): void {
   const stmt = db.prepare("DELETE FROM accounts WHERE address = ?");
   stmt.run(address);
 }
-
-/** Seed platform broker into SQLite DB if available in .env */
-export function seedBrokerIfMissing(): void {
-  try {
-    const envPath = path.resolve(process.cwd(), ".env");
-    if (!fs.existsSync(envPath)) return;
-    const content = fs.readFileSync(envPath, "utf8");
-    const m = content.match(/BROKER_SEED=([^\s]+)/);
-    if (m && m[1]) {
-      const wallet = Wallet.fromSeed(m[1].trim());
-      const existing = getAccount(wallet.classicAddress);
-      if (!existing) {
-        saveAccount({
-          address: wallet.classicAddress,
-          role: "broker",
-          name: "Courtier Plateforme (Broker)",
-          seed: wallet.seed!,
-          company: "BSA Platform Structurer",
-          firstName: "Courtier Principal",
-          userRole: "Structurateur & Risque",
-          multisigActive: 0,
-          createdAt: new Date().toISOString(),
-        });
-      } else if (existing.role !== "broker") {
-        updateAccount(wallet.classicAddress, { role: "broker" });
-      }
-    }
-  } catch (err) {
-    // Ignore error
-  }
-}
-seedBrokerIfMissing();
 
 export { db };
 

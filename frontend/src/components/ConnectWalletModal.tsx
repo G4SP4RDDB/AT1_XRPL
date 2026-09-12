@@ -9,9 +9,10 @@ import type { DbAccount, AccountRole } from '@shared/types'
 interface ConnectWalletModalProps {
   isOpen: boolean
   onClose: () => void
+  onOpenSetupModal?: (address?: string) => void
 }
 
-export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose }) => {
+export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose, onOpenSetupModal }) => {
   const { connectWalletConnect, connectAccount, isConnected } = useWallet()
   const [activeTab, setActiveTab] = useState<'db' | 'create' | 'wc'>('db')
   
@@ -144,19 +145,23 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
     }
   }
 
-  // 1-Click Random Account Creation
+  // 1-Click Random Account Creation (funded on Devnet, setup at connection)
   const handleCreateRandom = async () => {
     setIsCreating(true)
     try {
       const created = await chainClient.createRandomAccount()
       notifyTx({
-        title: 'Compte aléatoire créé !',
-        message: `Adresse ${created.address.slice(0, 8)}... financée avec 1 000 XRP. Définissez son rôle librement ci-dessous.`,
+        title: 'Compte Devnet généré !',
+        message: `Adresse ${created.address.slice(0, 8)}... financée avec 1 000 XRP. Définissez son rôle et profil pour l'enregistrer en base.`,
         type: 'success',
       })
-      await loadAccountsFromDb()
-      setActiveTab('db')
-      handleStartEdit(created)
+      connectAccount({
+        address: created.address,
+        name: created.name,
+        role: 'unassigned',
+      })
+      onClose()
+      onOpenSetupModal?.(created.address)
     } catch (err: any) {
       notifyTx({
         title: 'Échec de la création',
@@ -172,29 +177,41 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
     e.preventDefault()
     setIsCreating(true)
     try {
+      const name = newRole === 'borrower'
+        ? `${newFirstName || 'Emprunteur'} (${newCompany || 'Société'})`
+        : newRole === 'broker'
+        ? `${newFirstName || 'Courtier'} (${newCompany || 'Plateforme'})`
+        : `${newFirstName || 'Investisseur'} (${newCompany || 'Fonds'})`
+
       const created = await chainClient.createAccount({
         role: newRole,
-        name: newRole === 'borrower'
-          ? `${newFirstName || 'Emprunteur'} (${newCompany || 'Société'})`
-          : newRole === 'broker'
-          ? `${newFirstName || 'Courtier'} (${newCompany || 'Plateforme'})`
-          : `${newFirstName || 'Investisseur'} (${newCompany || 'Fonds'})`,
+        name,
+        company: newCompany.trim() || undefined,
+        firstName: newFirstName.trim() || undefined,
+        userRole: newRole === 'borrower' ? 'Directeur Financier (CFO)' : newRole === 'broker' ? 'Structurateur & Risque' : 'Gestionnaire de Portefeuille',
+      })
+
+      // Setup/enregistrement dans la base SQLite à la première connexion / setup
+      await chainClient.updateAccount({
+        address: created.address,
+        role: newRole,
+        name,
         company: newCompany.trim() || undefined,
         firstName: newFirstName.trim() || undefined,
         userRole: newRole === 'borrower' ? 'Directeur Financier (CFO)' : newRole === 'broker' ? 'Structurateur & Risque' : 'Gestionnaire de Portefeuille',
       })
 
       notifyTx({
-        title: `Compte ${newRole === 'borrower' ? 'Emprunteur' : newRole === 'broker' ? 'Courtier' : 'Prêteur'} créé !`,
-        message: `Adresse ${created.address.slice(0, 8)}... financée avec 1 000 XRP via le faucet Devnet.`,
+        title: `Compte ${newRole === 'borrower' ? 'Emprunteur' : newRole === 'broker' ? 'Courtier' : 'Prêteur'} configuré & enregistré !`,
+        message: `Adresse ${created.address.slice(0, 8)}... connectée et enregistrée en base SQLite.`,
         type: 'success',
       })
 
       await loadAccountsFromDb()
       connectAccount({
         address: created.address,
-        name: created.name,
-        role: created.role,
+        name,
+        role: newRole,
       })
       onClose()
     } catch (err: any) {

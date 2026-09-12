@@ -11,7 +11,6 @@ import { NotificationToastContainer } from '@/components/NotificationToast'
 import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
 import { BrokerHub } from '@/components/BrokerHub'
 import { chainClient } from '@/lib/chainClient'
-import { getStoredBorrowerProfile } from '@/lib/borrowerProfile'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
@@ -30,12 +29,10 @@ const MainContent: FC = () => {
       }
 
       if (currentAccount.address) {
-        chainClient.getRoles().then((roles) => {
-          if (roles.borrower && roles.borrower === currentAccount.address) {
-            const profile = getStoredBorrowerProfile(currentAccount.address)
-            if (!profile) {
-              setIsBorrowerModalOpen(true)
-            }
+        chainClient.getAccount(currentAccount.address).then((acc) => {
+          if (!acc) {
+            // Première connexion d'un compte non encore configuré en base -> ouvrir le modal de setup !
+            setIsBorrowerModalOpen(true)
           }
         })
       }
@@ -123,7 +120,11 @@ const MainContent: FC = () => {
         )}
       </main>
 
-      <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
+      <ConnectWalletModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onOpenSetupModal={() => setIsBorrowerModalOpen(true)}
+      />
       <BorrowerOnboardingModal isOpen={isBorrowerModalOpen} onClose={() => setIsBorrowerModalOpen(false)} />
       <NotificationToastContainer />
 

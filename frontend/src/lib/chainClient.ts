@@ -682,6 +682,14 @@ export class ChainBackendClient {
     }
   }
 
+  async getAccount(address: string): Promise<DbAccount | null> {
+    try {
+      return await baseChain.read.getAccount(address)
+    } catch {
+      return null
+    }
+  }
+
   async createAccount(params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) {
     return await baseChain.tx.createAccount(params)
   }

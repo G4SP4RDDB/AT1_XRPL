@@ -29,7 +29,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { currentAccount } = useWallet()
+  const { currentAccount, connectAccount } = useWallet()
   const [accountRole, setAccountRole] = useState<AccountRole>('borrower')
   const [firstName, setFirstName] = useState('')
   const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0])
@@ -77,8 +77,8 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
     setIsSubmitting(true)
 
     try {
-      // 1. Update in SQLite database
-      await chainClient.updateAccount({
+      // 1. Update/insert in SQLite database
+      const updated = await chainClient.updateAccount({
         address: currentAccount.address,
         role: accountRole,
         firstName: firstName.trim() || undefined,
@@ -114,9 +114,16 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
       saveStoredBorrowerProfile(profile)
       onSuccess?.(profile)
 
+      // Update connected wallet in context
+      connectAccount({
+        address: currentAccount.address,
+        name: updated.name,
+        role: accountRole,
+      })
+
       notifyTx({
-        title: 'Profil & Rôle mis à jour',
-        message: `Compte configuré en tant que ${accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : accountRole === 'lender' ? 'Prêteur' : 'Libre'} dans la base SQLite.`,
+        title: 'Compte configuré & enregistré en base !',
+        message: `Rôle ${accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : accountRole === 'lender' ? 'Prêteur' : 'Libre'} enregistré dans la base SQLite locale.`,
         txHash: txHash || undefined,
         type: 'success',
       })

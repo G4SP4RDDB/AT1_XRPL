@@ -301,7 +301,10 @@ export async function depositCover(loanBrokerId: string, amountXrp: string): Pro
   return toReceipt(await submit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(drops) }, broker()));
 }
 
-/** Dynamic account creation funded on Devnet and stored in SQLite DB. */
+/** Dynamic account creation funded on Devnet.
+ *  Registers wallet in memory for immediate use, but DOES NOT insert into SQLite DB yet.
+ *  The account is persisted to DB only upon first connection & setup.
+ */
 export async function createDbAccount(params: {
   role?: AccountRole;
   name?: string;
@@ -310,6 +313,7 @@ export async function createDbAccount(params: {
   userRole?: string;
 }): Promise<DbAccount> {
   const { wallet } = await fundNewAccount();
+  registerWallet(wallet.seed!);
   const role = params.role ?? "unassigned";
   let operatorAddress: string | undefined;
   let operatorSeed: string | undefined;
@@ -343,7 +347,7 @@ export async function createDbAccount(params: {
     createdAt: new Date().toISOString(),
   };
 
-  saveAccount(newAcc);
+  // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
   return sanitizeDbAccount(newAcc);
 }
 
@@ -355,9 +359,13 @@ function sanitizeDbAccount(acc: DbAccount): DbAccount {
   };
 }
 
-/** Instant 1-click creation of a random funded account (1,000 XRP) on Devnet. */
+/** Instant 1-click creation of a random funded account (1,000 XRP) on Devnet.
+ *  Registers wallet in memory, but DOES NOT insert into SQLite DB yet.
+ *  The account is persisted to DB only upon first connection & setup.
+ */
 export async function createRandomAccount(name?: string): Promise<DbAccount> {
   const { wallet } = await fundNewAccount();
+  registerWallet(wallet.seed!);
   const count = listAccounts().length + 1;
   const newAcc: DbAccount = {
     address: wallet.classicAddress,
@@ -367,11 +375,11 @@ export async function createRandomAccount(name?: string): Promise<DbAccount> {
     multisigActive: 0,
     createdAt: new Date().toISOString(),
   };
-  saveAccount(newAcc);
+  // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
   return sanitizeDbAccount(newAcc);
 }
 
-/** Update an account's role and details in SQLite DB. */
+/** Persist or update an account's role and details in SQLite DB at setup time. */
 export async function updateDbAccount(params: {
   address: string;
   role?: AccountRole;
@@ -381,7 +389,17 @@ export async function updateDbAccount(params: {
   userRole?: string;
   multisigActive?: number;
 }): Promise<DbAccount> {
-  const updated = updateAccount(params.address, params);
+  let seed: string | undefined;
+  try {
+    const w = walletFor(params.address);
+    seed = w.seed;
+  } catch {
+    // external wallet without local backend seed
+  }
+  const updated = updateAccount(params.address, {
+    ...params,
+    seed: seed || undefined,
+  });
   return sanitizeDbAccount(updated);
 }
 
