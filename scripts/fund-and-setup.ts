@@ -33,57 +33,24 @@ fs.writeFileSync(
 );
 console.log("✓ Updated .enforcer.env with broker and enforcer credentials.");
 
-// 3. Initialize Demo Clients in SQLite DB if DB is empty
+// 3. Initialize Random Accounts in SQLite DB if DB is empty
 if (listAccounts().length === 0) {
-  console.log("\n📦 Initializing sample borrower and lenders in SQLite database (data/accounts.db)...");
+  console.log("\n📦 Initializing random accounts in SQLite database (data/accounts.db)...");
   
-  // Sample Borrower + Operator Key
-  const { wallet: borrowerWallet } = await fundNewAccount();
-  const borrowerOp = Wallet.generate();
-  saveAccount({
-    address: borrowerWallet.classicAddress,
-    role: "borrower",
-    name: "Borrower (Corporate Issuer)",
-    seed: borrowerWallet.seed!,
-    company: "AT1 Corporate Issuer",
-    firstName: "Alexandre",
-    userRole: "Directeur Financier (CFO)",
-    operatorAddress: borrowerOp.classicAddress,
-    operatorSeed: borrowerOp.seed,
-    multisigActive: 0,
-    createdAt: new Date().toISOString(),
-  });
-  console.log(`✓ Sample Borrower saved to SQLite: ${borrowerWallet.classicAddress} (Operator: ${borrowerOp.classicAddress})`);
-
-  // Sample Lender 1
-  const { wallet: lender1Wallet } = await fundNewAccount();
-  saveAccount({
-    address: lender1Wallet.classicAddress,
-    role: "lender",
-    name: "Lender 1 (Primary Investor)",
-    seed: lender1Wallet.seed!,
-    company: "Alpha Asset Management",
-    firstName: "Sophie",
-    userRole: "Head of Fixed Income",
-    multisigActive: 0,
-    createdAt: new Date().toISOString(),
-  });
-  console.log(`✓ Sample Lender 1 saved to SQLite: ${lender1Wallet.classicAddress}`);
-
-  // Sample Lender 2
-  const { wallet: lender2Wallet } = await fundNewAccount();
-  saveAccount({
-    address: lender2Wallet.classicAddress,
-    role: "lender",
-    name: "Lender 2 (Secondary Investor)",
-    seed: lender2Wallet.seed!,
-    company: "Omega Yield Fund",
-    firstName: "Marc",
-    userRole: "Portfolio Manager",
-    multisigActive: 0,
-    createdAt: new Date().toISOString(),
-  });
-  console.log(`✓ Sample Lender 2 saved to SQLite: ${lender2Wallet.classicAddress}`);
+  for (let i = 1; i <= 3; i++) {
+    const { wallet, balanceXrp } = await fundNewAccount();
+    const name = `Compte Aléatoire #${i}`;
+    saveAccount({
+      address: wallet.classicAddress,
+      role: "unassigned",
+      name,
+      seed: wallet.seed!,
+      multisigActive: 0,
+      createdAt: new Date().toISOString(),
+    });
+    console.log(`✓ ${name} généré et financé (${balanceXrp} XRP) : ${wallet.classicAddress} (Rôle: non assigné)`);
+  }
+  console.log("👉 Gérez personnellement le rôle (Emprunteur / Prêteur) de chaque compte depuis le frontend ou le profil !");
 }
 
 console.log("\n⏳ Waiting for broker accounts to validate on the XRP Ledger...");

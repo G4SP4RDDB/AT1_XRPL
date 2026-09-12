@@ -100,7 +100,7 @@ export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan
 
 export interface DbAccount {
   address: Address;
-  role: "borrower" | "lender";
+  role: "borrower" | "lender" | "unassigned";
   name: string;
   seed: string;
   company?: string;

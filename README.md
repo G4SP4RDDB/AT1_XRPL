@@ -53,11 +53,11 @@ Tous les emprunteurs et investisseurs sont créés dynamiquement ou connectés v
 | Champ | Type | Description |
 |---|---|---|
 | `address` | `TEXT PRIMARY KEY` | Adresse XRPL classic (`r...`) du compte client. |
-| `role` | `TEXT` | Rôle du client : `'borrower'` ou `'lender'`. |
-| `name` | `TEXT` | Nom d'affichage complet du compte. |
+| `role` | `TEXT` | Rôle du client : `'borrower'`, `'lender'`, ou `'unassigned'` (rôle libre). |
+| `name` | `TEXT` | Nom d'affichage complet du compte (ex: *Compte Aléatoire #1*). |
 | `seed` | `TEXT` | Clé secrète de test sur le Devnet (générée par le faucet). |
-| `firstName` | `TEXT` | Prénom du représentant (ex: *Alexandre*, *Sophie*). |
-| `userRole` | `TEXT` | Titre du représentant (ex: *Directeur Financier (CFO)*, *Portfolio Manager*). |
+| `firstName` | `TEXT` | Prénom personnalisé du représentant. |
+| `userRole` | `TEXT` | Titre métier personnalisé (ex: *Directeur Financier (CFO)*, *Portfolio Manager*). |
 | `company` | `TEXT` | Entité morale (ex: *AT1 Corporate Issuer SA*, *Alpha Asset Management*). |
 | `operatorAddress` | `TEXT` | Adresse de la clé signataire opérateur (`borrowerOp`) dédiée à cet emprunteur. |
 | `operatorSeed` | `TEXT` | Clé secrète de l'opérateur pour signer les remboursements. |
@@ -88,11 +88,12 @@ Une exigence fondamentale de l'obligation AT1 est que **le verrou de maturité (
   4. La co-signature n'est produite que lorsque la preuve on-chain de l'échéance temporelle est satisfaite.
 - **En production (Loaded Primitive)** : Dans un déploiement institutionnel, ce daemon est déployé dans une enclave matérielle confidentielle (**AWS Nitro Enclaves, HSM ou TEE**), rendant l'extraction de clé ou le forçage de signature cryptographiquement impossible même avec un accès `root` au serveur.
 
-### 3.5 Onboarding Interactif & Activation du Multisig à la Demande
-Le multisig n'est plus automatisé en arrière-plan à la création :
-- Lorsque le Directeur Financier se connecte sur l'interface, il ouvre la modale de profil : il renseigne son prénom, son rôle et sa société.
-- Il clique sur **"Enregistrer & Activer le Multisig"** : la transaction `SignerListSet` (Quorum 2) et `AccountSet` (`asfDisableMaster`) est soumise on-chain.
-- Une notification toast s'affiche avec le hash validé de la transaction, et un badge `2/2 MULTISIG` apparaît sur son profil dans la barre de navigation.
+### 3.5 Création de Comptes Aléatoires & Attribution Personnelle des Rôles
+Lors de la création de comptes (via le script CLI `npm run create-accounts N`, l'initialisation `npm run fund:setup`, ou le bouton 1-clic dans l'UI), **le système génère de simples comptes aléatoires financés à 1 000 XRP sans aucun rôle pré-défini (`unassigned`)** :
+- **Liberté totale d'attribution** : L'utilisateur gère personnellement et souverainement le rôle de chaque compte :
+  - Dans l'onglet **"Comptes en Base"**, chaque compte dispose d'un bouton **`⚙️ Rôle`** permettant de basculer son rôle entre **🏢 Emprunteur**, **💰 Prêteur** ou **⚪ Non assigné** et de renseigner son identité (prénom, titre, société).
+  - Une fois connecté, un simple clic sur le profil dans la barre de navigation permet de modifier son rôle en direct.
+  - Si un compte est assigné au rôle **Emprunteur**, une clé signataire opérateur dédiée (`borrowerOp`) lui est automatiquement allouée, et il peut activer à la demande la gouvernance 2-of-2 multisig (`SignerListSet` + `asfDisableMaster`) avec validation on-chain.
 
 ### 3.6 Comment Fonctionne la Liquidation & l'Absorption de Pertes (Write-Down)
 Sous XLS-66, si un emprunteur n'honore pas un paiement de coupon à échéance (`now > NextPaymentDueDate`), le Broker peut absorber la perte via son capital de première perte :

@@ -18,6 +18,8 @@ const PRESET_ROLES = [
   'Trésorier Corporate',
   'Directeur Général (CEO)',
   'Head of Debt Capital Markets',
+  'Portfolio Manager (Prêteur)',
+  'Head of Fixed Income (Prêteur)',
   'Autre rôle...',
 ]
 
@@ -27,33 +29,34 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   onSuccess,
 }) => {
   const { currentAccount } = useWallet()
+  const [accountRole, setAccountRole] = useState<'borrower' | 'lender' | 'unassigned'>('borrower')
   const [firstName, setFirstName] = useState('')
   const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0])
   const [customRole, setCustomRole] = useState('')
-  const [company, setCompany] = useState('AT1 Corporate Issuer')
+  const [company, setCompany] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAlreadyMultisig, setIsAlreadyMultisig] = useState(false)
 
-  // Load existing profile or on-chain status
+  // Load existing profile from SQLite DB and on-chain status
   useEffect(() => {
     if (!isOpen || !currentAccount?.address) return
 
-    const saved = localStorage.getItem(`at1_borrower_profile_${currentAccount.address}`)
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as BorrowerProfile
-        setFirstName(parsed.firstName || '')
-        if (PRESET_ROLES.includes(parsed.role)) {
-          setSelectedRole(parsed.role)
-        } else {
-          setSelectedRole('Autre rôle...')
-          setCustomRole(parsed.role || '')
+    chainClient.listAccounts().then((accounts) => {
+      const hit = accounts.find((a) => a.address === currentAccount.address)
+      if (hit) {
+        setAccountRole(hit.role || 'unassigned')
+        if (hit.firstName) setFirstName(hit.firstName)
+        if (hit.company) setCompany(hit.company)
+        if (hit.userRole) {
+          if (PRESET_ROLES.includes(hit.userRole)) {
+            setSelectedRole(hit.userRole)
+          } else {
+            setSelectedRole('Autre rôle...')
+            setCustomRole(hit.userRole)
+          }
         }
-        setCompany(parsed.company || 'AT1 Corporate Issuer')
-      } catch {
-        // ignore
       }
-    }
+    })
 
     // Check on-chain masterDisabled status
     chainClient.isMasterDisabled(currentAccount.address).then((disabled) => {
@@ -63,44 +66,53 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
 
   if (!isOpen) return null
 
-  const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || 'Emprunteur') : selectedRole
+  const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || (accountRole === 'borrower' ? 'Emprunteur' : 'Investisseur')) : selectedRole
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!currentAccount?.address) return
-    if (!firstName.trim()) {
-      notifyTx({
-        title: 'Prénom requis',
-        message: 'Veuillez saisir votre prénom pour enregistrer votre profil.',
-        type: 'error',
-      })
-      return
-    }
 
     setIsSubmitting(true)
 
     try {
-      // Execute on-chain multisig configuration
-      const res = await chainClient.setupBorrowerMultisig(currentAccount.address)
-      if (!res.success && res.error) {
-        throw new Error(res.error)
+      // 1. Update in SQLite database
+      await chainClient.updateAccount({
+        address: currentAccount.address,
+        role: accountRole,
+        firstName: firstName.trim() || undefined,
+        userRole: effectiveRole,
+        company: company.trim() || undefined,
+        name: firstName.trim()
+          ? `${firstName.trim()} (${company.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Compte')})`
+          : accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
+      })
+
+      // 2. If borrower and not yet multisig, trigger multisig configuration
+      let txHash: string | undefined
+      if (accountRole === 'borrower' && !isAlreadyMultisig) {
+        try {
+          const res = await chainClient.setupBorrowerMultisig(currentAccount.address)
+          if (res.success) txHash = res.txHash
+        } catch (mErr) {
+          console.warn('Multisig activation deferred or failed:', mErr)
+        }
       }
 
       const profile: BorrowerProfile = {
-        firstName: firstName.trim(),
+        firstName: firstName.trim() || (accountRole === 'borrower' ? 'Emprunteur' : 'Investisseur'),
         role: effectiveRole,
-        company: company.trim(),
+        company: company.trim() || (accountRole === 'borrower' ? 'Corporate Issuer' : 'Asset Management'),
         address: currentAccount.address,
-        multisigActive: true,
+        multisigActive: isAlreadyMultisig || (accountRole === 'borrower'),
         configuredAt: new Date().toISOString(),
       }
 
       saveStoredBorrowerProfile(profile)
 
       notifyTx({
-        title: 'Profil Emprunteur & Multisig Configuré',
-        message: `Bienvenue ${profile.firstName} (${profile.role}) chez ${profile.company}. Sécurité 2-sur-2 active !`,
-        txHash: res.txHash || undefined,
+        title: 'Rôle & Profil Enregistrés',
+        message: `Compte configuré en tant que ${accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'lender' ? 'Prêteur' : 'Libre'} dans la base SQLite.`,
+        txHash: txHash || undefined,
         type: 'success',
       })
 
@@ -131,11 +143,11 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
           <div>
             <h3 className="card-title" style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>🏢</span>
-              <span>Profil Emprunteur & Sécurité Multisig</span>
+              <span>⚙️</span>
+              <span>Gestion Personnelle du Rôle & Profil</span>
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Configuration personnalisée de l'émetteur obligataire AT1
+              Vous contrôlez librement le rôle (Emprunteur / Prêteur) de ce compte
             </span>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -144,26 +156,61 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Sélection du Rôle */}
+          <div className="form-group" style={{ marginBottom: '0.25rem' }}>
+            <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+              Rôle attribué à ce compte <span style={{ color: 'var(--accent-red)' }}>*</span>
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${accountRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAccountRole('borrower')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+              >
+                <span style={{ fontSize: '1.1rem' }}>🏢</span>
+                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Emprunteur</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${accountRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAccountRole('lender')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+              >
+                <span style={{ fontSize: '1.1rem' }}>💰</span>
+                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Prêteur</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${accountRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setAccountRole('unassigned')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.6rem 0.4rem', gap: '0.2rem' }}
+              >
+                <span style={{ fontSize: '1.1rem' }}>⚪</span>
+                <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Non assigné</span>
+              </button>
+            </div>
+          </div>
+
           {/* Prénom */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-              Prénom du Représentant <span style={{ color: 'var(--accent-red)' }}>*</span>
+              Prénom / Identifiant
             </label>
             <input
               type="text"
               className="form-input"
-              placeholder="ex: Alexandre, Marc, Sophie..."
+              placeholder="ex: Alexandre, Marc, Sophie, ou libre..."
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              required
               autoFocus
             />
           </div>
 
-          {/* Rôle */}
+          {/* Rôle métier */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-              Rôle / Titre dans l'entreprise <span style={{ color: 'var(--accent-red)' }}>*</span>
+              Titre / Rôle métier
             </label>
             <select
               className="form-input"
@@ -186,7 +233,6 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
                 style={{ marginTop: '0.5rem' }}
                 value={customRole}
                 onChange={(e) => setCustomRole(e.target.value)}
-                required
               />
             )}
           </div>
@@ -194,42 +240,43 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
           {/* Société */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-              Société ou Entité Émettrice
+              Société ou Entité
             </label>
             <input
               type="text"
               className="form-input"
-              placeholder="ex: AT1 Corporate Issuer, Tech FinCorp..."
+              placeholder={accountRole === 'borrower' ? 'ex: AT1 Corporate Issuer' : 'ex: Fixed Income Fund'}
               value={company}
               onChange={(e) => setCompany(e.target.value)}
             />
           </div>
 
-          {/* Encadré d'explication Multisig */}
-          <div
-            style={{
-              background: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              borderLeft: '4px solid var(--accent-blue)',
-              borderRadius: '8px',
-              padding: '0.85rem 1rem',
-              fontSize: '0.8rem',
-              lineHeight: 1.45,
-            }}
-          >
-            <div style={{ fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '0.25rem' }}>
-              🛡️ Gouvernance Multisig 2-sur-2 (XLS-65 / XLS-66)
-            </div>
-            <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-              En soumettant ce formulaire, votre compte emprunteur configure la règle{' '}
-              <code>SignerListSet</code> (Quorum 2) avec le <strong>Call-Date Enforcer</strong> et désactive sa clé maître (<code>asfDisableMaster</code>). Le remboursement anticipé unilatéral sera ainsi strictement bloqué avant la date convenue.
-            </p>
-            {isAlreadyMultisig && (
-              <div style={{ marginTop: '0.4rem', color: 'var(--accent-green)', fontWeight: 600 }}>
-                ✓ Le Multisig 2-sur-2 est déjà activé on-chain sur cette adresse.
+          {/* Encadré d'explication Multisig si Emprunteur */}
+          {accountRole === 'borrower' && (
+            <div
+              style={{
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border-subtle)',
+                borderLeft: '4px solid var(--accent-blue)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                fontSize: '0.8rem',
+                lineHeight: 1.45,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '0.25rem' }}>
+                🛡️ Gouvernance Multisig 2-sur-2 (XLS-65 / XLS-66)
               </div>
-            )}
-          </div>
+              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                Pour un emprunteur, la règle <code>SignerListSet</code> (Quorum 2) avec l'Enforcer logiciel et la désactivation de clé maître (<code>asfDisableMaster</code>) garantit le respect de la Call Date.
+              </p>
+              {isAlreadyMultisig && (
+                <div style={{ marginTop: '0.4rem', color: 'var(--accent-green)', fontWeight: 600 }}>
+                  ✓ Le Multisig 2-sur-2 est déjà activé on-chain sur cette adresse.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Bouton de validation */}
           <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.75rem' }}>
@@ -251,12 +298,12 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               {isSubmitting ? (
                 <>
                   <span>⏳</span>
-                  <span>Activation on-chain...</span>
+                  <span>Enregistrement...</span>
                 </>
               ) : (
                 <>
                   <span>✓</span>
-                  <span>Enregistrer & Activer le Multisig</span>
+                  <span>Enregistrer les Modifications</span>
                 </>
               )}
             </button>

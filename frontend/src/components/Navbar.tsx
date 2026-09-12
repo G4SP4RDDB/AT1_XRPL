@@ -90,10 +90,10 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowe
                   className="btn btn-secondary btn-sm"
                   onClick={onOpenBorrowerProfile}
                   style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                  title="Renseigner mon profil emprunteur (Prénom & Rôle) et activer le Multisig"
+                  title="Définir personnellement le rôle (Emprunteur / Prêteur) de ce compte"
                 >
-                  <span>🏢</span>
-                  <span>Profil Emprunteur</span>
+                  <span>⚙️</span>
+                  <span>Gérer le Rôle</span>
                 </button>
               )}
 

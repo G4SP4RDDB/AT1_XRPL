@@ -19,10 +19,17 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
   const [dbAccounts, setDbAccounts] = useState<DbAccount[]>([])
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
 
+  // In-line role editing state
+  const [editingAddress, setEditingAddress] = useState<string | null>(null)
+  const [editRole, setEditRole] = useState<'borrower' | 'lender' | 'unassigned'>('unassigned')
+  const [editFirstName, setEditFirstName] = useState('')
+  const [editUserRole, setEditUserRole] = useState('')
+  const [editCompany, setEditCompany] = useState('')
+  const [isSavingRole, setIsSavingRole] = useState(false)
+
   // Account creation state
   const [newRole, setNewRole] = useState<'borrower' | 'lender'>('borrower')
   const [newFirstName, setNewFirstName] = useState('')
-  const [newUserRole, setNewUserRole] = useState('Directeur Financier (CFO)')
   const [newCompany, setNewCompany] = useState('')
   const [isCreating, setIsCreating] = useState(false)
 
@@ -95,6 +102,71 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
     }
   }
 
+  const handleStartEdit = (acc: DbAccount) => {
+    setEditingAddress(acc.address)
+    setEditRole(acc.role)
+    setEditFirstName(acc.firstName || '')
+    setEditUserRole(acc.userRole || '')
+    setEditCompany(acc.company || '')
+  }
+
+  const handleSaveRole = async (address: string) => {
+    setIsSavingRole(true)
+    try {
+      const updated = await chainClient.updateAccount({
+        address,
+        role: editRole,
+        firstName: editFirstName.trim() || undefined,
+        userRole: editUserRole.trim() || undefined,
+        company: editCompany.trim() || undefined,
+        name: editFirstName.trim()
+          ? `${editFirstName.trim()} (${editCompany.trim() || (editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Compte')})`
+          : editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Compte Aléatoire',
+      })
+
+      notifyTx({
+        title: 'Rôle & Profil mis à jour',
+        message: `Le compte ${updated.address.slice(0, 8)}... est maintenant configuré en tant que ${editRole === 'borrower' ? 'Emprunteur' : editRole === 'lender' ? 'Prêteur' : 'Non assigné'}.`,
+        type: 'success',
+      })
+
+      await loadAccountsFromDb()
+      setEditingAddress(null)
+    } catch (err: any) {
+      notifyTx({
+        title: 'Erreur mise à jour',
+        message: err.message,
+        type: 'error',
+      })
+    } finally {
+      setIsSavingRole(false)
+    }
+  }
+
+  // 1-Click Random Account Creation
+  const handleCreateRandom = async () => {
+    setIsCreating(true)
+    try {
+      const created = await chainClient.createRandomAccount()
+      notifyTx({
+        title: 'Compte aléatoire créé !',
+        message: `Adresse ${created.address.slice(0, 8)}... financée avec 1 000 XRP. Définissez son rôle librement ci-dessous.`,
+        type: 'success',
+      })
+      await loadAccountsFromDb()
+      setActiveTab('db')
+      handleStartEdit(created)
+    } catch (err: any) {
+      notifyTx({
+        title: 'Échec de la création',
+        message: err.message,
+        type: 'error',
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsCreating(true)
@@ -104,7 +176,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
         name: newRole === 'borrower' ? `${newFirstName || 'Emprunteur'} (${newCompany || 'Société'})` : `${newFirstName || 'Investisseur'} (${newCompany || 'Fonds'})`,
         company: newCompany.trim() || undefined,
         firstName: newFirstName.trim() || undefined,
-        userRole: newRole === 'borrower' ? newUserRole : 'Gestionnaire de Portefeuille',
+        userRole: newRole === 'borrower' ? 'Directeur Financier (CFO)' : 'Gestionnaire de Portefeuille',
       })
 
       notifyTx({
@@ -137,7 +209,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
       <div
         className="modal-content"
         style={{
-          maxWidth: '580px',
+          maxWidth: '620px',
           padding: '2rem',
           borderRadius: '16px',
         }}
@@ -146,10 +218,10 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
         <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
           <div>
             <h3 className="card-title" style={{ fontSize: '1.25rem', margin: 0 }}>
-              Sélection & Connexion de Compte
+              Sélection & Gestion des Comptes
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              XRPL Custom Devnet · Les clés utilisateurs sont stockées en DB, seul le Broker est pré-défini
+              XRPL Custom Devnet · Les clés sont stockées en DB locale · Vous gérez librement le rôle de chaque compte
             </span>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -197,75 +269,191 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                 <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📭</div>
                 <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Aucun compte enregistré pour le moment</div>
                 <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                  Créez un nouvel emprunteur ou prêteur financé à 1 000 XRP en 1 clic.
+                  Générez un compte aléatoire financé à 1 000 XRP en 1 clic et attribuez-lui son rôle.
                 </div>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => setActiveTab('create')}>
-                  ⚡ Créer mon premier compte
+                <button type="button" className="btn btn-primary btn-sm" onClick={handleCreateRandom} disabled={isCreating}>
+                  ⚡ Créer un Compte Aléatoire (1 000 XRP)
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '380px', overflowY: 'auto', paddingRight: '4px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                 {dbAccounts.map((acc) => {
+                  const isEditing = editingAddress === acc.address
                   const isBorrower = acc.role === 'borrower'
+                  const isLender = acc.role === 'lender'
+
                   return (
                     <div
                       key={acc.address}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
                         padding: '0.85rem 1rem',
                         background: 'var(--bg-surface-elevated)',
-                        border: '1px solid var(--border-subtle)',
+                        border: isEditing ? '1px solid var(--accent-blue)' : '1px solid var(--border-subtle)',
                         borderRadius: '10px',
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                          <span
-                            style={{
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              padding: '2px 7px',
-                              borderRadius: '6px',
-                              background: isBorrower ? 'rgba(37, 99, 235, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                              color: isBorrower ? 'var(--accent-blue)' : 'var(--accent-green)',
-                            }}
-                          >
-                            {isBorrower ? '🏢 EMPRUNTEUR' : '💰 PRÊTEUR'}
-                          </span>
-                          <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                            {acc.firstName ? `${acc.firstName} ${acc.userRole ? `(${acc.userRole})` : ''}` : acc.name}
-                          </span>
-                          {acc.multisigActive === 1 && (
-                            <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                              2/2 MULTISIG
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '2px 7px',
+                                borderRadius: '6px',
+                                background: isBorrower
+                                  ? 'rgba(37, 99, 235, 0.15)'
+                                  : isLender
+                                  ? 'rgba(16, 185, 129, 0.15)'
+                                  : 'rgba(100, 116, 139, 0.15)',
+                                color: isBorrower
+                                  ? 'var(--accent-blue)'
+                                  : isLender
+                                  ? 'var(--accent-green)'
+                                  : 'var(--text-muted)',
+                              }}
+                            >
+                              {isBorrower ? '🏢 EMPRUNTEUR' : isLender ? '💰 PRÊTEUR' : '⚪ NON ASSIGNÉ'}
                             </span>
+                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                              {acc.firstName ? `${acc.firstName} ${acc.userRole ? `(${acc.userRole})` : ''}` : acc.name}
+                            </span>
+                            {acc.multisigActive === 1 && (
+                              <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                                2/2 MULTISIG
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                            {acc.address}
+                          </div>
+                          {acc.company && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                              Société : <strong>{acc.company}</strong>
+                            </div>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                          {acc.address}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontWeight: 500, fontSize: '0.78rem' }}
+                            onClick={() => (isEditing ? setEditingAddress(null) : handleStartEdit(acc))}
+                            title="Changer le rôle et les informations de ce compte"
+                          >
+                            {isEditing ? 'Fermer' : '⚙️ Rôle'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            style={{ fontWeight: 600, fontSize: '0.8rem' }}
+                            onClick={() => {
+                              connectAccount({
+                                address: acc.address,
+                                name: acc.name,
+                              })
+                            }}
+                          >
+                            Connecter →
+                          </button>
                         </div>
-                        {acc.company && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                            Société : <strong>{acc.company}</strong>
-                          </div>
-                        )}
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ fontWeight: 600, fontSize: '0.8rem' }}
-                        onClick={() => {
-                          connectAccount({
-                            address: acc.address,
-                            name: acc.name,
-                          })
-                        }}
-                      >
-                        Connecter →
-                      </button>
+
+                      {/* INLINE ROLE & PROFILE MANAGER */}
+                      {isEditing && (
+                        <div
+                          style={{
+                            marginTop: '0.85rem',
+                            paddingTop: '0.85rem',
+                            borderTop: '1px solid var(--border-subtle)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                          }}
+                        >
+                          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            Définir personnellement le rôle de ce compte :
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${editRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setEditRole('borrower')}
+                              style={{ fontSize: '0.75rem', padding: '0.4rem' }}
+                            >
+                              🏢 Emprunteur
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${editRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setEditRole('lender')}
+                              style={{ fontSize: '0.75rem', padding: '0.4rem' }}
+                            >
+                              💰 Prêteur
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${editRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
+                              onClick={() => setEditRole('unassigned')}
+                              style={{ fontSize: '0.75rem', padding: '0.4rem' }}
+                            >
+                              ⚪ Libre / Non assigné
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Prénom du représentant..."
+                              style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                              value={editFirstName}
+                              onChange={(e) => setEditFirstName(e.target.value)}
+                            />
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Société / Entité..."
+                              style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                              value={editCompany}
+                              onChange={(e) => setEditCompany(e.target.value)}
+                            />
+                          </div>
+
+                          {editRole === 'borrower' && (
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Titre (ex: CFO, Trésorier)..."
+                              style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                              value={editUserRole}
+                              onChange={(e) => setEditUserRole(e.target.value)}
+                            />
+                          )}
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setEditingAddress(null)}
+                              style={{ fontSize: '0.75rem' }}
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={isSavingRole}
+                              onClick={() => handleSaveRole(acc.address)}
+                              style={{ fontSize: '0.75rem', fontWeight: 600 }}
+                            >
+                              {isSavingRole ? 'Enregistrement...' : '✓ Valider ce rôle'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -276,99 +464,111 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
 
         {/* CONTENU ONGLET 2: CREER NOUVEAU COMPTE */}
         {activeTab === 'create' && (
-          <form onSubmit={handleCreateAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Type de profil sur la plateforme
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <button
-                  type="button"
-                  className={`btn ${newRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setNewRole('borrower')}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.75rem', gap: '0.25rem' }}
-                >
-                  <span style={{ fontSize: '1.25rem' }}>🏢</span>
-                  <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Emprunteur</span>
-                  <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>Émetteur AT1 · Clé Opérateur</span>
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${newRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setNewRole('lender')}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.75rem', gap: '0.25rem' }}
-                >
-                  <span style={{ fontSize: '1.25rem' }}>💰</span>
-                  <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>Prêteur / Investisseur</span>
-                  <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>Allocation & Retrait Yield</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Prénom du Représentant <span style={{ color: 'var(--accent-red)' }}>*</span>
-              </label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="ex: Alexandre, Marc, Sophie..."
-                value={newFirstName}
-                onChange={(e) => setNewFirstName(e.target.value)}
-                required
-              />
-            </div>
-
-            {newRole === 'borrower' && (
-              <div className="form-group">
-                <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                  Rôle / Titre
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="ex: Directeur Financier (CFO), Trésorier..."
-                  value={newUserRole}
-                  onChange={(e) => setNewUserRole(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div className="form-group">
-              <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                Entité / Société
-              </label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder={newRole === 'borrower' ? 'ex: AT1 Capital Corp' : 'ex: Fixed Income Fund'}
-                value={newCompany}
-                onChange={(e) => setNewCompany(e.target.value)}
-              />
-            </div>
-
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* OPTION 1: CRÉER UN COMPTE ALÉATOIRE (1 CLIC) */}
             <div
               style={{
-                background: 'var(--bg-surface-elevated)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                padding: '0.75rem 1rem',
-                fontSize: '0.78rem',
-                color: 'var(--text-secondary)',
+                padding: '1.25rem',
+                background: 'rgba(37, 99, 235, 0.08)',
+                borderRadius: '12px',
+                border: '1px solid rgba(37, 99, 235, 0.25)',
               }}
             >
-              💡 Le compte recevra <strong>1 000 XRP</strong> immédiatement depuis le robinet Devnet et sera enregistré dans la base de données locale du service.
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span>⚡</span>
+                    <span>Créer un Compte Aléatoire (1 000 XRP)</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '3px', lineHeight: 1.4 }}>
+                    Financé instantanément depuis le Devnet sans aucun rôle pré-défini. Vous gérez son rôle personnellement.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleCreateRandom}
+                  disabled={isCreating}
+                  style={{ whiteSpace: 'nowrap', fontWeight: 600, padding: '0.65rem 1.25rem' }}
+                >
+                  {isCreating ? '⏳ Création...' : 'Générer en 1 clic →'}
+                </button>
+              </div>
             </div>
 
-            <button
-              type="submit"
-              className="btn btn-primary btn-block"
-              disabled={isCreating}
-              style={{ padding: '0.75rem', fontWeight: 600, marginTop: '0.5rem' }}
-            >
-              {isCreating ? '⏳ Création & Financement du compte on-chain...' : `✓ Créer le compte ${newRole === 'borrower' ? 'Emprunteur' : 'Prêteur'}`}
-            </button>
-          </form>
+            <div style={{ textAlign: 'center', position: 'relative' }}>
+              <div style={{ borderTop: '1px solid var(--border-subtle)' }} />
+              <span style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', background: '#fff', padding: '0 10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                OU PRÉ-CONFIGURER À LA CRÉATION
+              </span>
+            </div>
+
+            {/* OPTION 2: FORMULAIRE PERSONNALISÉ */}
+            <form onSubmit={handleCreateAccount} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                  Rôle initial
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${newRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setNewRole('borrower')}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.5rem' }}
+                  >
+                    <span>🏢</span>
+                    <span style={{ fontWeight: 600 }}>Emprunteur</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${newRole === 'lender' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setNewRole('lender')}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: '0.5rem' }}
+                  >
+                    <span>💰</span>
+                    <span style={{ fontWeight: 600 }}>Prêteur</span>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                    Prénom <span style={{ color: 'var(--accent-red)' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="ex: Alexandre, Sophie..."
+                    value={newFirstName}
+                    onChange={(e) => setNewFirstName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                    Société / Entité
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="ex: AT1 Capital Corp"
+                    value={newCompany}
+                    onChange={(e) => setNewCompany(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-secondary btn-block"
+                disabled={isCreating}
+                style={{ padding: '0.65rem', fontWeight: 600, marginTop: '0.25rem' }}
+              >
+                {isCreating ? '⏳ Création on-chain...' : `Créer le compte ${newRole === 'borrower' ? 'Emprunteur' : 'Prêteur'}`}
+              </button>
+            </form>
+          </div>
         )}
 
         {/* CONTENU ONGLET 3: WALLETCONNECT */}

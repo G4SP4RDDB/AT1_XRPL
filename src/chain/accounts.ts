@@ -81,29 +81,40 @@ export function loadAccounts(): Record<Role, Wallet> {
   // Check optional .env overrides or resolve from SQLite DB
   const dbBorrowers = listAccounts("borrower");
   const dbLenders = listAccounts("lender");
+  const allDbAccounts = listAccounts();
 
   if (env.BORROWER_SEED) {
     out.borrower = Wallet.fromSeed(env.BORROWER_SEED);
   } else if (dbBorrowers[0]?.seed) {
     out.borrower = Wallet.fromSeed(dbBorrowers[0].seed);
+  } else if (allDbAccounts[0]?.seed) {
+    out.borrower = Wallet.fromSeed(allDbAccounts[0].seed);
   }
 
   if (env.BORROWEROP_SEED) {
     out.borrowerOp = Wallet.fromSeed(env.BORROWEROP_SEED);
   } else if (dbBorrowers[0]?.operatorSeed) {
     out.borrowerOp = Wallet.fromSeed(dbBorrowers[0].operatorSeed);
+  } else if (allDbAccounts[0]?.operatorSeed) {
+    out.borrowerOp = Wallet.fromSeed(allDbAccounts[0].operatorSeed);
+  } else if (out.borrower) {
+    out.borrowerOp = Wallet.generate();
   }
 
   if (env.LENDER1_SEED) {
     out.lender1 = Wallet.fromSeed(env.LENDER1_SEED);
   } else if (dbLenders[0]?.seed) {
     out.lender1 = Wallet.fromSeed(dbLenders[0].seed);
+  } else if (allDbAccounts[1]?.seed) {
+    out.lender1 = Wallet.fromSeed(allDbAccounts[1].seed);
   }
 
   if (env.LENDER2_SEED) {
     out.lender2 = Wallet.fromSeed(env.LENDER2_SEED);
   } else if (dbLenders[1]?.seed) {
     out.lender2 = Wallet.fromSeed(dbLenders[1].seed);
+  } else if (allDbAccounts[2]?.seed) {
+    out.lender2 = Wallet.fromSeed(allDbAccounts[2].seed);
   }
 
   return out;

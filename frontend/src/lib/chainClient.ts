@@ -613,7 +613,7 @@ export class ChainBackendClient {
     }
   }
 
-  async listAccounts(role?: 'borrower' | 'lender') {
+  async listAccounts(role?: 'borrower' | 'lender' | 'unassigned') {
     try {
       return await baseChain.read.listAccounts(role)
     } catch {
@@ -621,8 +621,16 @@ export class ChainBackendClient {
     }
   }
 
-  async createAccount(params: { role: 'borrower' | 'lender'; name: string; company?: string; firstName?: string; userRole?: string }) {
+  async createAccount(params: { role?: 'borrower' | 'lender' | 'unassigned'; name?: string; company?: string; firstName?: string; userRole?: string }) {
     return await baseChain.tx.createAccount(params)
+  }
+
+  async createRandomAccount(name?: string) {
+    return await baseChain.tx.createRandomAccount(name)
+  }
+
+  async updateAccount(params: { address: string; role?: 'borrower' | 'lender' | 'unassigned'; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) {
+    return await baseChain.tx.updateAccount(params)
   }
 }
 

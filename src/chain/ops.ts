@@ -249,28 +249,30 @@ export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<T
   return toReceipt(dm);
 }
 
-/** Dynamic account creation (borrower or lender) funded on Devnet and stored in SQLite DB. */
+/** Dynamic account creation funded on Devnet and stored in SQLite DB. */
 export async function createDbAccount(params: {
-  role: "borrower" | "lender";
-  name: string;
+  role?: "borrower" | "lender" | "unassigned";
+  name?: string;
   company?: string;
   firstName?: string;
   userRole?: string;
 }): Promise<DbAccount> {
   const { wallet } = await fundNewAccount();
+  const role = params.role ?? "unassigned";
   let operatorAddress: string | undefined;
   let operatorSeed: string | undefined;
 
-  if (params.role === "borrower") {
+  if (role === "borrower") {
     const opWallet = Wallet.generate();
     operatorAddress = opWallet.classicAddress;
     operatorSeed = opWallet.seed;
   }
 
+  const count = listAccounts().length + 1;
   const newAcc: DbAccount = {
     address: wallet.classicAddress,
-    role: params.role,
-    name: params.name || (params.role === "borrower" ? "New Corporate Issuer" : "New Institutional Investor"),
+    role,
+    name: params.name || (role === "borrower" ? "Emprunteur" : role === "lender" ? "Prêteur" : `Compte Aléatoire #${count}`),
     seed: wallet.seed!,
     company: params.company,
     firstName: params.firstName,
@@ -283,6 +285,35 @@ export async function createDbAccount(params: {
 
   saveAccount(newAcc);
   return newAcc;
+}
+
+/** Instant 1-click creation of a random funded account (1,000 XRP) on Devnet. */
+export async function createRandomAccount(name?: string): Promise<DbAccount> {
+  const { wallet } = await fundNewAccount();
+  const count = listAccounts().length + 1;
+  const newAcc: DbAccount = {
+    address: wallet.classicAddress,
+    role: "unassigned",
+    name: name || `Compte Aléatoire #${count}`,
+    seed: wallet.seed!,
+    multisigActive: 0,
+    createdAt: new Date().toISOString(),
+  };
+  saveAccount(newAcc);
+  return newAcc;
+}
+
+/** Update an account's role and details in SQLite DB. */
+export async function updateDbAccount(params: {
+  address: string;
+  role?: "borrower" | "lender" | "unassigned";
+  name?: string;
+  company?: string;
+  firstName?: string;
+  userRole?: string;
+  multisigActive?: number;
+}): Promise<DbAccount> {
+  return updateAccount(params.address, params);
 }
 
 export { dropsToXrp };

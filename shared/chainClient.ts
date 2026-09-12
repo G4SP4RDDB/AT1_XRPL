@@ -37,17 +37,22 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       roles: () => call<Record<string, string>>("/read/roles"),
       /** Checks if the master key of an account is disabled. */
       isMasterDisabled: (address: string) => call<{ masterDisabled: boolean }>("/read/isMasterDisabled", [address]),
-      /** List stored borrower or lender accounts from the database. */
-      listAccounts: (role?: "borrower" | "lender") => call<DbAccount[]>("/read/listAccounts", [role]),
+      /** List stored accounts from the database, optionally filtered by role. */
+      listAccounts: (role?: "borrower" | "lender" | "unassigned") => call<DbAccount[]>("/read/listAccounts", [role]),
       /** Get a stored account from the database by address. */
       getAccount: (address: string) => call<DbAccount | null>("/read/getAccount", [address]),
     },
     tx: {
       /** Register a wallet seed dynamically for the current session. */
       registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
-      /** Create a new funded account (borrower or lender) on Devnet and save to DB. */
-      createAccount: (params: { role: "borrower" | "lender"; name: string; company?: string; firstName?: string; userRole?: string }) =>
+      /** Create a new funded account on Devnet and save to DB. */
+      createAccount: (params: { role?: "borrower" | "lender" | "unassigned"; name?: string; company?: string; firstName?: string; userRole?: string }) =>
         call<DbAccount>("/tx/createAccount", [params]),
+      /** Instant 1-click creation of a random funded account on Devnet. */
+      createRandomAccount: (name?: string) => call<DbAccount>("/tx/createRandomAccount", [name]),
+      /** Update an account's role and profile details in DB. */
+      updateAccount: (params: { address: string; role?: "borrower" | "lender" | "unassigned"; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) =>
+        call<DbAccount>("/tx/updateAccount", [params]),
       /** Configure 2-of-2 Multisig on borrower account with master key disabled. */
       setupBorrowerMultisig: (borrowerAddress?: string) => call<TxReceipt>("/tx/setupBorrowerMultisig", [borrowerAddress]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
