@@ -258,7 +258,7 @@ Root config (`package.json`, `.gitignore`, `CLAUDE.md`) is owned by A. `shared/`
 ### Decided (Sat 12 Sept, Person A)
 
 1. **Multisig borrower is the design, and the broker is the enforcer.** The platform acts as an on-chain broker in the CEX sense: it co-signs every borrower transaction, coupons included, and refuses the `tfLoanFullPayment` repayment before the call date. The co-signature on coupons is therefore a feature (the broker enforces the schedule and can hold a late issuer), not a side effect. Signer set: {borrower-op, broker-enforcer} with quorum 2, master key disabled. No separate scheduler key.
-2. **Enforcer isolation and policy.** The broker-enforcer key lives in its own process, `chain/src/enforcer/`, with its own key file that the app and the demo flow never load. It exposes one call: `cosign(txBlob)`. Policy, in order:
+2. **Enforcer isolation and policy.** Done Sat 19:30: `src/chain/enforcer/server.ts`, `npm run enforcer`, key and broker address in `.enforcer.env`, decisions logged; the shim uses it via `ENFORCER_URL`. It exposes `POST /cosign` and `POST /counter-sign`. Policy, in order:
    - refuse anything that is not a `LoanPay` on a loan this broker owns;
    - refuse `tfLoanFullPayment` before the loan's call date (StartDate + PaymentInterval x PaymentTotal);
    - refuse a coupon whose `Amount` differs from the loan's current `PeriodicPayment` read from the `Loan` ledger entry;

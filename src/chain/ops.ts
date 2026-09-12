@@ -7,7 +7,24 @@ import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
 import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
 import { totalInterest, percentToTenthBp, isoToRipple } from "./loanMath.js";
-import { cosign } from "./enforcer/index.js";
+import { cosign, enforcerWallet, type CosignResult } from "./enforcer/index.js";
+
+// The enforcer runs as its own process when ENFORCER_URL is set (npm run enforcer); otherwise in-process (dev only).
+const ENFORCER_URL = process.env.ENFORCER_URL;
+async function enforcerCosign(client: Awaited<ReturnType<typeof getClient>>, prepared: Record<string, any>): Promise<CosignResult> {
+  if (!ENFORCER_URL) return cosign(client, prepared, broker().classicAddress);
+  const r = await fetch(`${ENFORCER_URL}/cosign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prepared }) });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(`enforcer: ${d.error ?? r.statusText}`);
+  return d as CosignResult;
+}
+async function enforcerCounterSign(blob: string): Promise<any> {
+  if (!ENFORCER_URL) return signLoanSetByCounterparty(enforcerWallet(), blob, { multisign: true }).tx;
+  const r = await fetch(`${ENFORCER_URL}/counter-sign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob }) });
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(`enforcer: ${d.error ?? r.statusText}`);
+  return d.tx;
+}
 import { positionOf } from "./readLayer.js";
 
 const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, explorerUrl: r.explorerUrl, ledgerIndex: r.ledgerIndex });
@@ -77,22 +94,17 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   prepared.Fee = String(Number(prepared.Fee) * 5);
   const first = broker().sign(prepared);
   const s1 = signLoanSetByCounterparty(borrowerOp(), first.tx_blob, { multisign: true });
-  const enf = await cosignLoanSet(first.tx_blob);
+  const enf = await enforcerCounterSign(first.tx_blob);
   const combined = combineLoanSetCounterpartySigners([s1.tx, enf]);
   const r = await submitBlob(client, combined.tx_blob);
   return { ...toReceipt(r), loanId: createdId(r.meta, "Loan") };
-}
-// The enforcer's LoanSet counter-signature: origination is the broker's own act, so no policy check beyond key custody.
-async function cosignLoanSet(blob: string) {
-  const { enforcerWallet } = await import("./enforcer/index.js");
-  return signLoanSetByCounterparty(enforcerWallet(), blob, { multisign: true }).tx;
 }
 
 /** Borrower transaction: borrower-op signs, enforcer decides and co-signs, multisign, submit. */
 async function borrowerSubmit(tx: Record<string, any>): Promise<TxReceipt | Blocked> {
   const client = await getClient();
   const prepared = await client.autofill(tx as any, 2);
-  const decision = await cosign(client, prepared, broker().classicAddress);
+  const decision = await enforcerCosign(client, prepared);
   if (!decision.ok) return { blocked: decision.blocked, reason: decision.reason };
   const opBlob = borrowerOp().sign(prepared as any, true).tx_blob;
   return toReceipt(await submitBlob(client, multisign([opBlob, decision.blob])));

@@ -89,7 +89,7 @@ Distinguish it from a receipt with `"blocked" in result`. `reason` is human-read
 
 ## Enforcer
 
-The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. Policy, in order: only `LoanPay`; only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up. Anything else returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed without a policy check because it is the broker's own act.
+The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. It runs as its own process: `npm run enforcer` (port 8788, routes `POST /cosign`, `POST /counter-sign`, `GET /health`), and the shim uses it when started with `ENFORCER_URL=http://localhost:8788 npm run serve`. Without `ENFORCER_URL` the same policy runs in-process, for development only. Policy, in order: only `LoanPay`; only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up. Anything else returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed without a policy check because it is the broker's own act.
 
 ## Changes
 
@@ -136,7 +136,8 @@ Listed so anyone picking up `src/chain/` knows what exists. The frontend never i
 | `npm run fund` | `scripts/fund-accounts.ts` | Creates the five roles plus two spares from the faucet, writes seeds to `.env`. |
 | `npm run balances` | `scripts/balances.ts` | On-ledger balance, object count and sequence per role. |
 | `npm run spike` | `scripts/spike-lifecycle.ts` | S1 + S2: full lifecycle on fresh objects, one row per step, appended to `docs/spike-results.md`. Idempotent for the borrower multisig setup. |
-| `npm run serve` | `src/chain/server.ts` | The HTTP shim on :8787. |
+| `npm run serve` | `src/chain/server.ts` | The HTTP shim on :8787. Set `ENFORCER_URL` to use the separate enforcer. |
+| `npm run enforcer` | `src/chain/enforcer/server.ts` | The enforcer process on :8788, logs every decision. |
 | `npm test` | `tests/*.test.ts` | Unit tests (node:test via tsx), no ledger needed: loan maths, enforcer policy, loan state mapping, result-code parsing, created-object lookup, bid-to-terms. |
 | `npm run vaults` | `scripts/vaults.ts` | Every vault the broker owns, through the real read layer. |
 | `npm run objects [role]` | `scripts/objects.ts` | Raw count of a role's ledger objects by type, diagnostic. |

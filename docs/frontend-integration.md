@@ -4,10 +4,11 @@ Everything the UI needs to talk to the chain layer, with the call sequence per s
 
 ## 1. Run it
 
-Terminal 1, repo root (Person A's side, or any machine with the `.env`):
+Terminal 1 and 2, repo root (Person A's side, or any machine with the `.env`):
 ```bash
 npm install
-npm run serve          # chain shim on http://localhost:8787
+npm run enforcer                                        # the platform's co-signer, http://localhost:8788
+ENFORCER_URL=http://localhost:8788 npm run serve        # chain shim on http://localhost:8787
 ```
 Terminal 2, `frontend/`:
 ```bash
