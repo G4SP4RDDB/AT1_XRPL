@@ -18,7 +18,8 @@
     "create-accounts": "tsx scripts/create-accounts.ts",
     "e2e": "tsx scripts/e2e-full.ts",
     "dev:tmux": "bash scripts/start-all.sh",
-    "stop:tmux": "bash scripts/stop-tmux.sh"
+    "stop:tmux": "bash scripts/stop-tmux.sh",
+    "show:accounts": "tsx scripts/show-accounts.ts"
   },
   "repository": {
     "type": "git",

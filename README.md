@@ -150,14 +150,15 @@ npm run dev:tmux
 2. **🧪 Test Suite**: Runs all 24 backend tests and 19 frontend Vitest tests.
 3. **⚙️ Compilation & Typecheck**: Compiles TypeScript (`tsc --noEmit`) and creates a production bundle (`vite build`).
 4. **🧹 Port Cleanup**: Automatically frees ports 8788, 8787, and 5173.
-5. **🖥️ Split-Screen tmux**: Launches a detached session (`at1`) with 3 synchronized panes:
-   - **Pane 0** (Left): Autonomous Enforcer Daemon (`:8788`)
-   - **Pane 1** (Top-Right): Chain Shim JSON API (`:8787`)
-   - **Pane 2** (Bottom-Right): Frontend Dev Server (`:5173`)
+5. **🖥️ Split-Screen tmux (Grille 2x2 — 4 Volets)**: Launches a detached session (`at1`) with 4 synchronized panes:
+   - **Volet 0 (Haut-Gauche)** : `🛡️ 1. Multisig Enforcer` (`:8788`)
+   - **Volet 1 (Haut-Droit)** : `🔗 2. Chain Shim API` (`:8787`)
+   - **Volet 2 (Bas-Gauche)** : `💻 3. Frontend Dev Server` (`:5173`)
+   - **Volet 3 (Bas-Droit)** : `💎 4. Account Seeds & Credentials` (Affichage en direct des comptes créés, adresses, clés privées et soldes).
 
 #### Managing the tmux session:
 ```bash
-# Attach and view the split dashboard:
+# Attach and view the 4-pane dashboard:
 tmux attach -t at1
 
 # Useful shortcuts inside tmux:
@@ -333,6 +334,7 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 | `npm run create-accounts [N]` | Generates and funds `N` fresh Devnet accounts (1,000 XRP each) and outputs their addresses & seeds. |
 | `npm run fund` | Automatically funds and populates root `.env` demo seeds from the Devnet faucet. |
 | `npm run fund:setup` | Generates fresh accounts, updates `.env` & `.enforcer.env`, and configures borrower multisig on-chain. |
+| `npm run show:accounts` | Displays a formatted summary of all active roles, addresses, seeds, and verified XRP balances. |
 | `npm run enforcer` | Starts the standalone Multisig Call-Date Enforcer daemon on port `8788`. |
 | `npm run serve` | Starts the Chain Shim JSON-over-HTTP API bridge on port `8787`. |
 | `cd frontend && npm test` | Runs the Vitest frontend unit test suite (19 tests). |

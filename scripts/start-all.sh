@@ -40,47 +40,56 @@ for port in 8788 8787 5173; do
 done
 
 echo ""
-echo "🖥️  [5/5] Starting tmux session '$SESSION_NAME' with 3 split panes..."
+echo "🖥️  [5/5] Starting tmux session '$SESSION_NAME' with 4 split panes (2x2 grid)..."
 
-# Create detached session in the project directory with generous window dimensions
-tmux new-session -d -s "$SESSION_NAME" -n "AT1-Services" -x 180 -y 50 -c "$PROJECT_DIR"
+# Create detached session and capture pane ID for Enforcer (Top-Left)
+PANE_ENFORCER=$(tmux new-session -d -s "$SESSION_NAME" -n "AT1-Services" -x 190 -y 52 -c "$PROJECT_DIR" -P -F "#{pane_id}")
 tmux set-option -t "$SESSION_NAME" mouse on
 tmux set-option -t "$SESSION_NAME" pane-border-status top
 tmux set-option -t "$SESSION_NAME" pane-border-format " #[bold]#{pane_title}#[default] "
 
-# Pane 0: Enforcer
-tmux select-pane -t "$SESSION_NAME:0.0" -T "🛡️ 1. Multisig Enforcer (:8788)"
-tmux send-keys -t "$SESSION_NAME:0.0" "npm run enforcer" C-m
+# Split horizontally -> PANE_SHIM (Top-Right)
+PANE_SHIM=$(tmux split-window -h -t "$PANE_ENFORCER" -c "$PROJECT_DIR" -P -F "#{pane_id}")
 
-# Wait for Enforcer to start
+# Split PANE_ENFORCER vertically -> PANE_FRONTEND (Bottom-Left)
+PANE_FRONTEND=$(tmux split-window -v -t "$PANE_ENFORCER" -c "$PROJECT_DIR/frontend" -P -F "#{pane_id}")
+
+# Split PANE_SHIM vertically -> PANE_SEEDS (Bottom-Right)
+PANE_SEEDS=$(tmux split-window -v -t "$PANE_SHIM" -c "$PROJECT_DIR" -P -F "#{pane_id}")
+
+# Set titles & start processes in each exact pane:
+# 1. Enforcer
+tmux select-pane -t "$PANE_ENFORCER" -T "🛡️ 1. Multisig Enforcer (:8788)"
+tmux send-keys -t "$PANE_ENFORCER" "npm run enforcer" C-m
 sleep 1
 
-# Pane 1: Chain Shim (horizontal split)
-tmux split-window -h -t "$SESSION_NAME:0" -c "$PROJECT_DIR"
-tmux select-pane -t "$SESSION_NAME:0.1" -T "🔗 2. Chain Shim (:8787)"
-tmux send-keys -t "$SESSION_NAME:0.1" "ENFORCER_URL=http://localhost:8788 npm run serve" C-m
-
-# Wait for Chain Shim to start
+# 2. Chain Shim
+tmux select-pane -t "$PANE_SHIM" -T "🔗 2. Chain Shim (:8787)"
+tmux send-keys -t "$PANE_SHIM" "ENFORCER_URL=http://localhost:8788 npm run serve" C-m
 sleep 1
 
-# Pane 2: Frontend (vertical split on pane 1)
-tmux split-window -v -t "$SESSION_NAME:0.1" -c "$PROJECT_DIR/frontend"
-tmux select-pane -t "$SESSION_NAME:0.2" -T "💻 3. Frontend Dev Server (:5173)"
-tmux send-keys -t "$SESSION_NAME:0.2" "npm run dev -- --host 0.0.0.0" C-m
+# 3. Frontend Dev Server
+tmux select-pane -t "$PANE_FRONTEND" -T "💻 3. Frontend Dev Server (:5173)"
+tmux send-keys -t "$PANE_FRONTEND" "npm run dev -- --host 0.0.0.0" C-m
 
-# Layout panes: main-vertical for nice side-by-side view
-tmux select-layout -t "$SESSION_NAME:0" main-vertical
-tmux select-pane -t "$SESSION_NAME:0.0"
+# 4. Account Seeds & Credentials
+tmux select-pane -t "$PANE_SEEDS" -T "💎 4. Account Seeds & Credentials"
+tmux send-keys -t "$PANE_SEEDS" "npx tsx scripts/show-accounts.ts" C-m
+
+# Arrange into an equal 2x2 grid and focus pane 4
+tmux select-layout -t "$SESSION_NAME:0" tiled
+tmux select-pane -t "$PANE_SEEDS"
 
 echo ""
 echo "========================================================"
-echo "✅ All 3 processes are running in tmux session '$SESSION_NAME'!"
+echo "✅ All services & accounts running in tmux '$SESSION_NAME' (4 Panes)!"
 echo "========================================================"
-echo "  • Pane 0 : 🛡️ Enforcer       -> http://localhost:8788"
-echo "  • Pane 1 : 🔗 Chain Shim     -> http://localhost:8787"
-echo "  • Pane 2 : 💻 Frontend Vite  -> http://localhost:5173"
+echo "  • Volet 0 : 🛡️ Enforcer        -> http://localhost:8788"
+echo "  • Volet 1 : 🔗 Chain Shim      -> http://localhost:8787"
+echo "  • Volet 2 : 💻 Frontend Vite   -> http://localhost:5173"
+echo "  • Volet 3 : 💎 Seeds & Comptes -> Affichage des clés en direct"
 echo ""
-echo "👉 Pour afficher le terminal tmux :"
+echo "👉 Pour afficher le terminal tmux split-screen (4 volets) :"
 echo "   tmux attach -t $SESSION_NAME"
 echo ""
 echo "👉 Pour naviguer entre les fenêtres : Ctrl+b puis les flèches (ou clic souris)"
