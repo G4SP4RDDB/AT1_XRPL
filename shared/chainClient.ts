@@ -1,6 +1,6 @@
 // Browser-safe, typed client for the chain shim. Person B imports this; nothing here signs or touches the ledger.
 // Usage:  const chain = createChainClient(import.meta.env.VITE_CHAIN_URL ?? "http://localhost:8787")
-import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount, AccountRole } from "./types.js";
+import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount, AccountRole, CreatedAccount } from "./types.js";
 
 export type ChainClient = ReturnType<typeof createChainClient>;
 
@@ -41,10 +41,14 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       listAccounts: (role?: AccountRole) => call<DbAccount[]>("/read/listAccounts", [role]),
       /** Get a stored account from the database by address. */
       getAccount: (address: string) => call<DbAccount | null>("/read/getAccount", [address]),
+      /** Get freshly created accounts recorded in created_accounts.json. */
+      createdAccounts: () => call<CreatedAccount[]>("/read/createdAccounts"),
     },
     tx: {
       /** Register a wallet seed dynamically for the current session. */
       registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
+      /** Wipe the created_accounts.json and created_accounts.txt files. */
+      wipeCreatedAccounts: () => call<{ success: boolean }>("/tx/wipeCreatedAccounts"),
       /** Create a new funded account on Devnet and save to DB. */
       createAccount: (params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) =>
         call<DbAccount>("/tx/createAccount", [params]),

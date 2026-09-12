@@ -3,6 +3,7 @@ import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, c
 import type { Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
 import { loadAccounts, fundNewAccount } from "./accounts.js";
+import { addCreatedAccount, wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
 import { getAccount, listAccounts, saveAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
 import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
 import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
@@ -348,6 +349,13 @@ export async function createDbAccount(params: {
   };
 
   // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
+  addCreatedAccount({
+    address: wallet.classicAddress,
+    seed: wallet.seed!,
+    balanceXrp: 1000,
+    name: newAcc.name,
+    createdAt: newAcc.createdAt,
+  });
   return sanitizeDbAccount(newAcc);
 }
 
@@ -376,6 +384,13 @@ export async function createRandomAccount(name?: string): Promise<DbAccount> {
     createdAt: new Date().toISOString(),
   };
   // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
+  addCreatedAccount({
+    address: wallet.classicAddress,
+    seed: wallet.seed!,
+    balanceXrp: 1000,
+    name: newAcc.name,
+    createdAt: newAcc.createdAt,
+  });
   return sanitizeDbAccount(newAcc);
 }
 
@@ -404,4 +419,5 @@ export async function updateDbAccount(params: {
 }
 
 export { dropsToXrp };
+export { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
 

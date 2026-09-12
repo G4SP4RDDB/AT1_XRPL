@@ -117,3 +117,11 @@ export interface DbAccount {
   createdAt: string;
 }
 
+export interface CreatedAccount {
+  address: Address;
+  seed: string;
+  balanceXrp: number | string;
+  name: string;
+  createdAt: string;
+}
+

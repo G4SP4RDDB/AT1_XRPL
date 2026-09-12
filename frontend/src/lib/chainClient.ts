@@ -10,9 +10,10 @@ import type {
   LoanStatus,
   AccountRole,
   DbAccount,
+  CreatedAccount,
 } from '@shared/types'
 
-export type { Bid, Ask, TxReceipt, AccountRole, DbAccount }
+export type { Bid, Ask, TxReceipt, AccountRole, DbAccount, CreatedAccount }
 
 
 export interface VaultState extends RawVaultState {
@@ -700,6 +701,23 @@ export class ChainBackendClient {
 
   async updateAccount(params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) {
     return await baseChain.tx.updateAccount(params)
+  }
+
+  async getCreatedAccounts(): Promise<CreatedAccount[]> {
+    try {
+      return await baseChain.read.createdAccounts()
+    } catch {
+      return []
+    }
+  }
+
+  async wipeCreatedAccounts(): Promise<boolean> {
+    try {
+      const res = await baseChain.tx.wipeCreatedAccounts()
+      return res.success
+    } catch {
+      return false
+    }
   }
 
   async depositCover(loanBrokerId: string, amountXrp: string): Promise<{ success: boolean; txHash?: string; error?: string }> {

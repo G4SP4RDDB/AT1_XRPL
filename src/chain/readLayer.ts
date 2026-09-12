@@ -160,6 +160,8 @@ function sanitizeAccount(acc: DbAccount): DbAccount {
   };
 }
 
+import { getCreatedAccounts } from "./createdAccounts.js";
+
 export const read = {
   vaultState: async (vaultId: string) => vaultStateOf(await getClient(), vaultId),
   position: async (address: string, vaultId: string) => positionOf(await getClient(), address, vaultId),
@@ -171,6 +173,7 @@ export const read = {
     const acc = getAccount(address);
     return acc ? sanitizeAccount(acc) : null;
   },
+  createdAccounts: async () => getCreatedAccounts(),
   isMasterDisabled: async (address: string) => {
     const client = await getClient();
     try {

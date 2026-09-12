@@ -1,6 +1,7 @@
 import { dropsToXrp } from "xrpl";
 import { loadAccounts } from "../src/chain/accounts.js";
 import { listAccounts } from "../src/db/index.js";
+import { getCreatedAccounts } from "../src/chain/createdAccounts.js";
 import { getClient, closeClient } from "../src/chain/client.js";
 
 console.log("\n================================================================================");
@@ -33,9 +34,28 @@ try {
     console.log(`   Solde   : ${balStr}`);
   }
 
+  const createdAccs = getCreatedAccounts();
+  console.log("\n--------------------------------------------------------------------------------");
+  console.log(`📋  COMPTES CRÉÉS RÉCENTS (Fichier created_accounts.json : ${createdAccs.length}) :`);
+  console.log("    (Financés sur Devnet, prêts à être configurés au 1er onboarding)");
+  for (const acc of createdAccs) {
+    let balStr = "...";
+    try {
+      const res = await client.request({ command: "account_info", account: acc.address, ledger_index: "validated" });
+      balStr = `${dropsToXrp(res.result.account_data.Balance)} XRP`;
+    } catch {
+      balStr = `${acc.balanceXrp} XRP`;
+    }
+    console.log(`\n🔹 ${acc.name} :`);
+    console.log(`   Adresse  : ${acc.address}`);
+    console.log(`   Seed     : ${acc.seed}`);
+    console.log(`   Solde    : ${balStr}`);
+    console.log(`   Statut   : ⏳ En attente de setup (enregistré en base à la 1ère connexion)`);
+  }
+
   const dbAccounts = listAccounts();
   console.log("\n--------------------------------------------------------------------------------");
-  console.log(`👥  COMPTES CLIENTS DYNAMIQUES (Stockés en base SQLite data/accounts.db : ${dbAccounts.length}) :`);
+  console.log(`👥  COMPTES CLIENTS ENREGISTRÉS EN BASE (SQLite data/accounts.db : ${dbAccounts.length}) :`);
   for (const acc of dbAccounts) {
     let balStr = "...";
     try {
@@ -54,9 +74,8 @@ try {
   }
 
   console.log("\n================================================================================");
-  console.log("💡 Pour connecter un compte au Frontend ou à votre wallet :");
-  console.log("   Connectez-vous sur http://localhost:5173 et sélectionnez");
-  console.log("   un compte depuis l'onglet 'Comptes en Base' ou créez-en un nouveau !");
+  console.log("💡 Pour connecter un compte au Frontend :");
+  console.log("   Connectez-vous sur http://localhost:5173 et sélectionnez un compte créé !");
   console.log("================================================================================\n");
   await closeClient();
 } catch (e) {

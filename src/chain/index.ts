@@ -22,5 +22,9 @@ export const tx = {
   updateAccount: (params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) => ops.updateDbAccount(params),
   // ops.registerWallet is synchronous (in-memory Map); wrap so every tx.* value returns a Promise, as server.ts's shim requires.
   registerWallet: async (seed: string) => ops.registerWallet(seed),
+  wipeCreatedAccounts: async () => {
+    ops.wipeCreatedAccounts();
+    return { success: true };
+  },
 };
 

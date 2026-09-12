@@ -17,3 +17,5 @@ xrpl-lending-notion.md
 data/
 *.db
 *.sqlite
+created_accounts.json
+created_accounts.txt
