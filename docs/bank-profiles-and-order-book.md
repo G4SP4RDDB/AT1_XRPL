@@ -104,22 +104,33 @@ them — a small order book, laid out like **app.tenor.finance**'s markets list 
 - The off-chain store is a **shared JSON file**, not a real database — explicitly agreed as
   enough for this demo's resilience needs, same pattern as the bank-profile store.
 
+> **Rewired since the first version** (same session, on request): the "urgency" tag/sort was
+> removed, both the tranche's ask and every LP bid gained an optional expiry/"time in force",
+> and the per-tranche view became a real full page with its own URL instead of an inline
+> panel below the list. See "Rewire" below — this section describes the mechanics that are
+> still current; details that changed (urgency, inline panel) are noted as superseded.
+
 ### Data model
-`Bid` (the tranche/ask) gained one optional field in `shared/types.ts`:
+`Bid` (the tranche/ask) and `Ask` (the LP bid) each gained one optional field in
+`shared/types.ts`:
 ```ts
-urgency?: "urgent" | "standard" | "flexible";
+// Bid
+expiresAt?: IsoDate; // bidding window closes at this time, no new bids after
+// Ask
+expiresAt?: IsoDate; // this bid is void if not funded before this time
 ```
-`Ask` (the LP bid) was already shaped correctly and needed no schema change:
-`matchedBidId` names the target tranche, `status` is `"pending" | "matched" | "deposited"`.
+(An earlier `urgency?: "urgent" | "standard" | "flexible"` field on `Bid` was added, then
+removed at the same request that added `expiresAt` — a duration/expiry was judged more
+useful than a purely cosmetic urgency tag.)
 
 ### Backend — `src/chain/trancheBookStore.ts`
 JSON-file store at `data/order-book.json` (gitignored), two collections:
 - **tranches** — the off-chain-authored `Bid` fields (`borrowerName`, `description`,
-  `urgency`) that the ledger doesn't carry. The frontend merges this with live vault state
+  `expiresAt`) that the ledger doesn't carry. The frontend merges this with live vault state
   from `read.listVaults()`; the ledger stays the source of truth for amount/rate/status.
 - **bids** — LP commitments (`Ask` records), `"pending"` until actually funded.
 
-Wired into `server.ts` as the `book` group:
+Wired into `server.ts` as the `book` group (unchanged by the rewire):
 
 | Route | Behavior |
 |---|---|
@@ -140,18 +151,11 @@ Wired into `server.ts` as the `book` group:
     `assetsAvailable >= amount` itself).
   - `matchAndDeposit` was removed (its only caller, `MatchBoard`, is deleted — see below).
 - **`frontend/src/components/TrancheBook.tsx`** — the tranche list ("Order Book" tab).
-  Sortable by urgency / rate / maturity; each row shows the bank name (via the bank-profile
-  feature), amount, rate, maturity, an urgency tag, and a live fill-progress bar. Clicking a
-  row opens `TrancheDetail` below.
-- **`frontend/src/components/TrancheDetail.tsx`** — the per-tranche view: a depth list of
-  LP bids (deposited ones shown with a cumulative-fill bar, like Tenor's order-book rows),
-  and an action panel that differs by role:
-  - **Bank (tranche owner):** fill summary + "Originate Loan" button, disabled until 100%
-    filled.
-  - **LP:** a "Place a Bid" form (off-chain, indicative) and a list of the LP's own bids on
-    that tranche, each with a "Fund Now" button that calls `acceptBid`.
-- **`frontend/src/components/IssueBond.tsx`** — gained a "Funding Urgency" selector
-  (urgent / standard / flexible), passed through to `createBid`.
+  Sortable by rate / maturity / expiry; each row shows the bank name (via the bank-profile
+  feature), amount, rate, maturity, time left on the bidding window, and a live
+  fill-progress bar. Clicking a row navigates to that tranche's own page (see Rewire below).
+- **`frontend/src/components/IssueBond.tsx`** — gained a "Bidding Window" duration selector
+  (6h / 24h / 3d / 7d / 14d), passed through to `createBid` as `expiresAt`.
 - **Navbar / App.tsx** — new "Order Book" tab (added first in the tab order; "Finance
   Bonds" stays the default landing tab so existing behavior isn't disrupted).
 
@@ -164,12 +168,12 @@ too (the live app's actual tranche-creation form is `IssueBond.tsx`, which dupli
 `BidForm`'s logic directly rather than rendering it). All five were deleted rather than
 left as a second, unused matching UI.
 
-### Verified live against the real hackathon devnet
+### Verified live against the real hackathon devnet (first version)
 Not just typecheck/tests — walked the actual flow in a real browser session:
 1. Created a tranche (5000 XRP, 9.5%, urgent) as the Borrower role → real `VaultCreate` +
    `LoanBrokerSet` + `LoanBrokerCoverDeposit`, synced into the shared book.
 2. Switched to the Lender 1 role in the same browser, saw the same tranche (proving the
-   shared store, not per-browser state) sorted to the top by urgency.
+   shared store, not per-browser state).
 3. Placed a 2000 XRP bid, then a 500 XRP bid (both off-chain, "pending").
 4. Funding the 2000 XRP one correctly failed on-chain with a genuine
    `tecINSUFFICIENT_FUNDS` (the account only held ~761 XRP) — surfaced cleanly in the UI,
@@ -193,10 +197,62 @@ explicit loading states around, not a bug.
 
 ---
 
+## 3. Rewire — per-vault pages, two-sided book, expiry, "blanc cassé" (same session)
+
+Requested after the first version was live-tested: remove the urgency tag, give each
+tranche its own dedicated page (like `app.tenor.finance/trading/<id>`) instead of an inline
+panel below the list, show an explicit two-sided **Ask / Bids** book on that page, add a
+time-in-force ("duration") to both asks and bids, and restyle the whole section in the
+off-white ("blanc cassé", measured as `rgb(251, 250, 249)` / `#FBFAF9` from the reference
+site's own `body` background) look of the reference app.
+
+### Removed
+- The `urgency` field/tag/sort throughout (`shared/types.ts`, `IssueBond.tsx`,
+  `TrancheBook.tsx`) — judged unnecessary once an actual expiry existed.
+- `frontend/src/components/TrancheDetail.tsx` — superseded by `TranchePage.tsx` below.
+
+### Added
+- **`frontend/src/lib/durations.ts`** — shared time-in-force helpers used by both sides:
+  `DURATION_OPTIONS` (6h/24h/3d/7d/14d), `expiresAtFromNow(ms)`, `isExpired(iso)`,
+  `formatTimeRemaining(iso)` (renders "23h left" / "3d left" / "Expired" / "No expiry").
+- **`frontend/src/lib/hashRoute.ts`** — a tiny hash-based router (`#/orderbook/<id>`) so
+  every tranche has its own real, shareable/bookmarkable URL without adding a routing
+  library. `getTrancheIdFromHash`, `navigateToTranche(id)`, `navigateToTrancheList()`.
+- **`frontend/src/lib/orderBookTheme.ts`** — the "blanc cassé" palette (`pageBg: #FBFAF9`,
+  white inner panels, warm-gray borders/text, a serif display font for headlines), scoped to
+  the Order Book components only — the rest of the app's `index.css` variables are
+  untouched.
+- **`frontend/src/components/TranchePage.tsx`** (replaces `TrancheDetail.tsx`) — a full page
+  per tranche, navigated to via `TrancheBook`'s row click (which sets the hash) and rendered
+  in place of the list whenever the hash names a tranche. Structure:
+  - **Ask** section: one row — the tranche's posted terms (bank name, rate, remaining
+    capacity, time left on the bidding window).
+  - **Bids** section: the existing LP-bid depth list (cumulative-fill bars, status), now
+    also showing each bid's own expiry.
+  - Right-hand action panel unchanged in behavior (bank sees fill % + "Originate Loan"; LP
+    sees "Place a Bid" — now with its own duration selector — and "Fund Now" per bid), with
+    both disabled once the tranche's/bid's expiry has passed.
+  - A "← Back to Order Book" control returns to the list via the same hash router.
+
+### Data model note
+`expiresAt` is off-chain-only bookkeeping (same as everything else in `trancheBookStore.ts`)
+— it is not enforced on-chain. An "expired" ask/bid just stops accepting new
+bids/funding in the UI; anything already placed before expiry is unaffected.
+
+### Verified live (rewire)
+Reused the existing 5000 XRP "OOO" tranche from the first version's test data (which
+predates `expiresAt`, correctly rendered as "No expiry"): confirmed the blanc-cassé panel
+and serif headline render, clicking a row updates the URL to `#/orderbook/bid-...`, the page
+shows the Ask row + Bids depth list side by side, and placing a new 300 XRP bid with the
+default "24 hours" duration correctly showed "23h left" once the shared store refreshed.
+
+---
+
 ## Branches / commits
 
 - `feature/bank-profiles` (`364983e`) — bank profile registry + onboarding.
-- `feature/orderBook` (based on `feature/bank-profiles`, commit `6b913a0`) — tranche order
-  book. Currently 2 commits ahead of `main`; `main` itself has moved ahead separately with
-  unrelated work (a tmux dev-runner script, `fund-and-setup.ts`, a full e2e pipeline run) —
-  neither branch has picked that up yet.
+- `feature/orderBook` (based on `feature/bank-profiles`) — tranche order book:
+  `6b913a0` (first version), `80a2f2e` (docs), plus the rewire described in §3 (per-vault
+  pages, two-sided book, expiry, blanc cassé) on top.
+- `main` has moved ahead separately with unrelated work (a tmux dev-runner script,
+  `fund-and-setup.ts`, a full e2e pipeline run) — neither branch has picked that up yet.

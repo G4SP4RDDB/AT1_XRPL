@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
+import { DURATION_OPTIONS, expiresAtFromNow } from '@/lib/durations'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -13,7 +14,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
   const [yieldRate, setYieldRate] = useState('')
   const [callDate, setCallDate] = useState('')
   const [description, setDescription] = useState('')
-  const [urgency, setUrgency] = useState<'urgent' | 'standard' | 'flexible'>('standard')
+  const [durationMs, setDurationMs] = useState<number>(DURATION_OPTIONS[3].ms)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
@@ -31,7 +32,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
         yieldRate: parseFloat(yieldRate),
         callDate,
         description,
-        urgency,
+        expiresAt: expiresAtFromNow(durationMs),
       })
       setSuccessMsg(`The ${Number(amount).toLocaleString()} XRP bond issuance has been created successfully! It is now open for funding.`)
       onSuccess()
@@ -115,16 +116,21 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Funding Urgency</label>
+            <label className="form-label">Bidding Window</label>
             <select
               className="form-select"
-              value={urgency}
-              onChange={(e) => setUrgency(e.target.value as 'urgent' | 'standard' | 'flexible')}
+              value={durationMs}
+              onChange={(e) => setDurationMs(Number(e.target.value))}
             >
-              <option value="urgent">Urgent — need capital now, willing to pay up</option>
-              <option value="standard">Standard</option>
-              <option value="flexible">Flexible — can wait for a better rate</option>
+              {DURATION_OPTIONS.map((opt) => (
+                <option key={opt.label} value={opt.ms}>
+                  Open for {opt.label}
+                </option>
+              ))}
             </select>
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+              No new bids accepted after this window closes. Off-chain only, not enforced by the ledger.
+            </p>
           </div>
 
           <div className="form-group">

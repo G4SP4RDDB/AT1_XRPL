@@ -18,7 +18,7 @@ export interface Bid {
   loanId?: string;
   borrowerName?: string;
   description?: string;
-  urgency?: "urgent" | "standard" | "flexible"; // display-only signal for how quickly the tranche needs to fill
+  expiresAt?: IsoDate;    // off-chain-only: bidding window closes at this time, no new bids after
 }
 
 export interface Ask {
@@ -30,6 +30,7 @@ export interface Ask {
   lenderName?: string;
   targetYield?: number;
   status?: "pending" | "matched" | "deposited";
+  expiresAt?: IsoDate;    // off-chain-only: bid is void if not funded before this time
 }
 
 export type LoanStatus = "none" | "active" | "impaired" | "defaulted" | "closed" | "repaid";

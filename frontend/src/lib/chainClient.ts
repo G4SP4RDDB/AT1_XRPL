@@ -108,7 +108,7 @@ export class ChainBackendClient {
   }
 
   async getBids(): Promise<Bid[]> {
-    // Off-chain-authored metadata (borrowerName, description, urgency) is shared across
+    // Off-chain-authored metadata (borrowerName, description, expiresAt) is shared across
     // browsers via the order-book store, not localStorage — refresh our cache from it.
     try {
       const shared = await callBookRoute<Bid[]>('listTranches', [])
@@ -149,7 +149,7 @@ export class ChainBackendClient {
           ...b,
           borrowerName: existing?.borrowerName || b.borrowerName,
           description: existing?.description,
-          urgency: existing?.urgency,
+          expiresAt: existing?.expiresAt,
         })
       }
 
@@ -228,7 +228,7 @@ export class ChainBackendClient {
     yieldRate: number
     callDate: string
     description?: string
-    urgency?: Bid['urgency']
+    expiresAt?: string
   }): Promise<Bid> {
     const callDateIso = new Date(bidInput.callDate).toISOString()
     const newBid: Bid = {
@@ -241,7 +241,7 @@ export class ChainBackendClient {
     }
     ;(newBid as any).borrowerName = bidInput.borrowerName || 'AT1 Bond'
     ;(newBid as any).description = bidInput.description
-    ;(newBid as any).urgency = bidInput.urgency
+    ;(newBid as any).expiresAt = bidInput.expiresAt
 
     try {
       // Execute on-chain provision via backend: VaultCreate + LoanBrokerSet + CoverDeposit
@@ -272,6 +272,7 @@ export class ChainBackendClient {
     amount: string
     targetYield?: number
     bidId?: string
+    expiresAt?: string
   }): Promise<Ask> {
     const newAsk: Ask = {
       id: `ask-${Date.now()}`,
@@ -283,6 +284,7 @@ export class ChainBackendClient {
     }
     ;(newAsk as any).lenderName = askInput.lenderName || 'Investor'
     ;(newAsk as any).targetYield = askInput.targetYield
+    ;(newAsk as any).expiresAt = askInput.expiresAt
 
     await callBookRoute('createBid', [newAsk])
 
