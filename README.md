@@ -35,17 +35,27 @@ This platform implements AT1 bonds natively on XRPL:
 
 ---
 
-## 3. Platform Broker Identity
+## 3. Platform Broker & Multisig Enforcer Architecture
 
-The platform operates an institutional loan broker configured on the Custom Hackathon Devnet:
+The platform cleanly separates **business ownership** from **cryptographic enforcement** following the principle of least privilege:
 
 ```text
-🛡️ PLATFORM BROKER ADDRESS: r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4
+🛡️ PLATFORM BROKER ADDRESS : r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4
+🔐 ENFORCER SIGNER ADDRESS : rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn
 ```
 
-- **Startup Banner**: Displayed automatically when running `npm run serve`.
-- **Frontend Header**: Displayed in the navigation bar with a 1-click address copy button.
-- **API Endpoint**: Queryable via `POST /read/brokerAddress`.
+### Broker vs. Signer: Understanding the Separation
+
+| Component | Account Address | Key Location | Protocol & System Role |
+|---|---|---|---|
+| **Platform Broker** | `r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4` | `BROKER_SEED` in `.env` | **Business & Vault Owner**: Creates the open-ended Vault (`VaultCreate`), manages broker fees (`LoanBrokerSet`), holds the first-loss risk buffer (`CoverAvailable`), and has sole authority to trigger loan write-downs / liquidations (`tfLoanImpair`). |
+| **Enforcer Signer** | `rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn` | `ENFORCER_SEED` in `.enforcer.env` | **Autonomous Multisig Guardian**: Holds the 2nd seat on the corporate borrower's 2-of-2 multisig (`SignerListSet`). Verifies ledger time against the bond's Call Date before co-signing repayment transactions. |
+
+### How Loan Liquidation & Write-Downs Work
+Under XLS-66, if a borrower is delinquent on coupon payments (`now > NextPaymentDueDate`), the broker can absorb the loss using first-loss capital:
+- **Transaction**: `LoanManage` with flag `tfLoanImpair` (`0x00020000`).
+- **Authorization**: Signed exclusively by the **Broker** (`BROKER_SEED=sEdVBUaPMamhH5uTWHz3mPYj1ZsPqWa` in `.env`).
+- **Trigger via API**: `POST http://localhost:8787/tx/impair` with `{ "args": ["<LOAN_ID_HEX>"] }`.
 
 ---
 
@@ -260,7 +270,28 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 
 ---
 
-## 10. Repository Structure
+## 10. Available Scripts & Cheatsheet
+
+| Command | Description |
+|---|---|
+| `npm run dev:tmux` | **All-in-One Launcher**: Runs all tests, compiles TS/Vite, clears ports, and launches Enforcer (`:8788`), Shim (`:8787`), and Frontend (`:5173`) in a 3-pane tmux session. |
+| `npm run stop:tmux` | Gracefully stops the `at1` tmux session and frees ports 8788, 8787, and 5173. |
+| `npm test` | Runs the 24 backend unit tests (math, policy, enforcer, share split). |
+| `npm run check` | Validates Devnet WSS connectivity and checks required protocol amendments (`SingleAssetVault`, `LendingProtocol`, `fixCleanup3_4_0`, etc.). |
+| `npm run balances` | Queries on-chain XRP balances and sequence numbers for all configured roles. |
+| `npm run all-balances` | Full diagnostic report of liquid and reserved XRP balances across all accounts. |
+| `npm run vaults` | Scans on-chain vaults, Price Per Share (PPS), outstanding loans, and call dates. |
+| `npm run create-accounts [N]` | Generates and funds `N` fresh Devnet accounts (1,000 XRP each) and outputs their addresses & seeds. |
+| `npm run fund` | Automatically funds and populates root `.env` demo seeds from the Devnet faucet. |
+| `npm run enforcer` | Starts the standalone Multisig Call-Date Enforcer daemon on port `8788`. |
+| `npm run serve` | Starts the Chain Shim JSON-over-HTTP API bridge on port `8787`. |
+| `cd frontend && npm test` | Runs the Vitest frontend unit test suite (19 tests). |
+| `cd frontend && npm run typecheck` | Strict TypeScript check (`tsc -b`) for the frontend. |
+| `cd frontend && npm run build` | Compiles the production bundle via Vite & Rolldown. |
+
+---
+
+## 11. Repository Structure
 
 ```text
 ├── docs/                       # Architectural specs, friction logs, and reports
