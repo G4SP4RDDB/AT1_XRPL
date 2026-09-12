@@ -52,6 +52,15 @@ One depositor's position. `yieldShares` is the number of shares that can be rede
 ### `read.listVaults(): VaultState[]`
 Every vault the platform broker owns, one per bond.
 
+### `read.listAccounts(role?: "borrower" | "lender"): DbAccount[]`
+Returns stored client accounts from the SQLite database (`data/accounts.db`), optionally filtered by role (`'borrower'` or `'lender'`).
+
+### `read.getAccount(address: string): DbAccount | null`
+Returns the stored client account corresponding to an XRPL classic address.
+
+### `read.isMasterDisabled(address: string): { masterDisabled: boolean }`
+Queries the ledger (`account_info`) to check if the account's master key is disabled (`Flags & 0x00100000`). Used by the UI to verify 2-of-2 multisig gating.
+
 ## `tx` — each call signs and submits, returns a `TxReceipt`
 
 All receipts carry `hash`, `result` (engine code, `tesSUCCESS` or a `tec*` code), and `explorerUrl`. A non-`tes` result is returned, not thrown: the UI must display it, since guardrail rejections are part of the demo.
@@ -79,6 +88,18 @@ The one-signature bypass is rejected on-chain with `tefBAD_QUORUM`.
 
 ### `tx.impair(loanId)` / `tx.unimpair(loanId): TxReceipt`
 Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rises and PPS drops, the write-down demo. `unimpair` reverses it. **Only accepted once a payment is overdue** (`tecTOO_SOON` before `nextPaymentDueDate`), so the UI flow is: issuer skips a coupon, due date passes, broker impairs.
+
+### `tx.setupBorrowerMultisig(borrowerAddress?: string): TxReceipt`
+Configures on-chain 2-of-2 multisig governance for a borrower:
+1. Submits `SignerListSet` (Quorum 2) pairing the borrower's dedicated operator key (`borrowerOp`) and the platform enforcer (`brokerEnforcer`).
+2. Submits `AccountSet` with flag `asfDisableMaster` (4), permanently preventing unilateral early payoff or key drain.
+3. Updates `multisigActive = 1` in the SQLite database.
+
+### `tx.createAccount(params): DbAccount`
+Requests a fresh account from the Custom Devnet faucet (funded with 1 000 XRP), generates a dedicated operator key if `role === 'borrower'`, and persists the record into the SQLite database (`data/accounts.db`).
+
+### `tx.registerWallet(seed: string): { address: string }`
+Registers an in-memory session wallet in the backend shim so transactions for that address can be signed dynamically.
 
 ## Blocked shape
 
@@ -111,9 +132,10 @@ Listed so anyone picking up `src/chain/` knows what exists. The frontend never i
 | | `explorerTx(hash)`, `explorerAccount(addr)` | Explorer links for receipts and the README. |
 | `accounts.ts` | `fundNewAccount()` | POST to the faucet, returns a `Wallet` with 1000 XRP. Verifies the address matches the seed. |
 | | `saveSeed(role, seed)` | Writes `<ROLE>_SEED` into `.env` (mode 600). |
-| | `loadAccounts()` | `Record<Role, Wallet>` from `.env`; throws naming the missing role. Roles: broker, brokerEnforcer, lender1, lender2, borrower, borrowerOp. |
+| | `loadAccounts()` | `Record<Role, Wallet>`: requires only `BROKER_SEED` in `.env`. Other roles resolved dynamically from SQLite DB (`data/accounts.db`). |
 | | `ensureBalance(client, address, minXrp)` | Tops an account up to `minXrp` liquid (reserve excluded) with fresh faucet accounts paying 985 XRP each. The demo calls it for lender1, broker and borrower before starting. |
-| `ops.ts` | `createBond`, `deposit`, `originate`, `payCoupon`, `finalRepayment`, `withdraw`, `impair`, `unimpair` | The real `tx.*` implementations; `termsFromBid(bid, now)` derives interval, rate and expected interest from a bid. |
+| `db/index.ts` | `listAccounts(role?)`, `getAccount(addr)`, `saveAccount(acc)`, `updateAccount(addr, fields)` | SQLite persistence layer (`better-sqlite3`, `data/accounts.db`) storing dynamic borrower and lender records. |
+| `ops.ts` | `createBond`, `deposit`, `originate`, `payCoupon`, `finalRepayment`, `withdraw`, `impair`, `unimpair`, `setupBorrowerMultisig`, `createDbAccount` | The real `tx.*` implementations; dynamic borrower operator resolution and multisig configuration. |
 | `readLayer.ts` | `vaultStateOf`, `positionOf`, `listVaultsOf` | The real `read.*` implementations, all from the ledger (vault `Data`, `account_objects`, `account_tx`). |
 | `loanMath.ts` | `periodicPayment`, `totalInterest`, `percentToTenthBp`, `rippleToIso`, `isoToRipple` | XLS-66 amortisation and time conversions. |
 | `enforcer/index.ts` | `cosign(client, prepared, brokerAddress)`, `enforcerWallet()`, `callDateRipple(loan)` | The policy and the second signature; key from `.enforcer.env` only. |

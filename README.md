@@ -35,27 +35,59 @@ This platform implements AT1 bonds natively on XRPL:
 
 ---
 
-## 3. Platform Broker & Multisig Enforcer Architecture
+## 3. Architecture Décentralisée & Gestion des Comptes (Zero-Custody)
 
-The platform cleanly separates **business ownership** from **cryptographic enforcement** following the principle of least privilege:
+### 3.1 Le Broker : Seul Compte Connu et Détenu par le Backend à sa Création
+Dans une véritable architecture financière institutionnelle sur XRPL, **le backend EST le service de courtage (le *Loan Broker*)**. Il ne doit ni connaître à l'avance, ni stocker en dur dans ses fichiers de configuration les clés privées des emprunteurs ou des investisseurs.
 
-```text
-🛡️ PLATFORM BROKER ADDRESS : r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4
-🔐 ENFORCER SIGNER ADDRESS : rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn
-```
+- **Fichier de configuration `.env`** : contient **strictement et uniquement** l'identité du Broker et de son Enforcer multisig :
+  ```env
+  BROKER_SEED=sEdS2MKfSFCY9GZetLdhTUdRA9NKmyj
+  BROKERENFORCER_SEED=sEdVrSbV9bTcZrjWvYMvQeHt96knMge
+  ```
+- **Rôle du Broker** : Crée le coffre-fort d'émission (`VaultCreate`), structure les conditions de prêt (`LoanBrokerSet`), dépose le capital de couverture de première perte (*First-Loss Capital* via `LoanBrokerCoverDeposit`), et gère l'absorption des pertes en cas de défaut (`LoanManage tfLoanImpair`).
 
-### Broker vs. Signer: Understanding the Separation
+### 3.2 Base de Données SQLite des Clients (`data/accounts.db`)
+Tous les emprunteurs et investisseurs sont créés dynamiquement ou connectés via leur wallet. Pour l'environnement Devnet, le backend intègre une base de données **SQLite locale** (`src/db/index.ts` via `better-sqlite3`) qui gère les participants :
 
-| Component | Account Address | Key Location | Protocol & System Role |
-|---|---|---|---|
-| **Platform Broker** | `r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4` | `BROKER_SEED` in `.env` | **Business & Vault Owner**: Creates the open-ended Vault (`VaultCreate`), manages broker fees (`LoanBrokerSet`), holds the first-loss risk buffer (`CoverAvailable`), and has sole authority to trigger loan write-downs / liquidations (`tfLoanImpair`). |
-| **Enforcer Signer** | `rfqfTK9uH2ai5KsDLzqvU95KnUW12eh8Nn` | `ENFORCER_SEED` in `.enforcer.env` | **Autonomous Multisig Guardian**: Holds the 2nd seat on the corporate borrower's 2-of-2 multisig (`SignerListSet`). Verifies ledger time against the bond's Call Date before co-signing repayment transactions. |
+| Champ | Type | Description |
+|---|---|---|
+| `address` | `TEXT PRIMARY KEY` | Adresse XRPL classic (`r...`) du compte client. |
+| `role` | `TEXT` | Rôle du client : `'borrower'` ou `'lender'`. |
+| `name` | `TEXT` | Nom d'affichage complet du compte. |
+| `seed` | `TEXT` | Clé secrète de test sur le Devnet (générée par le faucet). |
+| `firstName` | `TEXT` | Prénom du représentant (ex: *Alexandre*, *Sophie*). |
+| `userRole` | `TEXT` | Titre du représentant (ex: *Directeur Financier (CFO)*, *Portfolio Manager*). |
+| `company` | `TEXT` | Entité morale (ex: *AT1 Corporate Issuer SA*, *Alpha Asset Management*). |
+| `operatorAddress` | `TEXT` | Adresse de la clé signataire opérateur (`borrowerOp`) dédiée à cet emprunteur. |
+| `operatorSeed` | `TEXT` | Clé secrète de l'opérateur pour signer les remboursements. |
+| `multisigActive` | `INTEGER` | `1` si le multisig 2-of-2 et `asfDisableMaster` sont activés on-chain, sinon `0`. |
+| `createdAt` | `TEXT` | Horodatage ISO de création du compte. |
 
-### How Loan Liquidation & Write-Downs Work
-Under XLS-66, if a borrower is delinquent on coupon payments (`now > NextPaymentDueDate`), the broker can absorb the loss using first-loss capital:
-- **Transaction**: `LoanManage` with flag `tfLoanImpair` (`0x00020000`).
-- **Authorization**: Signed exclusively by the **Broker** (`BROKER_SEED=sEdVBUaPMamhH5uTWHz3mPYj1ZsPqWa` in `.env`).
-- **Trigger via API**: `POST http://localhost:8787/tx/impair` with `{ "args": ["<LOAN_ID_HEX>"] }`.
+### 3.3 Pourquoi Distinguer le Compte Emprunteur (`borrower`) et son Opérateur (`borrowerOp`) ?
+Une question architecturale fréquente sur XRPL : *Pourquoi l'emprunteur ne peut-il pas signer avec sa propre clé ?*
+
+1. **Règle protocolaire XRPL (`SignerListSet`)** : Le protocole interdit formellement qu'un compte figure dans sa propre liste de signataires :
+   $$\text{SignerEntry.Account} \neq \text{Account}$$
+   Si un compte s'inscrit lui-même, la transaction échoue avec l'erreur `temBAD_SIGNER`.
+2. **Désactivation de la clé maître (`asfDisableMaster: 4`)** : Pour garantir aux investisseurs que l'emprunteur ne remboursera pas par surprise avant la date de Call, sa clé maître est désactivée. Le compte `borrower` ne peut donc plus rien signer directement (`tefMASTER_DISABLED`).
+3. **Séparation des pouvoirs** :
+   - **`borrower`** = Le compte entité / trésorerie de l'entreprise (détient la dette et reçoit les fonds du prêt).
+   - **`borrowerOp`** = La clé physique du Directeur Financier (Signataire #1).
+   - **`brokerEnforcer`** = La clé fiduciaire de la plateforme (Signataire #2, vérifie la Call Date).
+   Chaque emprunteur enregistré dans la base de données dispose ainsi de **sa propre paire de clés opérateur dédiée**, évitant tout partage de clés entre plusieurs emprunteurs.
+
+### 3.4 Onboarding Interactif & Activation du Multisig à la Demande
+Le multisig n'est plus automatisé en arrière-plan à la création :
+- Lorsque le Directeur Financier se connecte sur l'interface, il ouvre la modale de profil : il renseigne son prénom, son rôle et sa société.
+- Il clique sur **"Enregistrer & Activer le Multisig"** : la transaction `SignerListSet` (Quorum 2) et `AccountSet` (`asfDisableMaster`) est soumise on-chain.
+- Une notification toast s'affiche avec le hash validé de la transaction, et un badge `2/2 MULTISIG` apparaît sur son profil dans la barre de navigation.
+
+### 3.5 Comment Fonctionne la Liquidation & l'Absorption de Pertes (Write-Down)
+Sous XLS-66, si un emprunteur n'honore pas un paiement de coupon à échéance (`now > NextPaymentDueDate`), le Broker peut absorber la perte via son capital de première perte :
+- **Transaction** : `LoanManage` avec le flag `tfLoanImpair` (`0x00020000`).
+- **Autorisation** : Signé exclusivement par le **Broker** (`BROKER_SEED` dans `.env`).
+- **Déclenchement API** : `POST http://localhost:8787/tx/impair` avec `{ "args": ["<LOAN_ID_HEX>"] }`.
 
 ---
 
@@ -109,8 +141,8 @@ Every phase of the AT1 bond lifecycle has been executed and verified on the **Cu
 flowchart TD
     subgraph UI ["Frontend (Client Layer — Port 5173)"]
         React["React 19 + TypeScript + Vite"]
-        XRPLConnect["xrpl-connect (Xaman / Crossmark / GemWallet)"]
-        SeedAuth["Faucet Seed / Account Connection"]
+        XRPLConnect["xrpl-connect (Xaman / Crossmark)"]
+        DbSelector["Comptes en Base SQLite & Faucet Devnet"]
         MatchBoard["Indicative Bid / Ask Matching Board"]
         Dashboard["AT1 Vault & Yield Dashboard"]
     end
@@ -119,6 +151,7 @@ flowchart TD
         ChainShim["Chain Shim Service (:8787)\nsrc/chain/server.ts"]
         Enforcer["Autonomous Multisig Enforcer (:8788)\nsrc/chain/enforcer/server.ts"]
         ReadLayer["Stateless Ledger Read Layer\nsrc/chain/readLayer.ts"]
+        SQLiteDB[("SQLite Database\ndata/accounts.db\nsrc/db/index.ts")]
     end
 
     subgraph Ledger ["XRPL Custom Hackathon Devnet"]
@@ -130,6 +163,7 @@ flowchart TD
 
     UI -->|JSON-over-HTTP| ChainShim
     ChainShim --> ReadLayer
+    ChainShim --> SQLiteDB
     ChainShim -->|Verify & Sign LoanPay| Enforcer
     ReadLayer -->|Read Ledger State| Ledger
     ChainShim -->|Submit Transactions| Ledger
@@ -138,17 +172,18 @@ flowchart TD
 
 ### Services Breakdown
 
-1. **Frontend (`frontend/`, Port 5173)**:
-   - Clean institutional UI with real-time on-chain data.
-   - Direct wallet integration: Connect via **Xaman / Crossmark / GemWallet** or input a **Devnet Faucet Seed / Address**.
-   - Dynamic yield calculation showing accrued profit and yield-equivalent share redemption.
-2. **Chain Shim (`src/chain/server.ts`, Port 8787)**:
-   - JSON-over-HTTP API exposing typed `read` and `tx` operations without exposing node signing primitives to the browser.
-   - Dynamic session wallet registry (`tx.registerWallet`) to support custom imported seeds on-the-fly.
-3. **Multisig Enforcer Daemon (`src/chain/enforcer/server.ts`, Port 8788)**:
-   - Autonomous microservice holding the enforcer key.
-   - Inspects `LoanPay` transactions against ledger close time and loan maturity.
-   - Approves periodic coupons, but strictly blocks early principal payoff before the Call Date.
+1. **Frontend (`frontend/`, Port 5173)** :
+   - Interface institutionnelle temps-réel avec toasts de confirmation de transactions (hash, statut ledger, liens explorer).
+   - Sélecteur de compte multi-rôles : sélection en 1 clic parmi les comptes en base SQLite, création instantanée via faucet Devnet, ou WalletConnect.
+   - Calcul dynamique du Price Per Share (PPS) et retrait partiel de yield sans toucher au principal.
+2. **Chain Shim (`src/chain/server.ts`, Port 8787)** :
+   - API JSON-over-HTTP exposant les méthodes typées `read` et `tx`.
+   - Ne charge que `BROKER_SEED` depuis `.env`. Résout dynamiquement les signataires emprunteurs et prêteurs depuis la base SQLite.
+3. **Multisig Enforcer Daemon (`src/chain/enforcer/server.ts`, Port 8788)** :
+   - Microservice autonome détenant la clé Enforcer (`.enforcer.env`).
+   - Vérifie l'heure de clôture du ledger et bloque strictement tout remboursement anticipé avant la date de Call convenue.
+4. **Base de Données Clients SQLite (`data/accounts.db`, `src/db/index.ts`)** :
+   - Maintient l'annuaire des emprunteurs et investisseurs, leurs profils (CFO, société) et leurs paires de clés opérateur dédiées (`borrowerOp`).
 
 ---
 
@@ -171,19 +206,18 @@ npm run dev:tmux
 ```
 
 #### What happens under the hood:
-1. **⚡ Account Generation & Funding** (`scripts/fund-and-setup.ts`):
-   - Requests 8 fresh accounts from the Custom Devnet faucet (1,000 XRP each).
-   - Writes the new private seeds to `.env` (`BROKER_SEED`, `LENDER1_SEED`, `BORROWER_SEED`, etc.).
-   - Writes `.enforcer.env` with the new Broker address and Enforcer seed.
-   - Waits for ledger validation and deploys the **2-of-2 Multisig rule** (`SignerListSet`) on the borrower with the master key disabled (`asfDisableMaster`).
-2. **🧪 Test Suite**: Runs all 24 backend tests and 19 frontend Vitest tests.
-3. **⚙️ Compilation & Typecheck**: Compiles TypeScript (`tsc --noEmit`) and creates a production bundle (`vite build`).
-4. **🧹 Port Cleanup**: Automatically frees ports 8788, 8787, and 5173.
-5. **🖥️ Split-Screen tmux (Grille 2x2 — 4 Volets)**: Launches a detached session (`at1`) with 4 synchronized panes:
+1. **⚡ Broker Generation & DB Initialization** (`scripts/fund-and-setup.ts`):
+   - Finance le Platform Broker et son Enforcer sur le Devnet (1 000 XRP chacun).
+   - Écrit `.env` contenant **exclusivement** `BROKER_SEED` et `BROKERENFORCER_SEED` (aucune clé client).
+   - Initialise la base de données SQLite locale (`data/accounts.db`) avec les profils emprunteur et prêteurs de démonstration.
+2. **🧪 Test Suite**: Exécute les 24 tests backend unitaires et les 19 tests frontend Vitest (100% passants).
+3. **⚙️ Compilation & Typecheck**: Compile TypeScript (`tsc --noEmit`) et génère le bundle de production Vite.
+4. **🧹 Port Cleanup**: Libère automatiquement les ports 8788, 8787 et 5173.
+5. **🖥️ Split-Screen tmux (Grille 2x2 — 4 Volets)**: Lance la session `at1` avec les 4 volets synchronisés :
    - **Volet 0 (Haut-Gauche)** : `🛡️ 1. Multisig Enforcer` (`:8788`)
    - **Volet 1 (Haut-Droit)** : `🔗 2. Chain Shim API` (`:8787`)
    - **Volet 2 (Bas-Gauche)** : `💻 3. Frontend Dev Server` (`:5173`)
-   - **Volet 3 (Bas-Droit)** : `💎 4. Account Seeds & Credentials` (Affichage en direct des comptes créés, adresses, clés privées et soldes).
+   - **Volet 3 (Bas-Droit)** : `💎 4. Account Seeds & Credentials` (Affichage en direct des clés et de la base SQLite).
 
 #### Managing the tmux session:
 ```bash

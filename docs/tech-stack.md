@@ -11,14 +11,15 @@ flowchart TD
     subgraph UI ["Frontend (Client Layer - Port 5173)"]
         React["React 19 + TypeScript + Vite"]
         XRPLConnect["xrpl-connect (Wallet Adapter)"]
-        UITheme["Modern Clean Light Theme"]
-        WalletCtx["Devnet Role Switcher & Context"]
+        DbSelector["Comptes en Base SQLite & Faucet Devnet"]
+        WalletCtx["Devnet Multi-Account Context"]
     end
 
     subgraph API ["Contract Boundary & Backend (Port 8787 & 8788)"]
         SharedClient["shared/chainClient.ts (HTTP Bridge)"]
         ChainServer["Node.js Chain Shim (:8787)"]
         Enforcer["Multisig Enforcer Daemon (:8788)"]
+        SQLiteDB[("SQLite Database\ndata/accounts.db")]
     end
 
     subgraph Ledger ["XRPL Native Protocols (Custom Hackathon Devnet)"]
@@ -31,6 +32,7 @@ flowchart TD
     React --> SharedClient
     XRPLConnect --> React
     SharedClient --> ChainServer
+    ChainServer --> SQLiteDB
     ChainServer --> Enforcer
     ChainServer --> XLS65
     ChainServer --> XLS66
@@ -60,6 +62,7 @@ flowchart TD
   1. **Chain Shim Server (`:8787`, `src/chain/server.ts`)**:
      * Minimal JSON-over-HTTP bridge exposing `POST /read/<fn>` and `POST /tx/<fn>`.
      * Isolates private signing seeds and node-only crypto libraries from the client browser.
+     * Zero-Custody architecture: only requires `BROKER_SEED` in `.env`.
      * Enforces CORS for local and staging frontends.
   2. **Autonomous Enforcer Daemon (`:8788`, `src/chain/enforcer/index.ts`)**:
      * Independent signing authority holding the enforcer private key (`.enforcer.env`).
@@ -69,6 +72,10 @@ flowchart TD
      * Queries ledger entry nodes via `account_objects` and `ledger_entry`.
      * Decodes terms directly from the Vault `Data` hex field (`{ id, b, a, y, c }`).
      * Derives exact depositor principal, current value, accrued yield, and yield-equivalent shares via transaction history (`account_tx`) and share balances (`shareBalance`).
+  4. **Client Database Persistence Layer (`data/accounts.db`, `src/db/index.ts`)**:
+     * Built on `better-sqlite3` with indexed relational tables (`accounts`).
+     * Stores dynamic borrower and lender accounts, company names, representative identities, and dedicated operator keypairs (`borrowerOp`).
+     * Guarantees that borrower and lender private keys are never hardcoded in the platform backend's configuration.
 
 ---
 
@@ -77,7 +84,7 @@ flowchart TD
 To decouple frontend and backend development while preventing interface drift, a frozen contract lives in `shared/`:
 
 * **`shared/types.ts`**:
-  * Shared TypeScript interfaces: `Bid`, `Ask`, `VaultState`, `Position`, `LoanState`, `WithdrawRequest`, `TxReceipt`, and `Blocked`.
+  * Shared TypeScript interfaces: `Bid`, `Ask`, `VaultState`, `Position`, `LoanState`, `WithdrawRequest`, `TxReceipt`, `Blocked`, and `DbAccount`.
 * **`shared/chainClient.ts`**:
   * Browser-safe typed HTTP client wrapper.
   * Provides zero-leakage read/write APIs (`chain.read.*`, `chain.tx.*`).
@@ -94,11 +101,11 @@ To decouple frontend and backend development while preventing interface drift, a
 * **State & Data Management**:
   * `frontend/src/lib/chainClient.ts`: Application service mapping frontend components directly to `shared/chainClient.ts`.
   * Real-time dynamic reconstruction of bond marketplace bids and user positions from ledger vault queries.
-* **Wallet Management**:
-  * `frontend/src/lib/wallet.tsx`: Multi-wallet React Context providing:
-    * Direct wallet integration with `xrpl-connect` (Xaman, Crossmark, GemWallet).
-    * Custom Devnet account/seed importer with on-chain balance querying.
-    * Platform Broker visibility and 1-click address copy.
+* **Wallet & Account Management**:
+  * `frontend/src/lib/wallet.tsx` & `ConnectWalletModal.tsx`: Multi-wallet React Context providing:
+    * **Comptes en Base (DB)**: instant connection to registered borrowers and lenders stored in the backend SQLite DB.
+    * **Nouveau Compte Devnet**: 1-click creation of funded corporate borrowers (with auto-generated operator key) or institutional lenders via the Devnet faucet (1 000 XRP).
+    * **WalletConnect / Hardware**: external wallet connectivity via `xrpl-connect` (Crossmark, Xaman, GemWallet).
   * Real-time ledger balance queries via `client.getXrpBalance()`.
 
 ---
