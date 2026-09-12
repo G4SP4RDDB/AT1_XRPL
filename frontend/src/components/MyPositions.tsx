@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
 import { useWallet } from '@/lib/wallet'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { WithdrawModal } from './WithdrawModal'
 import { CouponModal } from './CouponModal'
 import { MultisigRepayModal } from './MultisigRepayModal'
@@ -17,12 +17,12 @@ export const MyPositions: FC = () => {
 
   const loadData = async () => {
     if (!currentAccount) return
-    const allVaults = await mockChainClient.getAllVaults()
+    const allVaults = await chainClient.getAllVaults()
     setVaults(allVaults)
 
     const posMap: Record<string, UserPosition> = {}
     for (const v of allVaults) {
-      const pos = await mockChainClient.getUserPosition(currentAccount.address, v.vaultId)
+      const pos = await chainClient.getUserPosition(currentAccount.address, v.vaultId)
       if (pos) posMap[v.vaultId] = pos
     }
     setPositions(posMap)

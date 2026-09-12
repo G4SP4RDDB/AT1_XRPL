@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import type { Bid } from '@shared/types'
 
 interface AskFormProps {
@@ -24,7 +24,7 @@ export const AskForm: FC<AskFormProps> = ({ bids, onAskCreated }) => {
     setFeedback(null)
 
     try {
-      await mockChainClient.createAsk({
+      await chainClient.createAsk({
         lenderAddress: currentAccount.address,
         lenderName: currentAccount.name,
         amount,

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC } from 'react'
 import type { VaultState } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
 
 interface CouponModalProps {
@@ -25,7 +25,7 @@ export const CouponModal: FC<CouponModalProps> = ({ vault, onClose, onSuccess })
     setTxResult(null)
 
     try {
-      const res = await mockChainClient.payCoupon(vault.vaultId, couponAmount)
+      const res = await chainClient.payCoupon(vault.vaultId, couponAmount)
       setTxResult(res)
       onSuccess()
     } catch (err: any) {

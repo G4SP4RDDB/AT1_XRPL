@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { useWallet } from '@/lib/wallet'
 import { VaultCard } from '@/components/VaultCard'
 
@@ -13,13 +13,13 @@ export const DashboardPage: FC = () => {
 
   const loadData = async () => {
     try {
-      const allVaults = await mockChainClient.getAllVaults()
+      const allVaults = await chainClient.getAllVaults()
       setVaults(allVaults)
 
       const positions: Record<string, UserPosition> = {}
       if (currentAccount) {
         for (const v of allVaults) {
-          const pos = await mockChainClient.getUserPosition(currentAccount.address, v.vaultId)
+          const pos = await chainClient.getUserPosition(currentAccount.address, v.vaultId)
           if (pos) {
             positions[v.vaultId] = pos
           }

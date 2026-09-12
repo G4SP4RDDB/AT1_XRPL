@@ -40,21 +40,15 @@ export interface WithdrawRequest {
 const CHAIN_URL = import.meta.env.VITE_CHAIN_URL || 'http://localhost:8787'
 const baseChain = createChainClient(CHAIN_URL)
 
-// Known Hackathon Devnet addresses from .env
-const DEFAULT_BROKER = 'r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4'
-const DEFAULT_BORROWER = 'rpWUv7aDJMHYcMvT8ZyivDdWbeHLcCJmUb'
-
-const BIDS_KEY = 'at1_bids_v2'
-const ASKS_KEY = 'at1_asks_v2'
+const BIDS_KEY = 'at1_bids_v3'
+const ASKS_KEY = 'at1_asks_v3'
 
 function loadBids(): Bid[] {
   try {
     const raw = localStorage.getItem(BIDS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      return Array.isArray(parsed)
-        ? parsed.filter((b: Bid) => b.id && !b.id.includes('tier1-open') && !b.id.includes('demo-1'))
-        : []
+      return Array.isArray(parsed) ? parsed : []
     }
   } catch (e) {
     console.warn('Failed to parse stored bids:', e)
@@ -75,9 +69,7 @@ function loadAsks(): Ask[] {
     const raw = localStorage.getItem(ASKS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      return Array.isArray(parsed)
-        ? parsed.filter((a: Ask) => a.id && !a.id.includes('institutional'))
-        : []
+      return Array.isArray(parsed) ? parsed : []
     }
   } catch (e) {
     console.warn('Failed to parse stored asks:', e)
@@ -94,20 +86,20 @@ function saveAsks(asks: Ask[]) {
 }
 
 function normalizeVault(raw: RawVaultState, knownBid?: Bid): VaultState {
-  const isCallDateReached = new Date(raw.callDate).getTime() <= Date.now()
-  const liquidAssets = raw.assetsAvailable ?? '0'
-  const loanPrincipal = raw.loan?.principalOutstanding ?? '0'
-  const isLiquidityLocked = Number(loanPrincipal) > 0 && Number(liquidAssets) < Number(loanPrincipal)
+  const isCallDateReached = raw.isCallDateReached ?? (raw.callDate ? new Date(raw.callDate).getTime() <= Date.now() : false)
+  const liquidAssets = raw.liquidAssets ?? raw.assetsAvailable ?? '0'
+  const loanPrincipal = raw.loanPrincipal ?? raw.loan?.principalOutstanding ?? '0'
+  const isLiquidityLocked = raw.isLiquidityLocked ?? (Number(loanPrincipal) > 0 && Number(liquidAssets) < Number(loanPrincipal))
 
   return {
     ...raw,
-    borrowerAddress: knownBid?.borrowerAddress ?? DEFAULT_BORROWER,
-    brokerAddress: DEFAULT_BROKER,
+    borrowerAddress: raw.borrowerAddress ?? knownBid?.borrowerAddress ?? '',
+    brokerAddress: raw.brokerAddress ?? '',
     liquidAssets,
     loanPrincipal,
-    loanInterestRate: knownBid?.yieldRate ?? 10,
-    loanStatus: (raw.loan?.status as any) ?? 'none',
-    firstLossCover: '150',
+    loanInterestRate: raw.loanInterestRate ?? knownBid?.yieldRate ?? 10,
+    loanStatus: raw.loanStatus ?? (raw.loan?.status as any) ?? 'none',
+    firstLossCover: raw.firstLossCover ?? '0',
     isCallDateReached,
     isLiquidityLocked,
   }
@@ -122,7 +114,7 @@ function normalizePosition(raw: RawPosition): UserPosition {
   }
 }
 
-class LiveChainClient {
+export class ChainBackendClient {
   private bids: Bid[] = loadBids()
   private asks: Ask[] = loadAsks()
   private listeners: Array<() => void> = []
@@ -145,7 +137,44 @@ class LiveChainClient {
   }
 
   async getBids(): Promise<Bid[]> {
-    return [...this.bids]
+    try {
+      const vaults = await this.getAllVaults()
+      const onChainBids: Bid[] = vaults.map((v) => {
+        const isRepaid = v.loan ? v.loan.status === 'closed' : false
+        const isOriginated = Boolean(v.loan && v.loan.status !== 'closed')
+        const status: Bid['status'] = isRepaid ? 'repaid' : isOriginated ? 'originated' : 'open'
+        return {
+          id: v.bidId || `bid-${v.vaultId.slice(0, 10)}`,
+          borrowerAddress: v.borrowerAddress || '',
+          amount: v.loanPrincipal || '1000',
+          yieldRate: v.loanInterestRate ?? 10,
+          callDate: v.callDate,
+          vaultId: v.vaultId,
+          loanId: v.loan?.loanId,
+          status,
+          borrowerName: v.borrowerAddress ? `Issuer (${v.borrowerAddress.slice(0, 6)}...${v.borrowerAddress.slice(-4)})` : 'AT1 Bond',
+        }
+      })
+
+      const map = new Map<string, Bid>()
+      for (const b of this.bids) {
+        map.set(b.id, b)
+      }
+      for (const b of onChainBids) {
+        const existing = map.get(b.id)
+        map.set(b.id, {
+          ...existing,
+          ...b,
+          borrowerName: existing?.borrowerName || b.borrowerName,
+          description: existing?.description,
+        })
+      }
+
+      return Array.from(map.values())
+    } catch (err) {
+      console.warn('Could not query on-chain bids from backend:', err)
+      return [...this.bids]
+    }
   }
 
   async getAsks(): Promise<Ask[]> {
@@ -156,13 +185,13 @@ class LiveChainClient {
     try {
       const liveVaults = await baseChain.read.listVaults()
       const normalized = liveVaults.map((raw) => {
-        const matchingBid = this.bids.find((b) => b.vaultId === raw.vaultId)
+        const matchingBid = this.bids.find((b) => b.vaultId === raw.vaultId || b.id === raw.bidId)
         return normalizeVault(raw, matchingBid)
       })
 
-      // Sync active vault status to bids
+      // Sync active vault state to local bids
       for (const v of liveVaults) {
-        const b = this.bids.find((bid) => bid.vaultId === v.vaultId)
+        const b = this.bids.find((bid) => bid.vaultId === v.vaultId || bid.id === v.bidId)
         if (b) {
           if (v.loan && b.status !== 'originated') {
             b.status = 'originated'
@@ -174,7 +203,7 @@ class LiveChainClient {
 
       return normalized
     } catch (err) {
-      console.warn('Could not read vaults from chain shim:', err)
+      console.warn('Could not read vaults from chain backend shim:', err)
       return []
     }
   }
@@ -182,7 +211,7 @@ class LiveChainClient {
   async getVault(vaultId: string): Promise<VaultState | null> {
     try {
       const raw = await baseChain.read.vaultState(vaultId)
-      const matchingBid = this.bids.find((b) => b.vaultId === vaultId)
+      const matchingBid = this.bids.find((b) => b.vaultId === vaultId || b.id === raw.bidId)
       return normalizeVault(raw, matchingBid)
     } catch (err) {
       console.warn(`Could not read vault ${vaultId}:`, err)
@@ -222,12 +251,12 @@ class LiveChainClient {
     ;(newBid as any).description = bidInput.description
 
     try {
-      // 12s on-chain provision: VaultCreate + LoanBrokerSet + CoverDeposit
+      // Execute on-chain provision via backend: VaultCreate + LoanBrokerSet + CoverDeposit
       const created = await baseChain.tx.createBond(newBid)
       newBid.vaultId = created.vaultId
       newBid.loanBrokerId = created.loanBrokerId
     } catch (err: any) {
-      console.error('Failed to create on-chain bond vault:', err)
+      console.error('Failed to create on-chain bond vault via backend:', err)
       throw new Error(`Failed to create bond vault on-chain: ${err.message}`)
     }
 
@@ -250,6 +279,7 @@ class LiveChainClient {
       amount: String(askInput.amount),
       indicated: true,
       matchedBidId: askInput.bidId,
+      status: 'pending',
     }
     ;(newAsk as any).lenderName = askInput.lenderName || 'Investor'
 
@@ -260,38 +290,48 @@ class LiveChainClient {
   }
 
   async fundBond(bidId: string, lenderAddress: string, amount: string): Promise<{ vaultId: string; txHash: string }> {
-    const bid = this.bids.find((b) => b.id === bidId)
-    if (!bid) throw new Error('Bid not found')
+    const allVaults = await this.getAllVaults()
+    const v = allVaults.find((vault) => vault.bidId === bidId || vault.vaultId === bidId)
+    const bid = this.bids.find((b) => b.id === bidId || b.vaultId === bidId)
 
-    if (!bid.vaultId || !bid.loanBrokerId) {
-      // Create on-chain bond if not already created
-      const created = await baseChain.tx.createBond(bid)
-      bid.vaultId = created.vaultId
-      bid.loanBrokerId = created.loanBrokerId
+    const targetVaultId = v?.vaultId || bid?.vaultId
+    if (!targetVaultId) {
+      throw new Error('Bond vault not found on ledger')
     }
 
-    // 1. VaultDeposit
-    const depositReceipt = await baseChain.tx.deposit(lenderAddress, bid.vaultId, amount)
+    // 1. Execute VaultDeposit on chain through backend
+    const depositReceipt = await baseChain.tx.deposit(lenderAddress, targetVaultId, amount)
     if (depositReceipt.result !== 'tesSUCCESS') {
       throw new Error(`Deposit failed on-chain: ${depositReceipt.result}`)
     }
 
-    // 2. Originate LoanSet (multisig co-signed)
-    bid.status = 'matched'
+    // 2. Originate LoanSet (multisig co-signed) on chain through backend
+    const bidObj: Bid = {
+      id: v?.bidId || bid?.id || bidId,
+      borrowerAddress: v?.borrowerAddress || bid?.borrowerAddress || '',
+      amount: v?.loanPrincipal || bid?.amount || amount,
+      yieldRate: v?.loanInterestRate ?? bid?.yieldRate ?? 10,
+      callDate: v?.callDate || bid?.callDate || new Date().toISOString(),
+      vaultId: targetVaultId,
+      status: 'matched',
+    }
+
     try {
-      const origReceipt = await baseChain.tx.originate(bid)
+      const origReceipt = await baseChain.tx.originate(bidObj)
       if (origReceipt.loanId) {
-        bid.loanId = origReceipt.loanId
-        bid.status = 'originated'
+        if (bid) {
+          bid.loanId = origReceipt.loanId
+          bid.status = 'originated'
+          saveBids(this.bids)
+        }
       }
     } catch (err: any) {
       console.warn('Originate step warning:', err)
     }
 
-    saveBids(this.bids)
     this.notify()
     return {
-      vaultId: bid.vaultId,
+      vaultId: targetVaultId,
       txHash: depositReceipt.hash,
     }
   }
@@ -301,6 +341,7 @@ class LiveChainClient {
     if (!ask) throw new Error('Ask not found')
     const res = await this.fundBond(bidId, ask.lenderAddress, ask.amount)
     ask.matchedBidId = bidId
+    ask.status = 'matched'
     saveAsks(this.asks)
     this.notify()
     return res
@@ -312,7 +353,11 @@ class LiveChainClient {
       throw new Error('No active on-chain loan found for this vault')
     }
 
-    const borrowerAddr = vault.borrowerAddress || DEFAULT_BORROWER
+    const borrowerAddr = vault.borrowerAddress
+    if (!borrowerAddr) {
+      throw new Error('Borrower address missing from on-chain vault data')
+    }
+
     const receipt = await baseChain.tx.payCoupon(vault.loan.loanId, borrowerAddr)
 
     if (isBlocked(receipt)) {
@@ -359,7 +404,7 @@ class LiveChainClient {
       }
 
       if (receipt.result === 'tecINSUFFICIENT_FUNDS') {
-        // Minimum bar guardrail demonstration!
+        // Minimum bar guardrail demonstration
         return {
           success: false,
           error: `${receipt.result}: Principal is illiquid while out on loan to the borrower. The vault cannot fulfill full principal redemption prior to loan repayment (Native Protocol Guardrail Verification).`,
@@ -380,16 +425,17 @@ class LiveChainClient {
     }
   }
 
-  async executeMultisigRepay(
-    vaultId: string,
-    _overrideCallDate?: boolean
-  ): Promise<{ success: boolean; txHash?: string; error?: string }> {
+  async executeMultisigRepay(vaultId: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
     const vault = await this.getVault(vaultId)
     if (!vault?.loan?.loanId) {
       throw new Error('No active loan found for this vault')
     }
 
-    const borrowerAddr = vault.borrowerAddress || DEFAULT_BORROWER
+    const borrowerAddr = vault.borrowerAddress
+    if (!borrowerAddr) {
+      throw new Error('Borrower address missing from on-chain vault data')
+    }
+
     const receipt = await baseChain.tx.finalRepayment(vault.loan.loanId, borrowerAddr)
 
     if (isBlocked(receipt)) {
@@ -439,5 +485,5 @@ class LiveChainClient {
   }
 }
 
-export const mockChainClient = new LiveChainClient()
-export const chainClient = mockChainClient
+export const chainClient = new ChainBackendClient()
+export const mockChainClient = chainClient

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import type { Bid, Ask } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { BidForm } from '@/components/BidForm'
 import { AskForm } from '@/components/AskForm'
 import { MatchBoard } from '@/components/MatchBoard'
@@ -14,8 +14,8 @@ export const MarketplacePage: FC = () => {
   const refreshData = async () => {
     try {
       const [fetchedBids, fetchedAsks] = await Promise.all([
-        mockChainClient.getBids(),
-        mockChainClient.getAsks(),
+        chainClient.getBids(),
+        chainClient.getAsks(),
       ])
       setBids(fetchedBids)
       setAsks(fetchedAsks)

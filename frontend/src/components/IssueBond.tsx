@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -23,7 +23,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
     setSuccessMsg(null)
 
     try {
-      await mockChainClient.createBid({
+      await chainClient.createBid({
         borrowerAddress: currentAccount.address,
         borrowerName: currentAccount.name,
         amount,

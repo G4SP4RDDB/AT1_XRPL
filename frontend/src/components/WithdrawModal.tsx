@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
 
 interface WithdrawModalProps {
@@ -52,7 +52,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
     setTxSuccess(null)
 
     try {
-      const res = await mockChainClient.withdraw({
+      const res = await chainClient.withdraw({
         depositorAddress: position.accountAddress || position.depositorAddress,
         vaultId: vault.vaultId,
         mode,

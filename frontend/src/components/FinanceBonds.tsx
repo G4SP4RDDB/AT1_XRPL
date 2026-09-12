@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import type { Bid } from '@shared/types'
 import { useWallet } from '@/lib/wallet'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
 
 interface FinanceBondsProps {
@@ -18,7 +18,7 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onFundSuccess }) => {
   const [successInfo, setSuccessInfo] = useState<{ vaultId: string; txHash: string } | null>(null)
 
   const loadBids = async () => {
-    const all = await mockChainClient.getBids()
+    const all = await chainClient.getBids()
     setBids(all.filter((b) => b.status === 'open'))
   }
 
@@ -34,7 +34,7 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onFundSuccess }) => {
     const amountToInvest = investAmount || bid.amount
 
     try {
-      const res = await mockChainClient.fundBond(bid.id, currentAccount.address, amountToInvest)
+      const res = await chainClient.fundBond(bid.id, currentAccount.address, amountToInvest)
       setSuccessInfo(res)
       setFundingBidId(null)
       setInvestAmount('')

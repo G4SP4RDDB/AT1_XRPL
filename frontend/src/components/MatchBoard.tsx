@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC } from 'react'
 import type { Bid, Ask } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
 
 interface MatchBoardProps {
@@ -25,7 +25,7 @@ export const MatchBoard: FC<MatchBoardProps> = ({ bids, asks, onMatchExecuted })
     setMatchResult(null)
 
     try {
-      const res = await mockChainClient.matchAndDeposit(bidId, askId)
+      const res = await chainClient.matchAndDeposit(bidId, askId)
       setMatchResult(res)
       onMatchExecuted()
     } catch (err: any) {
@@ -41,7 +41,7 @@ export const MatchBoard: FC<MatchBoardProps> = ({ bids, asks, onMatchExecuted })
         <div className="alert alert-success">
           <strong>Match Executed On-Ledger!</strong>
           <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-            Vault created: <code>{matchResult.vaultId}</code> | Simulated TX:
+            Vault created: <code>{matchResult.vaultId}</code> | On-Chain TX:
             <a
               href={explorerTxUrl(matchResult.txHash)}
               target="_blank"

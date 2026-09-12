@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FC } from 'react'
 import type { VaultState } from '@shared/types'
-import { mockChainClient } from '@/lib/chainClient'
+import { chainClient } from '@/lib/chainClient'
 import { explorerTxUrl } from '@/lib/xrpl'
 
 interface MultisigRepayModalProps {
@@ -16,7 +16,6 @@ export const MultisigRepayModal: FC<MultisigRepayModalProps> = ({
   onSuccess,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [overrideCallDate, setOverrideCallDate] = useState(false)
   const [result, setResult] = useState<{ success: boolean; txHash?: string; error?: string } | null>(null)
 
   const handleRepay = async () => {
@@ -24,7 +23,7 @@ export const MultisigRepayModal: FC<MultisigRepayModalProps> = ({
     setResult(null)
 
     try {
-      const res = await mockChainClient.executeMultisigRepay(vault.vaultId, overrideCallDate)
+      const res = await chainClient.executeMultisigRepay(vault.vaultId)
       setResult(res)
       if (res.success) {
         onSuccess()
@@ -58,28 +57,21 @@ export const MultisigRepayModal: FC<MultisigRepayModalProps> = ({
           </div>
           <div className="metric-row">
             <span className="metric-label">Multisig Signer Quorum</span>
-            <span className="metric-val highlight-cyan">2-of-2 (Broker + Scheduler)</span>
+            <span className="metric-val highlight-cyan">2-of-2 (BorrowerOp + Enforcer)</span>
+          </div>
+          <div className="metric-row">
+            <span className="metric-label">Call Date Status</span>
+            <span className={`metric-val ${vault.isCallDateReached ? 'highlight-green' : 'highlight-amber'}`}>
+              {vault.isCallDateReached ? 'Call Date Reached' : 'Locked Until Call Date'}
+            </span>
           </div>
         </div>
 
         <div className="alert alert-warning">
           <strong>Multisig Call-Date Policy:</strong>
           <p style={{ marginTop: '0.3rem', fontSize: '0.8rem' }}>
-            The final <code>LoanPay</code> repayment transaction clearing the principal requires co-signatures from the platform broker and scheduling key. By policy, signers will refuse co-signing if ledger time is before the call date.
+            The final <code>LoanPay</code> repayment transaction clearing the principal requires 2-of-2 co-signatures from BorrowerOp and the Platform Enforcer. The enforcer inspects the ledger close time against the loan schedule and will refuse to sign if called early.
           </p>
-        </div>
-
-        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-          <input
-            type="checkbox"
-            id="overrideCall"
-            checked={overrideCallDate}
-            onChange={(e) => setOverrideCallDate(e.target.checked)}
-            style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-          />
-          <label htmlFor="overrideCall" style={{ fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text-primary)' }}>
-            <strong>[Demo Toggle]</strong> Fast-forward time to simulate reaching the call date ({vault.callDate})
-          </label>
         </div>
 
         {result && !result.success && (

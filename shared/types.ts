@@ -54,6 +54,7 @@ export interface VaultState {
   callDate: IsoDate;
   loan?: LoanState;
   stub?: true;              // present while the chain layer returns fixtures
+  bidId?: string;
   borrowerAddress?: Address;
   brokerAddress?: Address;
   liquidAssets?: string;
