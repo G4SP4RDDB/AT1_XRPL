@@ -183,10 +183,9 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ## 7. Connecting Your Wallet & User Flow
 
-1. **Connect Wallet & Role Selection**:
+1. **Connect Wallet**:
    - Click **Connect Wallet** in the top-right corner.
-   - **Quick-Select On-Chain Role**: Choose between pre-configured on-chain roles (`Borrower`, `Lender 1`, `Lender 2`, or `Platform Broker`) backed by verified Devnet seeds.
-   - **External Wallet**: Connect via Xaman / Crossmark using the native `xrpl-connect` WalletConnect modal.
+   - Connect via your XRPL wallet (Xaman / Crossmark / GemWallet) using the native `xrpl-connect` WalletConnect URI or QR code.
 2. **Borrower Flow (Issuance)**:
    - Submit a **Debt Bid** specifying the principal amount, offered annual yield, and Call Date.
    - The platform automatically deploys an on-chain **Single Asset Vault** (`VaultCreate`) and configures the **Loan Broker** (`LoanBrokerSet`).
