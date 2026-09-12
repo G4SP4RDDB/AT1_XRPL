@@ -13,7 +13,8 @@
     "vaults": "tsx scripts/vaults.ts",
     "test": "tsx --test tests/*.test.ts",
     "objects": "tsx scripts/objects.ts",
-    "enforcer": "tsx src/chain/enforcer/server.ts"
+    "enforcer": "tsx src/chain/enforcer/server.ts",
+    "create-accounts": "tsx scripts/create-accounts.ts"
   },
   "repository": {
     "type": "git",
