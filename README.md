@@ -163,7 +163,21 @@ Compte #1:
 
 ### Step 3: Launch the Services
 
-Start the three services in separate terminals (or in the background):
+#### Option A: One-Command All-in-One (Tests + Build + tmux Split-Screen) 🚀
+
+Runs all backend & frontend tests, compiles the codebase, and opens a split 3-pane tmux session:
+```bash
+npm run dev:tmux
+```
+
+To view or manage the tmux session:
+```bash
+tmux attach -t at1        # View split terminal
+# Inside tmux: Ctrl+b then arrow keys to navigate, Ctrl+b then d to detach
+npm run stop:tmux         # Stop all 3 services and kill the session
+```
+
+#### Option B: Separate Terminals
 
 ```bash
 # 1. Start the Autonomous Multisig Enforcer (Port 8788)

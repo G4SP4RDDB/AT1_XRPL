@@ -14,7 +14,9 @@
     "test": "tsx --test tests/*.test.ts",
     "objects": "tsx scripts/objects.ts",
     "enforcer": "tsx src/chain/enforcer/server.ts",
-    "create-accounts": "tsx scripts/create-accounts.ts"
+    "create-accounts": "tsx scripts/create-accounts.ts",
+    "dev:tmux": "bash scripts/start-all.sh",
+    "stop:tmux": "bash scripts/stop-tmux.sh"
   },
   "repository": {
     "type": "git",
