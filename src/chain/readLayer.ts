@@ -34,11 +34,17 @@ async function vaultData(client: Client, v: VaultInfo): Promise<{ id?: string; b
 
 export function loanState(loan: any): LoanState {
   const flags = Number(loan.Flags ?? 0);
-  const status = Number(loan.PaymentRemaining) === 0 ? "closed" : flags & 0x00010000 ? "defaulted" : flags & 0x00020000 ? "impaired" : "active";
+  // Like every other zero-valued field on this ledger, a closed loan's `PaymentRemaining` (0) is omitted from the
+  // entry entirely rather than serialized as "0" (confirmed against the devnet: a Loan read back right after its
+  // closing LoanPay has no PaymentRemaining key at all). `Number(undefined) === 0` is false, so this used to read
+  // a genuinely closed loan back as "active" and never flip payment-remaining to 0. Caught by the
+  // INTEGRATION_CLOSE=1 settlement integration test.
+  const paymentRemaining = Number(loan.PaymentRemaining ?? 0);
+  const status = paymentRemaining === 0 ? "closed" : flags & 0x00010000 ? "defaulted" : flags & 0x00020000 ? "impaired" : "active";
   return {
     loanId: loan.index, principalOutstanding: xrp(loan.PrincipalOutstanding), totalValueOutstanding: xrp(loan.TotalValueOutstanding),
     periodicPayment: xrp(Math.ceil(Number(loan.PeriodicPayment))), nextPaymentDueDate: rippleToIso(Number(loan.NextPaymentDueDate)),
-    paymentRemaining: Number(loan.PaymentRemaining), status,
+    paymentRemaining, status,
   };
 }
 
@@ -58,7 +64,7 @@ export async function vaultStateOf(client: Client, vaultId: string): Promise<Vau
   const data = await vaultData(client, v);
   const lb = await brokerFor(client, vaultId);
   const loan = await findLoan(client, data.b, lb?.index);
-  const callDate = loan && Number(loan.PaymentRemaining) > 0 ? rippleToIso(callDateRipple(loan)) : (data.c ?? "");
+  const callDate = loan && Number(loan.PaymentRemaining ?? 0) > 0 ? rippleToIso(callDateRipple(loan)) : (data.c ?? "");
   return {
     vaultId, asset: "XRP", assetsTotal: xrp(v.assetsTotal), assetsAvailable: xrp(v.assetsAvailable), lossUnrealized: xrp(v.lossUnrealized),
     sharesTotal: v.sharesOutstanding, pps: v.pps, callDate, loan: loan ? loanState(loan) : undefined,
@@ -85,13 +91,28 @@ async function depositHistory(client: Client, account: string, vaultId: string):
   return { depositedDrops, withdrawnDrops };
 }
 
+/**
+ * Splits a depositor's current shares into a principal share count and a yield share count, at the vault's
+ * current PPS. Pure so it's unit-testable without a ledger connection (see tests/readLayer.test.ts).
+ *
+ * Principal basis in today's shares is `depositedDrops / pps` alone, never net of withdrawnDrops. Every
+ * withdrawal this app performs mid-loan is yield-only by construction, so it burns shares out of the yield
+ * pool, not the principal one; `shares` (the live MPT balance passed in) already reflects that burn. Netting
+ * withdrawnDrops out of the basis here double-counted it: right after redeeming Y yield shares, principalShares
+ * dropped by the same Y worth of drops that shares had just lost, so yieldShares (= shares - principalShares)
+ * came back unchanged instead of falling to ~0. Caught by the yield-only-withdrawal integration test.
+ */
+export function splitShares(shares: number, depositedDrops: number, pps: number): { principalShares: number; yieldShares: number } {
+  const principalShares = pps > 0 ? depositedDrops / pps : 0;
+  return { principalShares, yieldShares: Math.max(0, Math.floor(shares - principalShares)) };
+}
+
 export async function positionOf(client: Client, address: string, vaultId: string): Promise<Position> {
   const v = await vaultInfo(client, vaultId);
   const shares = Number(await shareBalance(client, address, v.shareMptId));
   const { depositedDrops, withdrawnDrops } = await depositHistory(client, address, vaultId);
   const currentValueDrops = shares * v.pps;
-  const principalShares = v.pps > 0 ? Math.max(0, depositedDrops - withdrawnDrops) / v.pps : 0;
-  const yieldShares = Math.max(0, Math.floor(shares - principalShares));
+  const { yieldShares } = splitShares(shares, depositedDrops, v.pps);
   return {
     depositorAddress: address, vaultId, shares: String(shares), principalDeposited: xrp(depositedDrops),
     currentValue: xrp(currentValueDrops), accruedYield: xrp(currentValueDrops + withdrawnDrops - depositedDrops), yieldShares: String(yieldShares),
