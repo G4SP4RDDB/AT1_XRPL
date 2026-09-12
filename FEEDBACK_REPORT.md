@@ -91,6 +91,7 @@ In `xrpl.js 5.2.0`, `new Client(url, { timeout: 15000 })` configures the individ
 | **Protocol** | Impairment rejected on current loans | **Medium** | `tecTOO_SOON` / `fixCleanup3_4_0` | Document overdue precondition; improve unimpair error code |
 | **SDK** | Counterparty multisig string ambiguity | **Medium** | `signLoanSetByCounterparty` | Clarify X-address parameter vs boolean multisig flag |
 | **Infra** | Devnet TLS dropped on 51233/51234 | **High** | Venue network / ports | Host WebSocket and RPC on standard port 443 |
+| **Financial** | Lack of Rate Reset / Variable Interest Rate | **High** | `LoanSet.InterestRate` immutable | Integrate XLS-47d Oracles or add `LoanBrokerRateReset` |
 
 ---
 

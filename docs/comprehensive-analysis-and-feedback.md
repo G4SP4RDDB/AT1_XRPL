@@ -107,7 +107,7 @@ Pour éviter d'imposer des profils pré-formatés ("Alexandre CFO", "Sophie Inve
 
 ---
 
-## 4. Catalogue Exhaustif des 18 Frictions Protocolaires & Retours Développeur
+## 4. Catalogue Exhaustif des 19 Frictions Protocolaires & Retours Développeur
 
 Chaque friction est consignée selon le standard rigoureux du hackathon : Catégorie, Titre, Description, Reproduction, Sévérité, Composant et **Proposition concrète de résolution**.
 
@@ -262,6 +262,20 @@ Chaque friction est consignée selon le standard rigoureux du hackathon : Catég
   2. Adoption du standard de signature locale décentralisée : signature dans le wallet de l'utilisateur (Xaman / Crossmark via `xrpl-connect`) sans que la clé ne quitte son navigateur.
 
 ---
+
+### #19 · Finance de Marché / Protocole XLS-66 · Absence de Taux Variable et de Réindexation Post-Call (Rate Reset / Fixed-to-Float)
+- **Description** : Dans la finance institutionnelle réelle, une obligation AT1 (*Additional Tier 1*) est un instrument de dette perpétuelle (*Perpetual Non-Call*). L'emprunteur n'a **aucune obligation légale de rembourser à la Call Date**. S'il choisit de ne pas exercer son option de remboursement (*non-call*), l'obligation continue mais subit un **Rate Reset** : le taux fixe d'origine est automatiquement converti en un **taux variable** (ex: *Taux Swap 5 ans ou SOFR + marge de crédit initiale*).
+  Dans XLS-66 actuel, le champ `InterestRate` défini lors de `LoanSet` est strictement **immuable** et gravé en dur sur le ledger. Il n'existe aucun mécanisme natif pour réindexer un prêt ou connecter un oracle de taux de référence.
+- **Repro** : Tentative de mise à jour du taux d'intérêt d'un prêt `Loan` actif après franchissement de la Call Date. Aucune transaction `LoanRateUpdate` ou paramètre de taux dynamique n'est supporté par `rippled`.
+- **Sévérité** : **Haute (Modélisation Financière & Produits Institutionnels)**.
+- **Workaround Applicatif Actuel** :
+  À la Call Date, si l'emprunteur n'exécute pas le remboursement, le broker peut orchestrer un **Rollover / Refinancement** : clôture du prêt et émission immédiate d'un nouveau `LoanSet` adossé au même coffre avec le nouveau taux d'intérêt révisé calculé off-chain.
+- **Proposition concrète pour Ripple (Évolution XLS-66 v2)** :
+  1. **Intégration native des Oracles XRPL (XLS-47d)** : Permettre à `LoanSet` de spécifier un `RateOracleID` et un `SpreadBasisPoints`, calculant automatiquement chaque `PeriodicPayment` selon la valeur du taux de référence au moment de l'échéance.
+  2. **Transaction `LoanBrokerRateReset`** : Permettre au `LoanBroker` désigné d'ajuster le taux d'intérêt lors des fenêtres contractuelles de révision prévues à l'émission.
+
+---
+
 
 ## 5. Synthèse des Recommandations Techniques pour Ripple
 
