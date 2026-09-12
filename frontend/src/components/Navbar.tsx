@@ -1,14 +1,17 @@
 import type { FC } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { network } from '@/lib/xrpl'
+import { useBorrowerProfile } from '@/lib/borrowerProfile'
 
 interface NavbarProps {
   activeTab: 'issue' | 'finance' | 'positions'
   setActiveTab: (tab: 'issue' | 'finance' | 'positions') => void
+  onOpenBorrowerProfile?: () => void
 }
 
-export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
+export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowerProfile }) => {
   const { currentAccount, isConnected, disconnect, openModal, refreshBalance } = useWallet()
+  const borrowerProfile = useBorrowerProfile(currentAccount?.address)
 
   return (
     <>
@@ -62,6 +65,38 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         <div className="wallet-badge-group">
           {isConnected && currentAccount ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              {borrowerProfile ? (
+                <div
+                  className="account-pill"
+                  onClick={onOpenBorrowerProfile}
+                  style={{ cursor: 'pointer', background: 'rgba(37, 99, 235, 0.08)', borderColor: 'rgba(37, 99, 235, 0.3)' }}
+                  title="Profil Emprunteur & Statut Multisig (Cliquer pour modifier)"
+                >
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-blue)' }}>
+                    👤 {borrowerProfile.firstName}
+                  </span>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                    ({borrowerProfile.role})
+                  </span>
+                  {borrowerProfile.multisigActive && (
+                    <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                      2/2 MULTISIG
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={onOpenBorrowerProfile}
+                  style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                  title="Renseigner mon profil emprunteur (Prénom & Rôle) et activer le Multisig"
+                >
+                  <span>🏢</span>
+                  <span>Profil Emprunteur</span>
+                </button>
+              )}
+
               <div
                 className="account-pill"
                 onClick={refreshBalance}

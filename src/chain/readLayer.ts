@@ -154,4 +154,14 @@ export const read = {
   position: async (address: string, vaultId: string) => positionOf(await getClient(), address, vaultId),
   listVaults: async () => listVaultsOf(await getClient()),
   brokerAddress: async () => ({ address: loadAccounts().broker.classicAddress }),
+  roles: async () => Object.fromEntries(Object.entries(loadAccounts()).map(([k, v]) => [k, v.classicAddress])),
+  isMasterDisabled: async (address: string) => {
+    const client = await getClient();
+    try {
+      const ai: any = await client.request({ command: "account_info", account: address, ledger_index: "validated" } as any);
+      return { masterDisabled: ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0 };
+    } catch {
+      return { masterDisabled: false };
+    }
+  },
 };

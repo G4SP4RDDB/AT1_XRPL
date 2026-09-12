@@ -3,13 +3,16 @@ import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { chainClient } from '@/lib/chainClient'
 import { notifyTx } from '@/lib/notifications'
+import { useBorrowerProfile } from '@/lib/borrowerProfile'
 
 interface IssueBondProps {
   onSuccess: () => void
+  onOpenProfile?: () => void
 }
 
-export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
+export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
   const { currentAccount } = useWallet()
+  const borrowerProfile = useBorrowerProfile(currentAccount?.address)
   const [amount, setAmount] = useState('')
   const [yieldRate, setYieldRate] = useState('')
   const [callDate, setCallDate] = useState('')
@@ -23,10 +26,14 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
     setIsSubmitting(true)
     setSuccessMsg(null)
 
+    const issuerName = borrowerProfile
+      ? `${borrowerProfile.firstName} (${borrowerProfile.role})`
+      : (currentAccount.name || 'AT1 Corporate Issuer')
+
     try {
       await chainClient.createBid({
         borrowerAddress: currentAccount.address,
-        borrowerName: currentAccount.name,
+        borrowerName: issuerName,
         amount,
         yieldRate: parseFloat(yieldRate),
         callDate,
@@ -62,6 +69,41 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
             {successMsg}
           </div>
         )}
+
+        <div
+          style={{
+            background: 'var(--bg-surface-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '10px',
+            padding: '0.85rem 1.1rem',
+            marginBottom: '1.25rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
+              {borrowerProfile ? `👤 Émetteur : ${borrowerProfile.firstName} (${borrowerProfile.role})` : '⚠️ Profil Emprunteur non renseigné'}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              {borrowerProfile
+                ? `Multisig 2-sur-2 : ${borrowerProfile.multisigActive ? '✅ Actif on-chain' : 'En attente'}`
+                : 'Précisez votre prénom et rôle d\'émetteur pour initialiser la gouvernance.'}
+            </div>
+          </div>
+          {onOpenProfile && (
+            <button
+              type="button"
+              className={`btn btn-sm ${borrowerProfile ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={onOpenProfile}
+              style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+            >
+              {borrowerProfile ? 'Modifier le Profil' : 'Renseigner mon Profil'}
+            </button>
+          )}
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">

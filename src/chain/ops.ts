@@ -188,4 +188,38 @@ export async function unimpair(loanId: string): Promise<TxReceipt> {
   const client = await getClient();
   return toReceipt(await submit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00040000 }, broker()));
 }
+/** 2.11 Configure 2-of-2 Multisig on borrower account with master key disabled. */
+export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<TxReceipt> {
+  const client = await getClient();
+  const acc = loadAccounts();
+  const borrowerWallet = borrowerAddress ? walletFor(borrowerAddress) : acc.borrower;
+
+  // Check if master key is already disabled
+  const ai: any = await client.request({ command: "account_info", account: borrowerWallet.classicAddress, ledger_index: "validated" } as any);
+  const masterDisabled = ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0;
+  if (masterDisabled) {
+    return { hash: "", result: "tesSUCCESS", explorerUrl: "", ledgerIndex: ai.result.ledger_index ?? 0 };
+  }
+
+  // 1. SignerListSet
+  await submit(client, {
+    TransactionType: "SignerListSet",
+    Account: borrowerWallet.classicAddress,
+    SignerQuorum: 2,
+    SignerEntries: [
+      { SignerEntry: { Account: acc.borrowerOp.classicAddress, SignerWeight: 1 } },
+      { SignerEntry: { Account: acc.brokerEnforcer.classicAddress, SignerWeight: 1 } },
+    ],
+  }, borrowerWallet);
+
+  // 2. AccountSet asfDisableMaster
+  const dm = await submit(client, {
+    TransactionType: "AccountSet",
+    Account: borrowerWallet.classicAddress,
+    SetFlag: 4, // asfDisableMaster
+  }, borrowerWallet);
+
+  return toReceipt(dm);
+}
+
 export { dropsToXrp };

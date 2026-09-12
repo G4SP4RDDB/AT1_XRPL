@@ -572,6 +572,46 @@ export class ChainBackendClient {
       error: r.result === 'tesSUCCESS' ? undefined : r.result,
     }
   }
+
+  async setupBorrowerMultisig(borrowerAddress?: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    try {
+      const receipt = await baseChain.tx.setupBorrowerMultisig(borrowerAddress)
+      if (receipt.result === 'tesSUCCESS') {
+        notifyTx({
+          title: 'Gouvernance Multisig Activée',
+          message: 'Multisig 2-sur-2 configuré on-chain avec clé maître désactivée.',
+          txHash: receipt.hash || undefined,
+          type: 'success',
+        })
+        return { success: true, txHash: receipt.hash }
+      }
+      return { success: false, error: receipt.result }
+    } catch (err: any) {
+      notifyTx({
+        title: 'Erreur activation Multisig',
+        message: err.message,
+        type: 'error',
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  async getRoles(): Promise<Record<string, string>> {
+    try {
+      return await baseChain.read.roles()
+    } catch {
+      return {}
+    }
+  }
+
+  async isMasterDisabled(address: string): Promise<boolean> {
+    try {
+      const res = await baseChain.read.isMasterDisabled(address)
+      return res.masterDisabled
+    } catch {
+      return false
+    }
+  }
 }
 
 export const chainClient = new ChainBackendClient()

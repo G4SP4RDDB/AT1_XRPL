@@ -33,10 +33,16 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       listVaults: () => call<VaultState[]>("/read/listVaults"),
       /** Returns the platform broker's classic address. */
       brokerAddress: () => call<{ address: string }>("/read/brokerAddress"),
+      /** Returns all configured role addresses from the backend. */
+      roles: () => call<Record<string, string>>("/read/roles"),
+      /** Checks if the master key of an account is disabled. */
+      isMasterDisabled: (address: string) => call<{ masterDisabled: boolean }>("/read/isMasterDisabled", [address]),
     },
     tx: {
       /** Register a wallet seed dynamically for the current session. */
       registerWallet: (seed: string) => call<{ address: string }>("/tx/registerWallet", [seed]),
+      /** Configure 2-of-2 Multisig on borrower account with master key disabled. */
+      setupBorrowerMultisig: (borrowerAddress?: string) => call<TxReceipt>("/tx/setupBorrowerMultisig", [borrowerAddress]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
       createBond: (bid: Bid) => call<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }>("/tx/createBond", [bid]),
       /** Matched ask becomes a VaultDeposit. amount in XRP, e.g. "1000". */

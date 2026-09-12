@@ -13,6 +13,7 @@ export const tx = {
   finalRepayment: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.finalRepayment(loanId, borrowerAddress),
   impair: (loanId: string): Promise<TxReceipt> => ops.impair(loanId),
   unimpair: (loanId: string): Promise<TxReceipt> => ops.unimpair(loanId),
+  setupBorrowerMultisig: (borrowerAddress?: string): Promise<TxReceipt> => ops.setupBorrowerMultisig(borrowerAddress),
   // ops.registerWallet is synchronous (in-memory Map); wrap so every tx.* value returns a Promise, as server.ts's shim requires.
   registerWallet: async (seed: string) => ops.registerWallet(seed),
 };

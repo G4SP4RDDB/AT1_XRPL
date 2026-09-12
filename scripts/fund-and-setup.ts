@@ -64,32 +64,7 @@ await Promise.all([
 
 console.log("✓ Accounts validated on ledger.");
 
-// Setup Multisig on Borrower
-console.log("\n🔒 Configuring 2-of-2 Multisig on Borrower account...");
-const ai = await client.request({ command: "account_info", account: borrower.classicAddress, ledger_index: "validated" });
-const masterDisabled = ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0;
-
-if (!masterDisabled) {
-  const sl = await submit(client, {
-    TransactionType: "SignerListSet",
-    Account: borrower.classicAddress,
-    SignerQuorum: 2,
-    SignerEntries: [
-      { SignerEntry: { Account: borrowerOp.classicAddress, SignerWeight: 1 } },
-      { SignerEntry: { Account: brokerEnforcer.classicAddress, SignerWeight: 1 } },
-    ],
-  }, borrower);
-  console.log("  ✓ SignerListSet tx submitted:", sl.result, sl.hash);
-
-  const dm = await submit(client, {
-    TransactionType: "AccountSet",
-    Account: borrower.classicAddress,
-    SetFlag: 4, // asfDisableMaster
-  }, borrower);
-  console.log("  ✓ AccountSet (asfDisableMaster) tx submitted:", dm.result, dm.hash);
-} else {
-  console.log("  ✓ Borrower master key already disabled and multisig active.");
-}
+console.log("\n💡 Le multisig n'est plus automatisé ici : l'emprunteur renseigne son rôle et son prénom lors de sa connexion pour l'activer.");
 
 console.log("\n==========================================================================");
 console.log("💎 NEWLY CREATED & CONFIGURED ACCOUNTS");

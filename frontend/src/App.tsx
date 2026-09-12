@@ -8,10 +8,28 @@ import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { NotificationToastContainer } from '@/components/NotificationToast'
+import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
+import { chainClient } from '@/lib/chainClient'
+import { getStoredBorrowerProfile } from '@/lib/borrowerProfile'
 
 const MainContent: FC = () => {
-  const { isConnected, isModalOpen, openModal, closeModal } = useWallet()
+  const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
   const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions'>('finance')
+  const [isBorrowerModalOpen, setIsBorrowerModalOpen] = useState(false)
+
+  // Prompt borrower onboarding automatically when borrower connects without a profile
+  useEffect(() => {
+    if (isConnected && currentAccount?.address) {
+      chainClient.getRoles().then((roles) => {
+        if (roles.borrower && roles.borrower === currentAccount.address) {
+          const profile = getStoredBorrowerProfile(currentAccount.address)
+          if (!profile) {
+            setIsBorrowerModalOpen(true)
+          }
+        }
+      })
+    }
+  }, [isConnected, currentAccount?.address])
 
   useEffect(() => {
     const initConnector = () => {
@@ -31,6 +49,7 @@ const MainContent: FC = () => {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onOpenBorrowerProfile={() => setIsBorrowerModalOpen(true)}
       />
 
       <main style={{ minHeight: '60vh', padding: '1rem 0' }}>
@@ -81,7 +100,10 @@ const MainContent: FC = () => {
               <FinanceBonds onFundSuccess={() => setActiveTab('positions')} />
             )}
             {activeTab === 'issue' && (
-              <IssueBond onSuccess={() => setActiveTab('finance')} />
+              <IssueBond
+                onSuccess={() => setActiveTab('finance')}
+                onOpenProfile={() => setIsBorrowerModalOpen(true)}
+              />
             )}
             {activeTab === 'positions' && <MyPositions />}
           </>
@@ -89,6 +111,7 @@ const MainContent: FC = () => {
       </main>
 
       <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
+      <BorrowerOnboardingModal isOpen={isBorrowerModalOpen} onClose={() => setIsBorrowerModalOpen(false)} />
       <NotificationToastContainer />
 
       {/* Official XRPL Connect Web Component Modal */}
