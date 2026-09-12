@@ -14,10 +14,10 @@ const STORE_PATH = path.join(DATA_DIR, "bank-profiles.json");
 // Pre-seeded so the four demo role accounts already read as institutions without live
 // onboarding; a freshly WalletConnect-ed address still goes through the onboarding modal.
 const SEED_PROFILES: BankProfile[] = [
-  { address: "rsnFbojcDMuFmC7f3Ws7PdsvzSuA71RTgT", bankName: "Nordic Capital Bank", shortCode: "NCB", country: "Sweden", logoEmoji: "🏛️", createdAt: new Date(0).toISOString() },
-  { address: "rD8F37f4XEpNMfCmSUDerZiSBSG8rD1QzZ", bankName: "Helios Pension Fund", shortCode: "HPF", country: "Netherlands", logoEmoji: "☀️", createdAt: new Date(0).toISOString() },
-  { address: "rsn5ZUPZWQmtqDfDCnBrGf3bdkJNQCkDcW", bankName: "Meridian Asset Management", shortCode: "MAM", country: "Luxembourg", logoEmoji: "🧭", createdAt: new Date(0).toISOString() },
-  { address: "r4r59gviPCnToSNThhHk9qetUwfNc7Rt2N", bankName: "AT1 Structuring Desk", shortCode: "AT1", country: "Ireland", logoEmoji: "🛡️", createdAt: new Date(0).toISOString() },
+  { address: "rsnFbojcDMuFmC7f3Ws7PdsvzSuA71RTgT", bankName: "Nordic Capital Bank", shortCode: "NCB", country: "Sweden", logoEmoji: "🏛️", rating: "A+", createdAt: new Date(0).toISOString() },
+  { address: "rD8F37f4XEpNMfCmSUDerZiSBSG8rD1QzZ", bankName: "Helios Pension Fund", shortCode: "HPF", country: "Netherlands", logoEmoji: "☀️", rating: "AA-", createdAt: new Date(0).toISOString() },
+  { address: "rsn5ZUPZWQmtqDfDCnBrGf3bdkJNQCkDcW", bankName: "Meridian Asset Management", shortCode: "MAM", country: "Luxembourg", logoEmoji: "🧭", rating: "A", createdAt: new Date(0).toISOString() },
+  { address: "r4r59gviPCnToSNThhHk9qetUwfNc7Rt2N", bankName: "AT1 Structuring Desk", shortCode: "AT1", country: "Ireland", logoEmoji: "🛡️", rating: "BBB+", createdAt: new Date(0).toISOString() },
 ];
 
 function readStore(): Record<Address, BankProfile> {

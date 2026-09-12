@@ -50,6 +50,7 @@ export interface SaveBankProfileInput {
   shortCode?: string
   country?: string
   logoEmoji?: string
+  rating?: string
 }
 
 export async function saveProfile(input: SaveBankProfileInput): Promise<BankProfile> {
@@ -102,4 +103,13 @@ export function useBankProfile(address?: string | null): BankProfile | null | un
 
   if (!address) return undefined
   return cache.get(address)
+}
+
+/** Bumps whenever any profile in the cache changes — for a parent that needs to recompute
+ * something derived across many addresses (e.g. filter options) without resolving any one
+ * address itself. Best-effort: only reflects profiles some component has already fetched. */
+export function useProfilesVersion(): number {
+  const [version, setVersion] = useState(0)
+  useEffect(() => subscribe(() => setVersion((n) => n + 1)), [])
+  return version
 }

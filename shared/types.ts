@@ -108,5 +108,6 @@ export interface BankProfile {
   shortCode?: string;
   country?: string;
   logoEmoji?: string;
+  rating?: string; // e.g. "AA-", freeform credit rating, off-chain, self-reported
   createdAt: IsoDate;
 }

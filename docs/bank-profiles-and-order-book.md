@@ -248,11 +248,80 @@ default "24 hours" duration correctly showed "23h left" once the shared store re
 
 ---
 
+## 4. Finance Bonds table (Morpho-inspired)
+
+Requested with a full, precise spec: port the row layout from `app.morpho.org/vaults`
+(bank logo, bank name with middle-truncation, best yield, liquidity with a fiat line,
+countdown-to-close, chevron affordance, every cell its own `<a>`) to the "Finance Bonds"
+tab, one row per **bank** rather than per tranche — the highest-yield offer from each bank
+that's currently raising, with a filter bar (Jurisdiction, Currency, Rating, Sort by).
+
+### Deviations from the literal spec, and why
+- **href**: the spec's `/issuer/{slug}/offer/{id}` path has nothing behind it in this
+  app (no router, no such route). Rows link to `#/orderbook/{topOfferId}` instead — the
+  same per-tranche page the Order Book tab already built (§2/§3) — so the link actually
+  goes somewhere instead of 404ing. `App.tsx`'s initial tab now also checks the hash on
+  load (`#/orderbook...` → lands on the Order Book tab directly), so a fresh load, reload,
+  or middle-click-opened new tab resolves correctly; a same-tab click also flips the active
+  tab via a small `onNavigate` callback, skipped for modified clicks (ctrl/cmd/shift/middle)
+  so "open in background tab" doesn't also change what the current tab is showing.
+- **Logo**: an emoji in a round div, not an `<img>` — `BankProfile` stores `logoEmoji`, not
+  an image URL.
+- **Currency / fiat line**: this project is XRP-only (RLUSD was explicitly ruled out
+  earlier, see the discussion above this doc). Currency is hardcoded to XRP and the "$"
+  line uses a static placeholder rate (`XRP_USD_RATE` in `frontend/src/lib/bankBondFormat.ts`)
+  since there's no live price oracle here — clearly labeled as such in the code, not a real
+  feed.
+- **Liquidity**: the tranche's *remaining* capacity (target minus already-deposited), not
+  the original full size — matches what "can I still fund this" actually means for a
+  partially-filled AT1 tranche, which Morpho's vaults don't have an equivalent of.
+- **Skeleton**: 6 rows, not 30 — this app typically has a handful of open tranches, not
+  Morpho's much larger vault list; 30 skeleton rows would look wrong for the real data size.
+- Colors/fonts follow the app's existing CSS variables; the fetched Morpho page carried no
+  CSS to copy from, so these were free choices, matching the surrounding app rather than
+  introducing a third visual language (the Order Book's own "blanc cassé" one already being
+  the second, deliberately distinct one, from a different reference site).
+
+### New/changed
+- `shared/types.ts`: `BankProfile` gained `rating?: string` (freeform, e.g. "AA-",
+  self-reported, off-chain — same trust level as everything else in this registry).
+- `src/chain/profileStore.ts` + `data/bank-profiles.json`: the four seeded demo profiles
+  now carry a rating (Nordic Capital Bank A+, Helios Pension Fund AA-, Meridian Asset
+  Management A, AT1 Structuring Desk BBB+).
+- `frontend/src/lib/bankProfiles.ts`: new `useProfilesVersion()` hook — bumps whenever any
+  cached profile changes, so a parent component can recompute something derived across many
+  addresses (here, the Jurisdiction/Rating filter dropdown options) without itself resolving
+  any one address. Best-effort: only reflects profiles some row has already fetched.
+  `SaveBankProfileInput` gained `rating`.
+- `frontend/src/components/BankProfileModal.tsx`: added an optional Credit Rating field.
+- `frontend/src/lib/bankBondFormat.ts` (new): `mid` (middle-truncate >30 chars),
+  `fmt` (2 decimals; M ≥ 1e6, k ≥ 1e4), `slugify`, `countdownLabel` ("6d 14h" /
+  "14h 22m" under 24h / "Closed"), `isUrgent`, `isClosed`, `absoluteLabel`, `toUsd` /
+  `XRP_USD_RATE`, `jurisdictionCode` (full country name → 2-letter code for the known seed
+  set, best-effort first-two-letters fallback otherwise).
+- `frontend/src/components/FinanceBonds.tsx`: fully rewritten — groups open tranches by
+  borrower address into one row per bank (`buildBankRows`), a `BankBondRow` subcomponent
+  resolves that bank's profile reactively (`useBankProfile`) and hides itself if it doesn't
+  match the current Jurisdiction/Rating filter, a `SkeletonTable` renders before the first
+  load resolves. The old single-tranche "Fund this Bond" inline flow is gone; funding now
+  happens on the tranche's own page (Order Book tab), reached by clicking through.
+
+### Verified live
+Filter bar, skeleton, and grouped rows all render correctly against the real devnet data
+(three bank rows, correctly ranked by best yield, jurisdiction + rating shown under the
+bank name). Clicked a row: URL became `#/orderbook/bid-...`, the nav bar's active tab
+switched to "Order Book", and the correct bank's tranche page loaded — confirming the
+cross-tab hash-routing fallback works, not just the Order Book tab's own internal
+navigation. Set the Rating filter to "A+": list correctly narrowed to just the one
+matching bank.
+
+---
+
 ## Branches / commits
 
 - `feature/bank-profiles` (`364983e`) — bank profile registry + onboarding.
 - `feature/orderBook` (based on `feature/bank-profiles`) — tranche order book:
-  `6b913a0` (first version), `80a2f2e` (docs), plus the rewire described in §3 (per-vault
-  pages, two-sided book, expiry, blanc cassé) on top.
+  `6b913a0` (first version), `80a2f2e` (docs), the rewire described in §3 (per-vault
+  pages, two-sided book, expiry, blanc cassé), and the Finance Bonds table rewrite in §4.
 - `main` has moved ahead separately with unrelated work (a tmux dev-runner script,
   `fund-and-setup.ts`, a full e2e pipeline run) — neither branch has picked that up yet.

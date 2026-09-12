@@ -14,7 +14,11 @@ import { loadProfile } from '@/lib/bankProfiles'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
-  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions' | 'orderbook'>('finance')
+  // If we're loaded (or reloaded, or opened in a new tab) on a #/orderbook/<id> link — e.g.
+  // from a Finance Bonds row's middle-click / open-in-new-tab — land straight on that tab.
+  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions' | 'orderbook'>(() =>
+    window.location.hash.startsWith('#/orderbook') ? 'orderbook' : 'finance'
+  )
   const [isBankProfileModalOpen, setIsBankProfileModalOpen] = useState(false)
   const [onboardedAddress, setOnboardedAddress] = useState<string | null>(null)
 
@@ -99,7 +103,7 @@ const MainContent: FC = () => {
         ) : (
           <>
             {activeTab === 'finance' && (
-              <FinanceBonds onFundSuccess={() => setActiveTab('positions')} />
+              <FinanceBonds onNavigateToOrderBook={() => setActiveTab('orderbook')} />
             )}
             {activeTab === 'issue' && (
               <IssueBond onSuccess={() => setActiveTab('finance')} />

@@ -15,6 +15,7 @@ export const BankProfileModal: FC<BankProfileModalProps> = ({ isOpen, address, o
   const [shortCode, setShortCode] = useState('')
   const [country, setCountry] = useState('')
   const [logoEmoji, setLogoEmoji] = useState('')
+  const [rating, setRating] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,6 +26,7 @@ export const BankProfileModal: FC<BankProfileModalProps> = ({ isOpen, address, o
     setShortCode(existing?.shortCode ?? '')
     setCountry(existing?.country ?? '')
     setLogoEmoji(existing?.logoEmoji ?? '')
+    setRating(existing?.rating ?? '')
     setError(null)
   }, [isOpen, address])
 
@@ -43,6 +45,7 @@ export const BankProfileModal: FC<BankProfileModalProps> = ({ isOpen, address, o
         shortCode: shortCode.trim() || undefined,
         country: country.trim() || undefined,
         logoEmoji: logoEmoji.trim() || undefined,
+        rating: rating.trim() || undefined,
       })
       onSaved(profile)
     } catch (err: any) {
@@ -112,16 +115,30 @@ export const BankProfileModal: FC<BankProfileModalProps> = ({ isOpen, address, o
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Logo Emoji (optional)</label>
-            <input
-              type="text"
-              className="form-input"
-              value={logoEmoji}
-              onChange={(e) => setLogoEmoji(e.target.value)}
-              placeholder="🏦"
-              maxLength={4}
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label className="form-label">Logo Emoji (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={logoEmoji}
+                onChange={(e) => setLogoEmoji(e.target.value)}
+                placeholder="🏦"
+                maxLength={4}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Credit Rating (optional)</label>
+              <input
+                type="text"
+                className="form-input"
+                value={rating}
+                onChange={(e) => setRating(e.target.value)}
+                placeholder="e.g. A+"
+                maxLength={4}
+              />
+            </div>
           </div>
 
           <div className="alert alert-info" style={{ fontSize: '0.8rem' }}>
