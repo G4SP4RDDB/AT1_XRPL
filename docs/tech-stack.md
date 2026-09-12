@@ -95,10 +95,11 @@ To decouple frontend and backend development while preventing interface drift, a
   * `frontend/src/lib/chainClient.ts`: Application service mapping frontend components directly to `shared/chainClient.ts`.
   * Real-time dynamic reconstruction of bond marketplace bids and user positions from ledger vault queries.
 * **Wallet Management**:
-  * `frontend/src/lib/wallet.tsx`: Multi-role React Context providing:
-    * 1-click Devnet persona switching (`Borrower`, `Lender 1`, `Lender 2`, `Platform Broker`).
-    * Real-time ledger balance queries via `client.getXrpBalance()`.
-  * `xrpl-connect` (`@xrpl-commons/xrpl-connect`): Unified wallet modal supporting Xaman, Crossmark, and GemWallet.
+  * `frontend/src/lib/wallet.tsx`: Multi-wallet React Context providing:
+    * Direct wallet integration with `xrpl-connect` (Xaman, Crossmark, GemWallet).
+    * Custom Devnet account/seed importer with on-chain balance querying.
+    * Platform Broker visibility and 1-click address copy.
+  * Real-time ledger balance queries via `client.getXrpBalance()`.
 
 ---
 
@@ -106,7 +107,7 @@ To decouple frontend and backend development while preventing interface drift, a
 
 * **Backend Unit Tests**:
   * Executed with Node.js test runner (`tsx --test tests/*.test.ts`).
-  * 19 tests verifying:
+  * 24 tests verifying:
     * Scheduled coupon and late payment fee calculations (`LoanPay`).
     * Enforcer policy decisions (rejection before call date, approval after).
     * Tenth-of-a-basis-point annual rate scaling and periodic interest compounding.
