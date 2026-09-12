@@ -22,24 +22,26 @@ interface WalletContextType {
   disconnect: () => Promise<void>
 }
 
+// These must match the addresses backing the root .env seeds (see `npm run balances` at the repo root).
+// The chain shim signs with those seeds; picking a different address here has no key behind it.
 export const ROLE_ACCOUNTS = {
   borrower: {
-    address: 'rpWUv7aDJMHYcMvT8ZyivDdWbeHLcCJmUb',
+    address: 'rsnFbojcDMuFmC7f3Ws7PdsvzSuA71RTgT',
     name: 'Borrower (2-of-2 Multisig)',
     description: 'Corporate issuer with multisig-gated repayment',
   },
   lender1: {
-    address: 'rEBtH58Zrcp5Fb6MCUufEd7nEpvcnhktR4',
+    address: 'rD8F37f4XEpNMfCmSUDerZiSBSG8rD1QzZ',
     name: 'Lender 1 (Primary Investor)',
     description: 'Vault depositor & yield accumulator',
   },
   lender2: {
-    address: 'r4VipZdQhVVHsNaznMQ16JA2LZe6wsE9ik',
+    address: 'rsn5ZUPZWQmtqDfDCnBrGf3bdkJNQCkDcW',
     name: 'Lender 2 (Secondary Investor)',
     description: 'Secondary market allocator',
   },
   broker: {
-    address: 'r4araZQfT6Wn4jr2QkiGevUzb6ABFvnBg4',
+    address: 'r4r59gviPCnToSNThhHk9qetUwfNc7Rt2N',
     name: 'Platform Broker (Enforcer)',
     description: 'Vault manager & first-loss underwriter',
   },
