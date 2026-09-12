@@ -77,13 +77,24 @@ Une question architecturale fréquente sur XRPL : *Pourquoi l'emprunteur ne peut
    - **`brokerEnforcer`** = La clé fiduciaire de la plateforme (Signataire #2, vérifie la Call Date).
    Chaque emprunteur enregistré dans la base de données dispose ainsi de **sa propre paire de clés opérateur dédiée**, évitant tout partage de clés entre plusieurs emprunteurs.
 
-### 3.4 Onboarding Interactif & Activation du Multisig à la Demande
+### 3.4 Sécurité Zéro-Humain de l'Enforcer (Signature 2 du Multisig)
+Une exigence fondamentale de l'obligation AT1 est que **le verrou de maturité (Call Date) ne doit dépendre d'aucune discrétion humaine** :
+- **Clé 100% logicielle** : La clé privée du signataire enforcer (`ENFORCER_SEED` dans `.enforcer.env`, permissions `0600`) est détenue et manipulée **exclusivement par le daemon logiciel autonome** (`src/chain/enforcer/server.ts`, port 8788).
+- **Zéro accès humain** : Aucun humain (ni l'emprunteur, ni le broker, ni un administrateur) ne peut ordonner une signature manuelle ou extraire la clé. La clé n'est jamais affichée dans la console, jamais exposée dans le frontend, et aucun endpoint de signature arbitraire n'existe.
+- **Politique de co-signature immuable** : Le daemon n'expose qu'une route `POST /cosign` qui applique une politique algorithmique stricte :
+  1. Vérifie que la transaction est un `LoanPay` pour un prêt supervisé par ce protocole.
+  2. Interroge le temps de fermeture officiel du ledger validé (`ledgerCloseTime`).
+  3. Si la transaction comporte le flag de remboursement intégral (`tfLoanFullPayment`) alors que la date de Call n'est pas atteinte (`now < callDateRipple`), **le daemon refuse formellement de signer** (`blocked:before-call-date`). La clé privée n'est jamais chargée ni utilisée.
+  4. La co-signature n'est produite que lorsque la preuve on-chain de l'échéance temporelle est satisfaite.
+- **En production (Loaded Primitive)** : Dans un déploiement institutionnel, ce daemon est déployé dans une enclave matérielle confidentielle (**AWS Nitro Enclaves, HSM ou TEE**), rendant l'extraction de clé ou le forçage de signature cryptographiquement impossible même avec un accès `root` au serveur.
+
+### 3.5 Onboarding Interactif & Activation du Multisig à la Demande
 Le multisig n'est plus automatisé en arrière-plan à la création :
 - Lorsque le Directeur Financier se connecte sur l'interface, il ouvre la modale de profil : il renseigne son prénom, son rôle et sa société.
 - Il clique sur **"Enregistrer & Activer le Multisig"** : la transaction `SignerListSet` (Quorum 2) et `AccountSet` (`asfDisableMaster`) est soumise on-chain.
 - Une notification toast s'affiche avec le hash validé de la transaction, et un badge `2/2 MULTISIG` apparaît sur son profil dans la barre de navigation.
 
-### 3.5 Comment Fonctionne la Liquidation & l'Absorption de Pertes (Write-Down)
+### 3.6 Comment Fonctionne la Liquidation & l'Absorption de Pertes (Write-Down)
 Sous XLS-66, si un emprunteur n'honore pas un paiement de coupon à échéance (`now > NextPaymentDueDate`), le Broker peut absorber la perte via son capital de première perte :
 - **Transaction** : `LoanManage` avec le flag `tfLoanImpair` (`0x00020000`).
 - **Autorisation** : Signé exclusivement par le **Broker** (`BROKER_SEED` dans `.env`).

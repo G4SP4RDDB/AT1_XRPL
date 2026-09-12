@@ -66,8 +66,9 @@ flowchart TD
      * Enforces CORS for local and staging frontends.
   2. **Autonomous Enforcer Daemon (`:8788`, `src/chain/enforcer/index.ts`)**:
      * Independent signing authority holding the enforcer private key (`.enforcer.env`).
-     * Inspects repayment transactions against real ledger close time and loan schedule before adding its signature.
-     * Rejects early principal clearance before the designated call date.
+     * **Zero-Human Execution**: Purely software-managed daemon. No human operator, admin, or user can force a signature or access the key.
+     * Algorithmic policy: autonomously inspects repayment transactions against validated ledger close time and loan maturity schedule.
+     * Strictly rejects early principal clearance before the designated call date (`blocked:before-call-date`). Key is never loaded into signing routine if validation fails.
   3. **Stateless Ledger Read Layer (`src/chain/readLayer.ts`)**:
      * Queries ledger entry nodes via `account_objects` and `ledger_entry`.
      * Decodes terms directly from the Vault `Data` hex field (`{ id, b, a, y, c }`).

@@ -24,7 +24,12 @@ try {
     }
     console.log(`\n🔹 ${role.toUpperCase().padEnd(16)} :`);
     console.log(`   Adresse : ${wallet.classicAddress}`);
-    console.log(`   Seed    : ${wallet.seed}`);
+    if (role === "brokerEnforcer") {
+      console.log(`   Seed    : 🤖 [SÉCURISÉ — CLÉ EXCLUSIVEMENT GÉRÉE PAR LE DAEMON LOGICIEL :8788]`);
+      console.log(`   Accès   : Zéro intervention humaine. Co-signature autonome sous condition temporelle on-chain.`);
+    } else {
+      console.log(`   Seed    : ${wallet.seed}`);
+    }
     console.log(`   Solde   : ${balStr}`);
   }
 
