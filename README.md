@@ -147,6 +147,20 @@ To automatically fund development roles (Broker, Borrower, Lenders) on the Custo
 npm run fund
 ```
 
+To create arbitrary fresh accounts funded with 1,000 XRP and display their addresses and seeds:
+```bash
+npm run create-accounts 4
+```
+
+Example output:
+```text
+Compte #1:
+  Adresse : r3eTV9eUXtYBhtgLmpo1Bpais8Nvjfq9bF
+  Seed    : sEdSxasgJ4H92qPru2dtJv3utVVU8YF
+  Solde   : 1000 XRP (validated)
+...
+```
+
 ### Step 3: Launch the Services
 
 Start the three services in separate terminals (or in the background):
@@ -169,9 +183,10 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 
 ## 7. Connecting Your Wallet & User Flow
 
-1. **Connect Wallet**:
+1. **Connect Wallet & Role Selection**:
    - Click **Connect Wallet** in the top-right corner.
-   - Choose **XRPL Wallet** for Xaman / Crossmark, or select **Faucet Seed / Address** and paste an active Devnet account seed.
+   - **Quick-Select On-Chain Role**: Choose between pre-configured on-chain roles (`Borrower`, `Lender 1`, `Lender 2`, or `Platform Broker`) backed by verified Devnet seeds.
+   - **External Wallet**: Connect via Xaman / Crossmark using the native `xrpl-connect` WalletConnect modal.
 2. **Borrower Flow (Issuance)**:
    - Submit a **Debt Bid** specifying the principal amount, offered annual yield, and Call Date.
    - The platform automatically deploys an on-chain **Single Asset Vault** (`VaultCreate`) and configures the **Loan Broker** (`LoanBrokerSet`).
