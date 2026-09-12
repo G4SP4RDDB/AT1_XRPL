@@ -1,2 +1,4 @@
 xrpl-devex-hook/
 node_modules/
+.xrpl-devex/
+.claude/settings.local.json
