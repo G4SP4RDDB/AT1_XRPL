@@ -4,7 +4,7 @@ import { useWallet } from '@/lib/wallet'
 import { walletManager } from '@/lib/xrplConnect'
 import { chainClient } from '@/lib/chainClient'
 import { notifyTx } from '@/lib/notifications'
-import type { DbAccount, AccountRole, CreatedAccount } from '@shared/types'
+import type { DbAccount, AccountRole } from '@shared/types'
 
 interface ConnectWalletModalProps {
   isOpen: boolean
@@ -14,11 +14,10 @@ interface ConnectWalletModalProps {
 
 export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose, onOpenSetupModal }) => {
   const { connectWalletConnect, connectAccount, isConnected } = useWallet()
-  const [activeTab, setActiveTab] = useState<'db' | 'created' | 'create' | 'wc'>('db')
+  const [activeTab, setActiveTab] = useState<'db' | 'create' | 'wc'>('db')
   
   // Stored accounts state
   const [dbAccounts, setDbAccounts] = useState<DbAccount[]>([])
-  const [createdAccounts, setCreatedAccounts] = useState<CreatedAccount[]>([])
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
 
   // In-line role editing state
@@ -45,27 +44,13 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
   const loadAccountsFromDb = async () => {
     setIsLoadingAccounts(true)
     try {
-      const [accounts, created] = await Promise.all([
-        chainClient.listAccounts(),
-        chainClient.getCreatedAccounts(),
-      ])
+      const accounts = await chainClient.listAccounts()
       setDbAccounts(accounts || [])
-      setCreatedAccounts(created || [])
     } catch (err) {
-      console.warn('Could not load accounts:', err)
+      console.warn('Could not load accounts from DB:', err)
     } finally {
       setIsLoadingAccounts(false)
     }
-  }
-
-  const handleWipeCreated = async () => {
-    await chainClient.wipeCreatedAccounts()
-    notifyTx({
-      title: 'Fichier réinitialisé',
-      message: 'Les comptes ont été effacés (wipe) de created_accounts.json.',
-      type: 'info',
-    })
-    await loadAccountsFromDb()
   }
 
   useEffect(() => {
@@ -275,15 +260,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
             onClick={() => setActiveTab('db')}
             style={{ borderRadius: '8px' }}
           >
-            👥 En Base ({dbAccounts.length})
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${activeTab === 'created' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('created')}
-            style={{ borderRadius: '8px' }}
-          >
-            📋 Comptes Créés ({createdAccounts.length})
+            👥 Comptes en Base ({dbAccounts.length})
           </button>
           <button
             type="button"
@@ -522,96 +499,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
           </div>
         )}
 
-        {/* CONTENU ONGLET: COMPTES CRÉÉS RÉCENTS (created_accounts.json) */}
-        {activeTab === 'created' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Fichier <code>created_accounts.json</code> · Comptes financés prêts pour le 1er onboarding
-              </div>
-              {createdAccounts.length > 0 && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleWipeCreated}
-                  style={{ fontSize: '0.75rem', padding: '3px 8px' }}
-                  title="Vider le fichier created_accounts.json"
-                >
-                  🧹 Vider la liste (Wipe)
-                </button>
-              )}
-            </div>
-
-            {createdAccounts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--bg-surface-elevated)', borderRadius: '12px', border: '1px dashed var(--border-subtle)' }}>
-                <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📄</div>
-                <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Aucun compte dans created_accounts.json</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-                  Générez un compte pour tester ou lancez <code>npm run create-accounts</code> dans votre terminal.
-                </div>
-                <button type="button" className="btn btn-primary btn-sm" onClick={handleCreateRandom} disabled={isCreating}>
-                  ⚡ Créer un Compte (1 000 XRP)
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                {createdAccounts.map((acc, idx) => (
-                  <div
-                    key={acc.address}
-                    style={{
-                      padding: '0.85rem 1rem',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: '10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '1rem',
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-blue)' }}>
-                          #{idx + 1}
-                        </span>
-                        <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>{acc.name}</span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                          · {acc.balanceXrp} XRP
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
-                        {acc.address}
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        Seed: <code style={{ fontSize: '0.68rem' }}>{acc.seed}</code>
-                      </div>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          connectAccount({
-                            address: acc.address,
-                            name: acc.name,
-                            role: 'unassigned',
-                          })
-                          onClose()
-                          onOpenSetupModal?.(acc.address)
-                        }}
-                        style={{ whiteSpace: 'nowrap' }}
-                      >
-                        🚀 Se connecter & Configurer
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* CONTENU ONGLET 3: CREER NOUVEAU COMPTE */}
+        {/* CONTENU ONGLET 2: CREER NOUVEAU COMPTE */}
         {activeTab === 'create' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             {/* OPTION 1: CRÉER UN COMPTE ALÉATOIRE (1 CLIC) */}
