@@ -397,7 +397,8 @@ npm run build           # Production bundle via Vite / Rolldown
 ## 10. Key Developer Feedback & Deliverables
 
 As part of the hackathon evaluation criteria (**40% Developer Feedback Quality**, **10% Presentation & Slide Deck**), our core deliverables are:
-- [**`FEEDBACK_REPORT.md`**](FEEDBACK_REPORT.md): **Official 3-page Developer Feedback Report** at repository root detailing all 15 friction findings, ledger result codes, and actionable architectural proposals for Ripple and the XRPL ecosystem.
+- [**`FEEDBACK_REPORT.md`**](FEEDBACK_REPORT.md): **Official 3-page Developer Feedback Report** at repository root detailing friction findings, ledger result codes, and actionable architectural proposals for Ripple and the XRPL ecosystem.
+- [**`docs/comprehensive-analysis-and-feedback.md`**](docs/comprehensive-analysis-and-feedback.md): **Compendium Exhaustif** de toutes les analyses techniques, évolutions architecturales (Track 1 vs 2, Zero-Custody, `borrowerOp` security), et 18 frictions protocolaires documentées depuis le début du hackathon.
 - [**`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`**](slides/BSA_DEGEN_AT1_XRPL_PITCH.md): **Official 10-Slide Presentation Pitch Deck** structured for the 4-minute demo + 2-minute Q&A.
 - [`docs/friction-log.md`](docs/friction-log.md): Granular technical log with repros, severity tags, and exact code citations.
 - [`docs/tech-stack.md`](docs/tech-stack.md): Architectural design rationale, zero-custody boundaries, and security model.
