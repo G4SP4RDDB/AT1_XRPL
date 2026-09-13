@@ -165,14 +165,18 @@ Distinguish it from a receipt with `"blocked" in result`. `reason` is human-read
 
 ## Enforcer
 
-The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. It runs as its own process: `npm run enforcer` (port 8788, routes `POST /cosign`, `POST /counter-sign`, `GET /health`), and the shim uses it when started with `ENFORCER_URL=http://localhost:8788 npm run serve`. Without `ENFORCER_URL` the same policy runs in-process, for development only. Policy for `LoanPay`, in order: only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up (or, once overdue, carry `tfLoanLatePayment` with at least that plus the late fee). Policy for `VaultWithdraw` (lender accounts with multisig active, `decideWithdraw`): up to the account's `yieldShares` is co-signed at any time; more than that is co-signed only once the vault's loan is closed (`unauthorized-principal-withdrawal`). Any other transaction type is refused. A refusal returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed only if the `LoanBroker` belongs to the platform and the `Counterparty` is the issuer recorded in the vault's `Data` (`not-issuer` otherwise): a vault lends to its own issuer and nobody else.
+The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. It runs as its own process: `npm run enforcer` (port 8788, routes `POST /cosign`, `POST /counter-sign`, `GET /health`), and the shim uses it when started with `ENFORCER_URL=http://localhost:8788 npm run serve`. Without `ENFORCER_URL` the same policy runs in-process, for development only. Policy for `LoanPay`, in order: only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up (or, once overdue, carry `tfLoanLatePayment` with at least that plus the late fee). Policy for `VaultWithdraw` (lender accounts with multisig active, `decideWithdraw`): up to the account's `yieldShares` is co-signed at any time; more than that is co-signed only once the vault's loan is closed (`unauthorized-principal-withdrawal`). Any other transaction type is refused. A refusal returns `Blocked` and nothing reaches the ledger.
+
+## Background: funding-deadline scan
+
+Every 30 s (`DEADLINE_ORIGINATION.scanIntervalSec`) the shim calls `tx.scanStalledOriginations()`: for each vault with no loan whose bid's off-chain `expiresAt` has passed, it originates for whatever was raised if at least 50 % of the principal is in (`originateStalledIfPastDeadline`), otherwise leaves the vault for depositors to withdraw. It never moves depositor funds. Origination (`LoanSet`) is counter-signed only if the `LoanBroker` belongs to the platform and the `Counterparty` is the issuer recorded in the vault's `Data` (`not-issuer` otherwise): a vault lends to its own issuer and nobody else.
 
 ## Changes
 
 The chain layer owns `shared/types.ts` and this file; a change to a shape is announced before it lands.
 
 - Lenders and borrowers moved from backend-minted, backend-custodied accounts to independent
-  externally-held wallets (GemWallet/Crossmark/Xaman via `xrpl-connect`). `tx.deposit`,
+  externally-held wallets (WalletConnect / Xaman via `xrpl-connect`). `tx.deposit`,
   `tx.createAccount`, `tx.createRandomAccount`, `tx.registerWallet`, `tx.setupBorrowerMultisig`
   and `tx.setupLenderMultisig` are gone, replaced by the prepare/sign-externally/submit routes
   documented above. See `docs/borrower-lender-custody.md` for the full design and its limits.

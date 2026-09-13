@@ -34,7 +34,7 @@ Aliases: `@/*` → `src/*`, `@shared/*` → `../shared/*` (the frozen contract w
 ## Dependencies
 
 - `xrpl@5.2.0` — stable xrpl.js, ships the XLS-65/66 transaction types. No Vite polyfills needed since 3.0.
-- `xrpl-connect@0.8.2` — wallet connect abstraction (Xaman, Crossmark, GemWallet). Every lender/borrower signature goes through it (prepare → sign → submit); the frontend never holds a seed.
+- `xrpl-connect@0.8.2` — only its WalletConnect adapter is registered (Xaman or any WalletConnect wallet). Every signature goes through `signPrepared()` in `src/lib/xrplConnect.ts` (prepare → sign → submit); the frontend never holds a seed.
 
 ## Tests
 

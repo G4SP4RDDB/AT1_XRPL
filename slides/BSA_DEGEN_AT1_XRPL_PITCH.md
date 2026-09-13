@@ -14,7 +14,7 @@
 
 - **What we built**: An end-to-end on-chain issuance, investment, and risk-management platform for **Additional Tier 1 (AT1) Subordinated Debt**.
 - **The primitives**: Native Open-Ended Single Asset Vault (**XLS-65**) paired with Lending Protocol V1 (**XLS-66**), secured by an autonomous **2-of-2 Multisig Enforcer** and **MPT Shares**.
-- **Live on Devnet**: 16 verified on-chain transactions, 4 native protocol guardrails demonstrated, zero-custody architecture.
+- **Live on Devnet**: 17 verified lifecycle steps, 4 native protocol guardrails + 2 policy refusals demonstrated, wallet-signed investors and issuers.
 
 > *Speaker Note (30s)*: "Hello everyone, we are team BSA Degen. Today we're presenting AT1 on XRPL: bringing institutional Additional Tier 1 perpetual bonds onto the XRP Ledger using XLS-65 and XLS-66."
 
@@ -103,7 +103,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Generates dedicated per-borrower operator keys (`borrowerOp`).
 - **Cryptographic Independence**:
   - No two borrowers ever share signing credentials.
-  - Lenders and borrowers connect their own wallets via `xrpl-connect` (Xaman / GemWallet / Crossmark); the backend only ever learns their public address (prepare → sign in wallet → submit).
+  - Lenders and borrowers connect their own wallet over WalletConnect (Xaman), the only connection method; the backend only ever learns their public address (prepare → sign in wallet → submit).
 
 > *Speaker Note (25s)*: "In institutional finance, brokers must not custody customer keys. Our backend only holds broker keys. All borrower and lender profiles are dynamically managed in an isolated database with dedicated signing operators."
 
@@ -178,7 +178,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Native **TokenEscrow (XLS-85)** composition for on-chain escrowed repayments.
 - **Contributions Back to the Ecosystem**:
   - **Full E2E Test Suite**: 17-step verified on-chain lifecycle test runner (`npm run e2e`).
-  - **26 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
+  - **28 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
   - **Automated DevEx Hook Active**: Telemetry logged via `xrpl-devex-hook`.
 
 ### Thank you! Questions & Answers (2 mins)

@@ -104,8 +104,8 @@ To decouple frontend and backend development while preventing interface drift, a
   * Real-time dynamic reconstruction of bond marketplace bids and user positions from ledger vault queries.
 * **Wallet & Account Management**:
   * `frontend/src/lib/wallet.tsx` & `ConnectWalletModal.tsx`: Multi-wallet React Context providing:
-    * **Real wallet**: connection via `xrpl-connect` (GemWallet, Crossmark, Xaman over WalletConnect); the backend only learns the public address, and every user transaction is prepare → sign in the wallet → submit.
-    * **Registered accounts (read-only)**: addresses that have connected and completed onboarding, from the SQLite registry; plus a fixed login for the platform broker (admin panel).
+    * **Real wallet**: WalletConnect (Xaman) is the only connection method, for investors, issuers and the platform broker alike; the backend only learns the public address, and every user transaction is prepare → sign in the wallet → submit.
+    * The connected address's role (issuer / investor / broker) is read from the SQLite registry; the broker's address opens the admin panel.
     * Funded test accounts come from `npm run create-accounts` at the repo root, imported into a real wallet.
   * Real-time ledger balance queries via `client.getXrpBalance()`.
 
@@ -115,7 +115,7 @@ To decouple frontend and backend development while preventing interface drift, a
 
 * **Backend Unit Tests**:
   * Executed with Node.js test runner (`tsx --test tests/*.test.ts`).
-  * 29 tests verifying:
+  * 30 tests verifying:
     * Scheduled coupon and late payment fee calculations (`LoanPay`).
     * Enforcer policy decisions (rejection before call date, approval after).
     * Tenth-of-a-basis-point annual rate scaling and periodic interest compounding.

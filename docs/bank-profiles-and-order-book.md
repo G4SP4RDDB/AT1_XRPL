@@ -144,11 +144,11 @@ Wired into `server.ts` as the `book` group (unchanged by the rewire):
 - **`frontend/src/lib/chainClient.ts`** — `getBids()`/`getAsks()` now read the shared
   `/book/*` store instead of `localStorage` (the old `BIDS_KEY`/`ASKS_KEY` and their
   load/save helpers are gone). Two new methods:
-  - `acceptBid(askId)` — converts one pending LP bid into a real `VaultDeposit` (`prepareDeposit` → wallet signature → `submitSigned`)
-    (`VaultDeposit`); does **not** originate the loan.
-  - `originateTranche(trancheId)` — explicit `tx.originate` (`LoanSet`), callable once a
-    tranche has collected enough deposits (or any time — the ledger enforces
-    `assetsAvailable >= amount` itself).
+  - `acceptBid(askId)` — converts one pending LP bid into a real `VaultDeposit` (`prepareDeposit` → wallet signature → `submitSigned`).
+    Since 13 September the backend originates the loan itself when that deposit fills the vault
+    (`receipt.autoOrigination`), and the UI announces it.
+  - `originateTranche(trancheId)` — explicit `tx.originate` (`LoanSet`); now a manual fallback for
+    the case where automatic origination was skipped (e.g. the issuer's 2-of-2 not active yet).
   - `matchAndDeposit` was removed (its only caller, `MatchBoard`, is deleted — see below).
 - **`frontend/src/components/TrancheBook.tsx`** — the tranche list ("Order Book" tab).
   Sortable by rate / maturity / expiry; each row shows the bank name (via the bank-profile
@@ -229,7 +229,7 @@ site's own `body` background) look of the reference app.
     capacity, time left on the bidding window).
   - **Bids** section: the existing LP-bid depth list (cumulative-fill bars, status), now
     also showing each bid's own expiry.
-  - Right-hand action panel unchanged in behavior (bank sees fill % + "Originate Loan"; LP
+  - Right-hand action panel unchanged in behavior (bank sees fill % + "Originate Loan", since 13 September a fallback because origination is automatic on the funding deposit; LP
     sees "Place a Bid" — now with its own duration selector — and "Fund Now" per bid), with
     both disabled once the tranche's/bid's expiry has passed.
   - A "← Back to Order Book" control returns to the list via the same hash router.
