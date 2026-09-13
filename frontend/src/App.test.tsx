@@ -47,9 +47,9 @@ describe('App', () => {
       expect(screen.getByText(/Disconnect/i)).toBeInTheDocument()
     })
 
-    // Every screen is browsable; only the platform broker gets the Broker Hub. Order Book is
-    // intentionally not a nav tab — it's only reached via a Finance Bonds row click or a deep
-    // link (#/orderbook/<id>), see lib/roles.ts's TAB_ORDER comment.
+    // Every screen is browsable; only the platform broker gets the Broker Hub. The order-book
+    // (LP bid matching) layer was removed entirely — funding a bond is now a direct action from
+    // Finance Bonds, see lib/roles.ts's TAB_ORDER comment.
     expect(screen.queryByRole('button', { name: /Order Book/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Finance Bonds/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Issue Bond/i })).toBeInTheDocument()

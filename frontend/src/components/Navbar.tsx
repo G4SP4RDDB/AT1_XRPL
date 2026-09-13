@@ -6,7 +6,7 @@ import { useBorrowerProfile } from '@/lib/borrowerProfile'
 
 import { TAB_ORDER, canAccessTab } from '@/lib/roles'
 
-type Tab = 'issue' | 'finance' | 'positions' | 'orderbook' | 'broker'
+type Tab = 'issue' | 'finance' | 'positions' | 'broker'
 
 interface NavbarProps {
   activeTab: Tab

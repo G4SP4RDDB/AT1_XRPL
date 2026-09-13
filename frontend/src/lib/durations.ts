@@ -1,6 +1,5 @@
-// Shared "time-in-force" helpers for both sides of the order book: a tranche's bidding
-// window (Bid.expiresAt) and an LP's bid validity (Ask.expiresAt). Off-chain only — purely
-// a book-hygiene concept, not enforced by the ledger.
+// "Time-in-force" helpers for a posted bond's funding window (Ask.expiresAt). Off-chain
+// only — purely a book-hygiene concept, not enforced by the ledger.
 export const DURATION_OPTIONS = [
   { label: '6 hours', ms: 6 * 60 * 60 * 1000 },
   { label: '24 hours', ms: 24 * 60 * 60 * 1000 },

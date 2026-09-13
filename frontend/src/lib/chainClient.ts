@@ -2,7 +2,6 @@ import { createChainClient, isBlocked } from '@shared/chainClient'
 import { notifyTx } from './notifications'
 import { walletManager, signPrepared } from './xrplConnect'
 import type {
-  Bid,
   Ask,
   VaultState as RawVaultState,
   Position as RawPosition,
@@ -14,7 +13,7 @@ import type {
   Blocked,
 } from '@shared/types'
 
-export type { Bid, Ask, TxReceipt, AccountRole, DbAccount }
+export type { Ask, TxReceipt, AccountRole, DbAccount }
 
 
 export interface VaultState extends RawVaultState {
@@ -46,9 +45,9 @@ export interface WithdrawRequest {
 const CHAIN_URL = import.meta.env.VITE_CHAIN_URL || 'http://localhost:8787'
 const baseChain = createChainClient(CHAIN_URL)
 
-// Order-book state (tranche metadata + LP bids) lives on the chain shim's /book/* routes,
-// backed by a shared JSON file (src/chain/trancheBookStore.ts) — not localStorage, so every
-// browser (the bank's and every LP's) sees the same book instead of its own private copy.
+// Bond-posting metadata (an ask's name/description/funding window) lives on the chain shim's
+// /book/* routes, backed by a shared JSON file (src/chain/trancheBookStore.ts) — not
+// localStorage, so every browser sees the same list instead of its own private copy.
 async function callBookRoute<T>(fn: string, args: unknown[]): Promise<T> {
   const res = await fetch(`${CHAIN_URL}/book/${fn}`, {
     method: 'POST',
@@ -93,7 +92,6 @@ function normalizePosition(raw: RawPosition): UserPosition {
 
 export class ChainBackendClient {
   private asks: Ask[] = []
-  private bids: Bid[] = []
   private listeners: Array<() => void> = []
 
   subscribe(listener: () => void) {
@@ -118,17 +116,24 @@ export class ChainBackendClient {
   async getAsks(): Promise<Ask[]> {
     // Off-chain-authored metadata (borrowerName, description, expiresAt) is shared across
     // browsers via the order-book store, not localStorage — refresh our cache from it.
-    try {
-      const shared = await callBookRoute<Ask[]>('listAsks', [])
+    // Independent of the on-chain vault read below, so fetch both in parallel rather than
+    // paying their latencies back-to-back.
+    const [sharedResult, vaultsResult] = await Promise.allSettled([
+      callBookRoute<Ask[]>('listAsks', []),
+      this.getAllVaults(),
+    ])
+
+    if (sharedResult.status === 'fulfilled') {
       const cached = new Map(this.asks.map((a) => [a.id, a]))
-      for (const a of shared) cached.set(a.id, { ...cached.get(a.id), ...a })
+      for (const a of sharedResult.value) cached.set(a.id, { ...cached.get(a.id), ...a })
       this.asks = Array.from(cached.values())
-    } catch (err) {
-      console.warn('Order book unreachable, using local tranche cache:', err)
+    } else {
+      console.warn('Order book unreachable, using local tranche cache:', sharedResult.reason)
     }
 
     try {
-      const vaults = await this.getAllVaults()
+      if (vaultsResult.status === 'rejected') throw vaultsResult.reason
+      const vaults = vaultsResult.value
       const onChainAsks: Ask[] = vaults.map((v) => {
         const isRepaid = v.loan ? v.loan.status === 'closed' : false
         const isOriginated = Boolean(v.loan && v.loan.status !== 'closed')
@@ -165,19 +170,6 @@ export class ChainBackendClient {
     } catch (err) {
       console.warn('Could not query on-chain asks from backend:', err)
       return [...this.asks]
-    }
-  }
-
-  /** LP bids (an offer targeting a tranche via `matchedAskId`). Pass a tranche id to scope
-   * to one tranche's depth list, or omit for the whole shared book. */
-  async getBids(askId?: string): Promise<Bid[]> {
-    try {
-      const shared = await callBookRoute<Bid[]>('listBids', askId ? [askId] : [])
-      if (!askId) this.bids = shared
-      return shared
-    } catch (err) {
-      console.warn('Order book unreachable, using local bid cache:', err)
-      return askId ? this.bids.filter((b) => b.matchedAskId === askId) : [...this.bids]
     }
   }
 
@@ -329,119 +321,10 @@ export class ChainBackendClient {
     return newAsk
   }
 
-  /** LP places a real offer against a tranche: a proposed amount and rate. Off-chain and
-   * "locked" only in the sense that it awaits the borrower's decision — see shared/types.ts's
-   * Bid doc comment for what that does and doesn't guarantee. Nothing moves on-chain until
-   * the borrower accepts it (`respondToBid`) and the LP funds it (`fundBid`). */
-  async createBid(bidInput: {
-    lenderAddress: string
-    lenderName?: string
-    amount: string
-    targetYield?: number
-    askId?: string
-    expiresAt?: string
-  }): Promise<Bid> {
-    const newBid: Bid = {
-      id: `bid-${Date.now()}`,
-      lenderAddress: bidInput.lenderAddress,
-      amount: String(bidInput.amount),
-      indicated: true,
-      matchedAskId: bidInput.askId,
-      status: 'pending',
-    }
-    ;(newBid as any).lenderName = bidInput.lenderName || 'Investor'
-    ;(newBid as any).targetYield = bidInput.targetYield
-    ;(newBid as any).expiresAt = bidInput.expiresAt
-
-    // The backend may auto-accept this bid immediately if it crosses the ask's ceiling rate
-    // (see trancheBookStore.createBid) — use whatever status it actually comes back with,
-    // not the optimistic 'pending' set above.
-    const saved = await callBookRoute<Bid>('createBid', [newBid])
-
-    this.bids.unshift(saved)
-    this.notify()
-    return saved
-  }
-
-  /** Borrower accepts or declines a pending bid. Accepting the first bid on a tranche pins
-   * its rate to that bid's targetYield (XLS-66 allows one InterestRate per loan); the backend
-   * (trancheBookStore.acceptBid) auto-declines any other still-pending bid whose rate no
-   * longer matches. This is an off-chain, platform-enforced decision — see shared/types.ts's
-   * Bid doc comment on why it isn't a cryptographic guarantee (a real lock would need
-   * TokenEscrow; not built, see FEEDBACK_REPORT.md). */
-  async respondToBid(bidId: string, accept: boolean): Promise<Bid> {
-    const updated = await callBookRoute<Bid>(accept ? 'acceptBid' : 'declineBid', [bidId])
-    this.bids = this.bids.map((b) => (b.id === bidId ? updated : b))
-    this.notify()
-    return updated
-  }
-
-  /** LP funds an already-accepted bid: a real on-chain VaultDeposit, up to whatever capacity
-   * the vault's AssetsMaximum cap still allows — a bid that no longer fits is rejected
-   * on-chain (tecINSUFFICIENT_FUNDS-style guardrail), not silently dropped. Refuses server-side
-   * if the borrower hasn't accepted this bid (or declined it): the UI already hides "Fund Now"
-   * for those states, this is the backstop. The backend originates the loan itself as soon as
-   * the vault is funded (see `announceAutoOrigination`); `originateTranche` remains a manual
-   * fallback. */
-  async fundBid(bidId: string): Promise<{ vaultId: string; txHash: string }> {
-    const bid = this.bids.find((b) => b.id === bidId) ?? (await this.getBids()).find((b) => b.id === bidId)
-    if (!bid) throw new Error('Bid not found')
-    if (bid.status !== 'accepted') {
-      throw new Error(`Bid is ${bid.status ?? 'pending'}, not accepted — the borrower must accept it before it can be funded`)
-    }
-    const askId = bid.matchedAskId
-    if (!askId) throw new Error('Bid is not targeting a tranche')
-
-    const [asks, vaults] = await Promise.all([this.getAsks(), this.getAllVaults()])
-    const ask = asks.find((a) => a.id === askId)
-    const vault = vaults.find((v) => v.bidId === askId || v.vaultId === ask?.vaultId)
-    const vaultId = vault?.vaultId || ask?.vaultId
-    if (!vaultId) throw new Error('Tranche vault not found on ledger')
-
-    const receipt = await this.signAndSubmitDeposit(bid.lenderAddress, vaultId, bid.amount)
-    if (receipt.result !== 'tesSUCCESS') {
-      throw new Error(`Deposit failed on-chain: ${receipt.result}`)
-    }
-    this.announceAutoOrigination(receipt)
-
-    bid.status = 'deposited'
-    try {
-      await callBookRoute('updateBidStatus', [bid.id, 'deposited'])
-    } catch (err) {
-      console.warn('Deposit succeeded on-chain but failed to sync bid status to shared order book:', err)
-    }
-
-    this.notify()
-    return { vaultId, txHash: receipt.hash }
-  }
-
-  /** Broker/borrower triggers loan origination (LoanSet) once a tranche has collected
-   * enough deposits. Safe to call even if not fully filled — the ledger enforces
-   * `assetsAvailable >= amount` and returns a normal on-ledger rejection otherwise. */
-  async originateTranche(trancheId: string): Promise<{ loanId?: string; txHash: string }> {
-    const [asks, vaults] = await Promise.all([this.getAsks(), this.getAllVaults()])
-    const ask = asks.find((a) => a.id === trancheId)
-    if (!ask) throw new Error('Tranche not found')
-    const vault = vaults.find((v) => v.bidId === trancheId || v.vaultId === ask.vaultId)
-    const vaultId = vault?.vaultId || ask.vaultId
-    if (!vaultId) throw new Error('Tranche vault not found on ledger')
-
-    const askObj: Ask = {
-      id: ask.id,
-      borrowerAddress: vault?.borrowerAddress || ask.borrowerAddress,
-      amount: vault?.loanPrincipal || ask.amount,
-      yieldRate: vault?.loanInterestRate ?? ask.yieldRate,
-      callDate: vault?.callDate || ask.callDate,
-      vaultId,
-      loanBrokerId: ask.loanBrokerId,
-      status: 'matched',
-    }
-
-    const receipt = await baseChain.tx.originate(askObj)
-    this.notify()
-    return { loanId: receipt.loanId, txHash: receipt.hash }
-  }
-
+  /** LP funds a posted ask directly: a real on-chain VaultDeposit, up to whatever capacity the
+   * vault's AssetsMaximum cap still allows — funding past capacity is rejected on-chain
+   * (tecINSUFFICIENT_FUNDS-style guardrail), not silently dropped. The backend originates the
+   * loan itself as soon as the vault is fully funded (see `announceAutoOrigination`). */
   async fundBond(askId: string, lenderAddress: string, amount: string): Promise<{ vaultId: string; txHash: string }> {
     const allVaults = await this.getAllVaults()
     const v = allVaults.find((vault) => vault.bidId === askId || vault.vaultId === askId)

@@ -6,7 +6,6 @@ import { Navbar } from '@/components/Navbar'
 import { FinanceBonds } from '@/components/FinanceBonds'
 import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
-import { TrancheBook } from '@/components/TrancheBook'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { NotificationToastContainer } from '@/components/NotificationToast'
 import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
@@ -14,29 +13,23 @@ import { BrokerHub } from '@/components/BrokerHub'
 import { chainClient } from '@/lib/chainClient'
 import { canAccessTab } from '@/lib/roles'
 
-type Tab = 'finance' | 'issue' | 'positions' | 'orderbook' | 'broker'
+type Tab = 'finance' | 'issue' | 'positions' | 'broker'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount, connectAccount } = useWallet()
-  // If we're loaded (or reloaded, or opened in a new tab) on a #/orderbook/<id> link — e.g.
-  // from a Finance Bonds row's middle-click / open-in-new-tab — land straight on that tab.
-  const [activeTab, setActiveTab] = useState<Tab>(() =>
-    window.location.hash.startsWith('#/orderbook') ? 'orderbook' : 'finance'
-  )
+  const [activeTab, setActiveTab] = useState<Tab>('finance')
   const [isBorrowerModalOpen, setIsBorrowerModalOpen] = useState(false)
 
   // Switch tab by connected role, and prompt DB-account onboarding if this address hasn't
-  // been configured yet. Skipped when a deep link (#/orderbook/<id>) already picked a tab.
+  // been configured yet.
   useEffect(() => {
     if (!isConnected || !currentAccount) return
-    if (!window.location.hash.startsWith('#/orderbook')) {
-      if (currentAccount.role === 'broker') {
-        setActiveTab('broker')
-      } else if (currentAccount.role === 'borrower') {
-        setActiveTab('issue')
-      } else if (currentAccount.role === 'lender') {
-        setActiveTab('finance')
-      }
+    if (currentAccount.role === 'broker') {
+      setActiveTab('broker')
+    } else if (currentAccount.role === 'borrower') {
+      setActiveTab('issue')
+    } else if (currentAccount.role === 'lender') {
+      setActiveTab('finance')
     }
 
     if (currentAccount.address) {
@@ -123,9 +116,7 @@ const MainContent: FC = () => {
           </div>
         ) : (
           <>
-            {activeTab === 'finance' && (
-              <FinanceBonds onNavigateToOrderBook={() => setActiveTab('orderbook')} />
-            )}
+            {activeTab === 'finance' && <FinanceBonds />}
             {activeTab === 'issue' && canAccessTab(currentAccount?.role, 'issue') && (
               <IssueBond
                 onSuccess={() => setActiveTab('finance')}
@@ -133,7 +124,6 @@ const MainContent: FC = () => {
               />
             )}
             {activeTab === 'positions' && canAccessTab(currentAccount?.role, 'positions') && <MyPositions />}
-            {activeTab === 'orderbook' && <TrancheBook />}
             {activeTab === 'broker' && canAccessTab(currentAccount?.role, 'broker') && <BrokerHub />}
           </>
         )}

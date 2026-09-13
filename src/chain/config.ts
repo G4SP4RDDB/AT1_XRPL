@@ -41,7 +41,7 @@ export const DEMO_BROKER = {
 // vault will book at origination. Cap = principal + interestDue + this margin (in drops).
 export const VAULT_CAP_MARGIN_DROPS = 1_000;
 
-// A bid's funding window (Bid.expiresAt, off-chain) has no on-chain effect by itself (§ friction-log).
+// An ask's funding window (Ask.expiresAt, off-chain) has no on-chain effect by itself (§ friction-log).
 // Once it passes, a background scan (server.ts) originates the loan anyway for whatever was actually
 // raised, provided at least minFundedRatio of the requested principal was reached; below that, the
 // vault is left stalled for depositors to withdraw manually (no auto-refund).

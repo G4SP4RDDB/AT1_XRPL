@@ -38,7 +38,7 @@ http.createServer(async (req, res) => {
 });
 
 // First background process in this codebase: every DEADLINE_ORIGINATION.scanIntervalSec, settle any
-// vault whose bid's off-chain funding deadline (Bid.expiresAt) has passed with no loan yet — either
+// vault whose ask's off-chain funding deadline (Ask.expiresAt) has passed with no loan yet — either
 // originate it for whatever was actually raised, or leave it stalled below the minimum funded ratio.
 // See ops.ts:scanStalledOriginations / originateStalledIfPastDeadline.
 setInterval(async () => {

@@ -1,31 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, FC, MouseEvent } from 'react'
-import type { Ask, Bid } from '@shared/types'
-import { chainClient } from '@/lib/chainClient'
+import type { CSSProperties, FC } from 'react'
+import type { Ask } from '@shared/types'
+import { chainClient, type VaultState } from '@/lib/chainClient'
+import { useWallet } from '@/lib/wallet'
+import { canLend } from '@/lib/roles'
 import { getCachedProfile, useBankProfile, useProfilesVersion } from '@/lib/bankProfiles'
 import { absoluteLabel, countdownLabel, fmt, isClosed, isUrgent, jurisdictionCode, mid, slugify, toUsd } from '@/lib/bankBondFormat'
+import { FundBondModal } from './FundBondModal'
 
 /**
  * Row layout ported from app.morpho.org/vaults (inspected 13 Sep 2026), remapped to AT1
- * bond tranches: one row per bank, showing its best-yield offer, grouped rather than the
- * flat per-tranche list the Order Book tab shows. Every cell is its own <a> to the same
- * href (middle-click / new-tab / keyboard all work for free) rather than a row onClick.
+ * bond tranches: one row per bank, showing its best-yield offer, grouped by borrower.
+ * Funding is direct — clicking a row opens FundBondModal for a real VaultDeposit — there is no
+ * separate order-book/bid-matching layer (removed after proving unreliable in practice; see
+ * docs/bank-profiles-and-order-book.md).
  *
  * Deviations from the literal spec, both because this app has no real router:
- * - href points at this app's own #/orderbook/<id> hash route (reusing the Order Book
- *   tab's per-tranche page) instead of a /issuer/{slug}/offer/{id} path that nothing here
- *   would resolve — a fake path would just be a broken link.
  * - Colors/fonts follow this app's existing CSS variables, not Morpho's (the fetched page
  *   carried no CSS to copy).
  * - Currency is always XRP and the fiat line uses a static placeholder rate (no live
- *   oracle in this project); "Liquidity" is the tranche's *remaining* capacity (target
- *   minus what's already deposited), not the full original size, since that's the number
- *   that actually matters for "can I still fund this."
+ *   oracle in this project); "Liquidity" is the tranche's *remaining* capacity (target minus
+ *   what's already been deposited on-chain), not the full original size, since that's the
+ *   number that actually matters for "can I still fund this."
  */
-interface FinanceBondsProps {
-  onNavigateToOrderBook: () => void
-}
-
 type SortKey = 'yield' | 'liquidity' | 'closes'
 
 interface BankRowData {
@@ -38,15 +35,13 @@ interface BankRowData {
   closesAt?: string
 }
 
-function remainingLiquidity(ask: Ask, bids: Bid[]): number {
+function remainingLiquidity(ask: Ask, vault?: VaultState): number {
   const target = Number(ask.amount) || 0
-  const filled = bids
-    .filter((b) => b.matchedAskId === ask.id && b.status === 'deposited')
-    .reduce((sum, b) => sum + Number(b.amount || 0), 0)
-  return Math.max(0, target - filled)
+  const deposited = Number(vault?.assetsTotal ?? 0)
+  return Math.max(0, target - deposited)
 }
 
-function buildBankRows(asks: Ask[], bids: Bid[]): BankRowData[] {
+function buildBankRows(asks: Ask[], vaultsById: Map<string, VaultState>): BankRowData[] {
   const byBank = new Map<string, Ask[]>()
   for (const ask of asks) {
     const list = byBank.get(ask.borrowerAddress) ?? []
@@ -63,7 +58,7 @@ function buildBankRows(asks: Ask[], bids: Bid[]): BankRowData[] {
       topOffer,
       bestYieldPct: topOffer.yieldRate,
       offerCount: group.length,
-      remainingLiquidity: remainingLiquidity(topOffer, bids),
+      remainingLiquidity: remainingLiquidity(topOffer, topOffer.vaultId ? vaultsById.get(topOffer.vaultId) : undefined),
       closesAt: topOffer.expiresAt,
     })
   }
@@ -79,14 +74,7 @@ const thStyle: CSSProperties = {
   color: 'var(--text-muted)',
 }
 
-const tdStyle: CSSProperties = { padding: 0 }
-
-const linkStyle: CSSProperties = {
-  display: 'block',
-  padding: '0.85rem 1rem',
-  color: 'inherit',
-  textDecoration: 'none',
-}
+const tdStyle: CSSProperties = { padding: '0.85rem 1rem' }
 
 function SkeletonTable() {
   return (
@@ -120,10 +108,11 @@ interface BankBondRowProps {
   row: BankRowData
   jurisdictionFilter: string
   ratingFilter: string
-  onNavigate: (e: MouseEvent<HTMLAnchorElement>) => void
+  canFund: boolean
+  onSelect: (row: BankRowData) => void
 }
 
-const BankBondRow: FC<BankBondRowProps> = ({ row, jurisdictionFilter, ratingFilter, onNavigate }) => {
+const BankBondRow: FC<BankBondRowProps> = ({ row, jurisdictionFilter, ratingFilter, canFund, onSelect }) => {
   const profile = useBankProfile(row.borrowerAddress)
   const name = profile?.bankName ?? row.fallbackName
   const code = jurisdictionCode(profile?.country)
@@ -132,92 +121,80 @@ const BankBondRow: FC<BankBondRowProps> = ({ row, jurisdictionFilter, ratingFilt
   if (jurisdictionFilter && code !== jurisdictionFilter) return null
   if (ratingFilter && rating !== ratingFilter) return null
 
-  const href = `#/orderbook/${encodeURIComponent(row.topOffer.id)}`
-  const closed = isClosed(row.closesAt)
+  const closed = isClosed(row.closesAt) || row.remainingLiquidity <= 0
   const urgent = isUrgent(row.closesAt)
+  const clickable = canFund && !closed
 
   return (
     <tr
       data-slug={slugify(name)}
+      onClick={clickable ? () => onSelect(row) : undefined}
       style={{
         borderBottom: '1px solid var(--border-subtle)',
         opacity: closed ? 0.45 : 1,
+        cursor: clickable ? 'pointer' : 'default',
       }}
     >
       <td style={tdStyle}>
-        <a href={href} onClick={closed ? (e) => e.preventDefault() : onNavigate} style={linkStyle}>
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '24px',
-              height: '24px',
-              borderRadius: '9999px',
-              background: 'var(--bg-surface-elevated)',
-              fontSize: '0.9rem',
-            }}
-          >
-            {profile?.logoEmoji ?? '🏦'}
-          </span>
-        </a>
-      </td>
-      <td style={tdStyle}>
-        <a href={href} onClick={closed ? (e) => e.preventDefault() : onNavigate} style={linkStyle}>
-          <span title={name} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-            {mid(name)}
-          </span>
-          {(code || rating) && (
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {[code, rating].filter(Boolean).join(' · ')}
-            </div>
-          )}
-        </a>
-      </td>
-      <td style={tdStyle}>
-        <a href={href} onClick={closed ? (e) => e.preventDefault() : onNavigate} style={{ ...linkStyle, textAlign: 'right' }}>
-          <div style={{ fontWeight: 700, color: 'var(--accent-green)' }}>{row.bestYieldPct.toFixed(2)}%</div>
-          <small style={{ color: 'var(--text-muted)' }}>best of {row.offerCount}</small>
-        </a>
-      </td>
-      <td style={tdStyle}>
-        <a href={href} onClick={closed ? (e) => e.preventDefault() : onNavigate} style={{ ...linkStyle, textAlign: 'right' }}>
-          <div>{fmt(row.remainingLiquidity)} XRP</div>
-          <small style={{ color: 'var(--text-muted)' }}>${fmt(toUsd(row.remainingLiquidity))}</small>
-        </a>
-      </td>
-      <td style={tdStyle}>
-        <a href={href} onClick={closed ? (e) => e.preventDefault() : onNavigate} style={{ ...linkStyle, textAlign: 'right' }}>
-          <div style={{ fontWeight: 700, color: closed ? 'var(--text-muted)' : urgent ? 'var(--accent-red)' : 'var(--text-primary)' }}>
-            {closed ? 'Closed' : countdownLabel(row.closesAt)}
-          </div>
-          {!closed && <small style={{ color: 'var(--text-muted)' }}>{absoluteLabel(row.closesAt)}</small>}
-        </a>
-      </td>
-      <td style={tdStyle}>
-        <a
-          href={href}
-          onClick={closed ? (e) => e.preventDefault() : onNavigate}
-          aria-label={`View ${name}`}
-          style={{ ...linkStyle, textAlign: 'right', color: 'var(--text-muted)' }}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '24px',
+            height: '24px',
+            borderRadius: '9999px',
+            background: 'var(--bg-surface-elevated)',
+            fontSize: '0.9rem',
+          }}
         >
-          ›
-        </a>
+          {profile?.logoEmoji ?? '🏦'}
+        </span>
+      </td>
+      <td style={tdStyle}>
+        <span title={name} style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+          {mid(name)}
+        </span>
+        {(code || rating) && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            {[code, rating].filter(Boolean).join(' · ')}
+          </div>
+        )}
+      </td>
+      <td style={{ ...tdStyle, textAlign: 'right' }}>
+        <div style={{ fontWeight: 700, color: 'var(--accent-green)' }}>{row.bestYieldPct.toFixed(2)}%</div>
+        <small style={{ color: 'var(--text-muted)' }}>best of {row.offerCount}</small>
+      </td>
+      <td style={{ ...tdStyle, textAlign: 'right' }}>
+        <div>{fmt(row.remainingLiquidity)} XRP</div>
+        <small style={{ color: 'var(--text-muted)' }}>${fmt(toUsd(row.remainingLiquidity))}</small>
+      </td>
+      <td style={{ ...tdStyle, textAlign: 'right' }}>
+        <div style={{ fontWeight: 700, color: closed ? 'var(--text-muted)' : urgent ? 'var(--accent-red)' : 'var(--text-primary)' }}>
+          {closed ? 'Closed' : countdownLabel(row.closesAt)}
+        </div>
+        {!closed && <small style={{ color: 'var(--text-muted)' }}>{absoluteLabel(row.closesAt)}</small>}
+      </td>
+      <td style={{ ...tdStyle, textAlign: 'right', width: '2.5rem', color: 'var(--text-muted)' }}>
+        {clickable ? '›' : ''}
       </td>
     </tr>
   )
 }
 
-export const FinanceBonds: FC<FinanceBondsProps> = ({ onNavigateToOrderBook }) => {
+export const FinanceBonds: FC = () => {
+  const { currentAccount } = useWallet()
   const [bankRows, setBankRows] = useState<BankRowData[] | null>(null)
   const [jurisdictionFilter, setJurisdictionFilter] = useState('')
   const [ratingFilter, setRatingFilter] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('yield')
+  const [selectedRow, setSelectedRow] = useState<BankRowData | null>(null)
   const profilesVersion = useProfilesVersion()
 
   const load = async () => {
-    const [allAsks, allBids] = await Promise.all([chainClient.getAsks(), chainClient.getBids()])
-    setBankRows(buildBankRows(allAsks.filter((a) => a.status === 'open'), allBids))
+    const [allAsks, vaults] = await Promise.all([chainClient.getAsks(), chainClient.getAllVaults()])
+    const vaultsById = new Map(vaults.map((v) => [v.vaultId, v]))
+    setBankRows(buildBankRows(allAsks.filter((a) => a.status === 'open'), vaultsById))
   }
 
   useEffect(() => {
@@ -255,10 +232,8 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onNavigateToOrderBook }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bankRows, profilesVersion])
 
-  const handleNavigate = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
-    onNavigateToOrderBook()
-  }
+  const selectedProfile = selectedRow ? getCachedProfile(selectedRow.borrowerAddress) : undefined
+  const canFund = canLend(currentAccount?.role)
 
   return (
     <div>
@@ -301,6 +276,13 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onNavigateToOrderBook }) =
         </select>
       </div>
 
+      {!canFund && currentAccount && (
+        <div className="alert alert-info" style={{ marginBottom: '1rem', fontSize: '0.82rem' }}>
+          Only investor (lender) accounts can fund a bond. This account is registered as
+          {currentAccount.role === 'borrower' ? ' an issuer' : currentAccount.role === 'broker' ? ' the platform broker' : ' not onboarded yet'}.
+        </div>
+      )}
+
       {bankRows === null ? (
         <SkeletonTable />
       ) : sortedRows.length === 0 ? (
@@ -333,12 +315,26 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onNavigateToOrderBook }) =
                   row={row}
                   jurisdictionFilter={jurisdictionFilter}
                   ratingFilter={ratingFilter}
-                  onNavigate={handleNavigate}
+                  canFund={canFund}
+                  onSelect={setSelectedRow}
                 />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {selectedRow && (
+        <FundBondModal
+          ask={selectedRow.topOffer}
+          bankName={selectedProfile?.bankName ?? selectedRow.fallbackName}
+          remainingLiquidity={selectedRow.remainingLiquidity}
+          onClose={() => setSelectedRow(null)}
+          onSuccess={() => {
+            setSelectedRow(null)
+            load()
+          }}
+        />
       )}
     </div>
   )
