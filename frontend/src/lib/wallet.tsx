@@ -77,18 +77,22 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
         // The role lives in the backend registry (set at onboarding, or at startup for the
         // platform broker). Resolve it here so a returning account gets its screens and actions
         // back without going through onboarding again.
-        const [balance, registered] = await Promise.all([
-          fetchLiveBalance(account.address),
-          chainClient.getAccount(account.address).catch(() => null),
-        ])
+        const balance = await fetchLiveBalance(account.address)
         const connected: ConnectedAccount = {
           address: account.address,
-          name: registered?.name || account.adapterName || account.walletName || 'WalletConnect',
+          name: account.adapterName || account.walletName || 'WalletConnect',
           balance,
-          role: registered?.role ?? undefined,
         }
         setCurrentAccount(connected)
         localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
+        // Role and display name come from the registry; resolve them without holding the
+        // connection up (App also adopts the role when it checks the registry).
+        chainClient.getAccount(account.address).then((registered) => {
+          if (!registered?.role) return
+          setCurrentAccount((prev) =>
+            prev && prev.address === account.address ? { ...prev, role: registered.role, name: registered.name || prev.name } : prev
+          )
+        }).catch(() => {})
       } finally {
         setIsLoading(false)
       }
