@@ -12,7 +12,7 @@ An Additional Tier 1 (AT1) bond platform built on the XRP Ledger's native vault 
 3. [The call-date lock and the enforcer](#3-the-call-date-lock-and-the-enforcer)
 4. [Accounts and custody](#4-accounts-and-custody)
 5. [Architecture](#5-architecture)
-6. [On-chain proof: 17 verified steps](#6-on-chain-proof-17-verified-steps)
+6. [On-chain proof: 19 lifecycle steps, 18 verified](#6-on-chain-proof-19-lifecycle-steps-18-verified)
 7. [Run it](#7-run-it)
 8. [Using the app](#8-using-the-app)
 9. [Tests and verification](#9-tests-and-verification)
@@ -50,9 +50,9 @@ The full lifecycle, in the order the code runs it:
 1. **Issuer posts an ask** → the platform (as Loan Broker) submits `VaultCreate`, `LoanBrokerSet` and `LoanBrokerCoverDeposit` (first-loss buffer).
 2. **Investor deposits** → `VaultDeposit`, signed by the investor's own wallet. Shares are minted at the current PPS.
 3. **Origination, automatic** → the deposit that brings the vault's liquid assets up to the ask's principal triggers `LoanSet` at once, signed by the broker and counter-signed by the issuer's 2-of-2 signer set. Principal moves to the issuer in this same transaction (there is no separate `LoanDraw` in XLS-66). The vault is bound to its issuer: the ask stored in the vault's `Data` field names the borrower, and both the shim and the enforcer refuse a `LoanSet` whose `Counterparty` is anyone else. If the issuer has not activated 2/2 yet, the deposit stands and origination waits (a manual *Originate* button remains as fallback). An ask that never fills is settled by a background scan in the shim once its funding window (`expiresAt`, off-chain) has passed: originated for whatever was raised if at least 50 % of the principal came in, otherwise left for depositors to withdraw.
-4. **Coupons** → `LoanPay` on each due date, co-signed by the enforcer. An XLS-66 loan amortises: each instalment is `PeriodicPayment` = a slice of principal + the period's interest (there is no interest-only schedule), and the interest part raises PPS.
+4. **Coupons** → `LoanPay` every 60 s, co-signed by the enforcer. XLS-66 has no interest-only coupon (every instalment amortises), so the loan is a long schedule of 10,000 small instalments: each one is the period's interest plus 1/10,000 of the principal, and the interest raises PPS. The schedule is not tied to the call date.
 5. **Yield harvest** → partial `VaultWithdraw` of the yield-equivalent shares only, at any time.
-6. **Call date** → the issuer settles the remaining scheduled coupons (`LoanPay`, late ones flagged `tfLoanLatePayment`); the last one closes the loan and the vault becomes fully liquid.
+6. **Principal, on the issuer's initiative** → `LoanPay` with `tfLoanOverpayment` repays part of the principal, `tfLoanFullPayment` calls the bond (everything, plus a close premium to the vault). The enforcer refuses both **before the ask's call date**, read from the vault's `Data`; after it, repaying is the issuer's decision, nothing forces the call.
 7. **Redemption** → full `VaultWithdraw`: principal plus every accrued increment of yield.
 
 Transactions used, and what each does here:
@@ -65,7 +65,7 @@ Transactions used, and what each does here:
 | `LoanBrokerSet` | XLS-66 | Broker terms: rate bounds, fees, cover requirements |
 | `LoanBrokerCoverDeposit` | XLS-66 | Broker posts first-loss capital |
 | `LoanSet` | XLS-66 | Origination and atomic disbursement, broker + issuer counter-signature |
-| `LoanPay` | XLS-66 | Coupons, late coupons (`tfLoanLatePayment`), early close (`tfLoanFullPayment`, enforcer-gated) |
+| `LoanPay` | XLS-66 | Interest instalments, late ones (`tfLoanLatePayment`), partial principal repayment (`tfLoanOverpayment`) and the call (`tfLoanFullPayment`), both enforcer-gated on the call date |
 | `LoanManage` | XLS-66 | Write-down (`tfLoanImpair`) and restoration (`tfLoanUnimpair`) by the broker |
 | `SignerListSet` | core | 2-of-2 signer list on issuer/investor accounts: operator key + platform enforcer |
 | `AccountSet` | core | `asfDisableMaster` on those accounts, so only the signer list can act |
@@ -78,7 +78,7 @@ Transactions used, and what each does here:
 
 **The mechanism.** The issuer's account is converted to a 2-of-2 multisig (`SignerListSet`) with its master key disabled (`AccountSet asfDisableMaster`). One signer is the issuer's operator key; the other is the platform **enforcer**, an autonomous daemon (`src/chain/enforcer/`, port 8788) whose only job is to apply a fixed policy before adding its signature:
 
-- **`LoanPay` (issuer)** — the loan must be brokered by this platform. `tfLoanFullPayment` (an early close) is refused while the validated ledger close time is before the call date (`blocked:before-call-date`). A coupon must be exactly `PeriodicPayment + LoanServiceFee`, or, once overdue, carry `tfLoanLatePayment` with at least that plus the late fee (`wrong-amount` otherwise).
+- **`LoanPay` (issuer)** — the loan must be brokered by this platform. Any principal repayment, partial (`tfLoanOverpayment`) or full (`tfLoanFullPayment`, the call), is refused while the validated ledger close time is before the ask's call date, read from the vault's `Data` (`blocked:before-call-date`). A scheduled instalment must be exactly `PeriodicPayment + LoanServiceFee`, or, once overdue, carry `tfLoanLatePayment` with at least that plus the late fee (`wrong-amount` otherwise).
 - **`VaultWithdraw` (investor with multisig active)** — redeeming up to the account's accrued yield shares is co-signed at any time; anything beyond that (principal) is co-signed only once the vault's loan is closed (`unauthorized-principal-withdrawal`). This is the investor-side half of the lock.
 - Anything else is refused (`not-loan-pay` / `not-supported`). A refusal returns `{ blocked, reason }` and nothing reaches the ledger.
 
@@ -86,7 +86,7 @@ Routes: `POST /cosign` (the policy above), `POST /counter-sign` (the enforcer's 
 
 **Why zero human access matters.** The enforcer's key (`ENFORCER_SEED` in `.enforcer.env`, mode `0600`) is read only by the daemon. It is never printed, never sent to the frontend, and there is no route that signs on request. If any person could co-sign on demand, the call date would be a promise, not a rule. In production the daemon belongs in a confidential enclave (AWS Nitro, HSM or TEE) so that even `root` on the host cannot extract the key or force a signature.
 
-**What the ledger proves and what it does not.** Both bypasses are rejected by the ledger itself, not by application code: a transaction signed with the disabled master key fails `tefMASTER_DISABLED`, and a `LoanPay` carrying only the operator's signature fails `tefBAD_QUORUM` (§6, rows 5 and 11). What remains off-chain is the *timing* rule, which lives in the daemon's policy. That gap is the headline of our [feedback report](FEEDBACK_REPORT.md): we propose a native `SignAfter` condition on `SignerEntry`, or a `TokenEscrow` (XLS-85, enabled on this devnet) with `FinishAfter = callDate` composed with the repayment.
+**What the ledger proves and what it does not.** Both bypasses are rejected by the ledger itself, not by application code: a transaction signed with the disabled master key fails `tefMASTER_DISABLED`, and a `LoanPay` carrying only the operator's signature fails `tefBAD_QUORUM` (§6, rows 5 and 12). What remains off-chain is the *timing* rule, which lives in the daemon's policy. That gap is the headline of our [feedback report](FEEDBACK_REPORT.md): we propose a native `SignAfter` condition on `SignerEntry`, or a `TokenEscrow` (XLS-85, enabled on this devnet) with `FinishAfter = callDate` composed with the repayment.
 
 ---
 
@@ -168,31 +168,33 @@ flowchart TD
 
 ---
 
-## 6. On-chain proof: 17 verified steps
+## 6. On-chain proof: 19 lifecycle steps, 18 verified
 
-One bond (200 XRP, 100 % annual, 3 coupons to a 3-minute call date), run top to bottom against the Custom Hackathon Devnet by `npm run e2e` on 13 September with wallet-onboarded issuer and investor accounts. Every step matched its expected result. Rows marked 🛡️ are deliberate rejections, proving the guardrails hold on-ledger. Full report: [`docs/e2e-full-report.md`](docs/e2e-full-report.md).
+One bond (200 XRP, 100 % annual, 3 coupons to a 3-minute call date), run top to bottom against the Custom Hackathon Devnet by `npm run e2e` on 13 September with wallet-onboarded issuer and investor accounts. 18 of 19 steps matched their expected result; rows marked 🛡️ are deliberate rejections proving the guardrails hold on-ledger, and row 17 (⚠️) is documented as best-effort. Full report: [`docs/e2e-full-report.md`](docs/e2e-full-report.md).
 
 | # | Step | Result | Explorer |
 |---|---|---|---|
-| 1 | `VaultCreate` | ✅ `tesSUCCESS` | [`9805777345…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/980577734513482A6C5F4907838FFF8CC730D0E14139491F53FC4DB06FD4CCCA) |
-| 2 | `LoanBrokerSet` | ✅ `tesSUCCESS` | [`0CD58B43E5…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0CD58B43E5A0711A44D9633EAA56519F6973FC5D707628D055EBD54B5E42AB2B) |
-| 3 | `LoanBrokerCoverDeposit` (first-loss buffer) | ✅ `tesSUCCESS` | [`111DEB0A51…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/111DEB0A516809043A575E8EC8E445E0990FBB5D40701C6515DC4946575EB28F) |
-| 4 | `VaultDeposit`, investor-signed, 200 XRP | ✅ `tesSUCCESS` | [`C0ECA725EF…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C0ECA725EFFAB3B7813014B89E97B1B6584BD72A27CF5DE9B943CB357113231E) |
+| 1 | `VaultCreate` | ✅ `tesSUCCESS` | [`4052C62B8E…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/4052C62B8EEEB6C532287D35CE6094352A7B6D8181F44193E5978A18B996F89D) |
+| 2 | `LoanBrokerSet` | ✅ `tesSUCCESS` | [`75B6598A13…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/75B6598A13C38DAEF05DE39BB84410FF9ABD44A7928432DC024178158C0F3A10) |
+| 3 | `LoanBrokerCoverDeposit` (first-loss buffer) | ✅ `tesSUCCESS` | [`19A53342AE…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/19A53342AE0C0A92BC7193461D50FAA06E63DF3590A186B54E0B21280BF440BE) |
+| 4 | `VaultDeposit`, investor-signed, 200 XRP | ✅ `tesSUCCESS` | [`0A5D42DC93…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0A5D42DC93E3FADE31579298BABA710B77592DA58B5265DCBB0359936C66F9FF) |
 | 5 | `Payment` signed by the disabled master key | 🛡️ `tefMASTER_DISABLED` | rejected before validation |
-| 6 | `LoanSet`, **originated automatically by the funding deposit**, broker + 2-of-2 counterparty signature | ✅ `tesSUCCESS` | [`13BD51C521…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/13BD51C521276B5F058880C4A904CAE221900C310C82A3FFC10138923A1679E4) |
+| 6 | `LoanSet`, **originated automatically by the funding deposit**, broker + 2-of-2 counterparty signature | ✅ `tesSUCCESS` | [`4C427021EB…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/4C427021EBCE1195CD8985AFB1E2FDDD0A4B2E75DEB1C83E25F7F2EAA7E09DDC) |
 | 7 | `LoanSet` for a counterparty other than the vault's issuer | 🛡️ `blocked:not-issuer` | refused by the shim and the enforcer policy, never submitted |
-| 8 | `LoanManage tfLoanImpair` on a loan not yet due | 🛡️ `tecTOO_SOON` | [`92D7F9C9DC…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/92D7F9C9DC54692EA58775E37ADF44D90C08E78DE20B2048A7A5F9853C9929BB) |
-| 9 | Full `VaultWithdraw` while principal is on loan | 🛡️ `tecINSUFFICIENT_FUNDS` | [`E43360B573…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E43360B57339F8798A92BA179CDFA5F8FC05ABBF62CCC97A32D49154F87D71B7) |
-| 10 | Early close (`tfLoanFullPayment`) before the call date | 🛡️ `blocked:before-call-date` | refused by the enforcer, never submitted |
-| 11 | `LoanPay` with 1 of 2 signatures | 🛡️ `tefBAD_QUORUM` | rejected before validation |
-| 12 | `LoanManage tfLoanImpair` once overdue | ✅ `tesSUCCESS` | [`04E8DC5E44…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/04E8DC5E44D5B070D9DA6E345C0E5518193C95116A19CD8A4E1A52BCCEB0C0D2) |
-| 13 | `LoanManage tfLoanUnimpair` | ✅ `tesSUCCESS` | [`A997BC778F…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/A997BC778F2A52DA136C6838441FDC3E10B327410828A5F90D64470F2E60C042) |
-| 14 | `LoanPay` coupon #1, late-flagged; PPS rises | ✅ `tesSUCCESS` | [`32606E7E79…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/32606E7E79C0094253A109A6AA41B263E2FB9F549B58D5764968B0DC0958E5D5) |
-| 15 | `VaultWithdraw`, yield only; principal shares intact | ✅ `tesSUCCESS` | [`AC398BCDD3…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/AC398BCDD3DC2F865A58BA6BBA6CE969389514A26965A976B7253A5DC8C05293) |
-| 16 | Settlement at the call date: remaining coupons (`tfLoanLatePayment`), last one closes the loan | ✅ `tesSUCCESS` | [`8FF45F30B6…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/8FF45F30B620EA9399356BE1F9CAE0813CBDC74644AFA93B1F81CCB1C8429407) |
-| 17 | Full `VaultWithdraw`: principal + all accrued yield | ✅ `tesSUCCESS` | [`FD8835CBF7…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/FD8835CBF79C4F4716E349E511E7235883F0027B684E27FA38567B0C0173816F) |
+| 8 | `LoanManage tfLoanImpair` on a loan not yet due | 🛡️ `tecTOO_SOON` | [`C31F1DD029…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C31F1DD029844A6DD0B2AEA6B4C4608114DAED4079FCDDF634741A9CBCCAD469) |
+| 9 | Full `VaultWithdraw` while principal is on loan | 🛡️ `tecINSUFFICIENT_FUNDS` | [`E24E4209BF…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E24E4209BF3DAE5DB575A90B235812FECC1FBD99483C047035CF7E7E5992D675) |
+| 10 | Call the bond (`tfLoanFullPayment`) before the call date | 🛡️ `blocked:before-call-date` | refused by the enforcer, never submitted |
+| 11 | Partial principal repayment (`tfLoanOverpayment`) before the call date | 🛡️ `blocked:before-call-date` | refused by the enforcer, never submitted |
+| 12 | `LoanPay` with 1 of 2 signatures | 🛡️ `tefBAD_QUORUM` | rejected before validation |
+| 13 | `LoanManage tfLoanImpair` once overdue | ✅ `tesSUCCESS` | [`14F446A6EC…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/14F446A6EC7DEEA305ED78A8C90195C88F1FA71F3BF6088329DEEAEAE3B22608) |
+| 14 | `LoanManage tfLoanUnimpair` | ✅ `tesSUCCESS` | [`75E91DCCE9…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/75E91DCCE91CA4D0F845734454B3A0FBE1B52D03CDF98DF703CA16C50D2EF7B8) |
+| 15 | `LoanPay` interest instalment #1, late-flagged; PPS rises | ✅ `tesSUCCESS` | [`3D0D0B4AB5…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/3D0D0B4AB5E51BFA1947F7CA61C514E0EAB9D34E6587E2E36B9DC38313153098) |
+| 16 | `VaultWithdraw`, yield only; principal shares intact | ✅ `tesSUCCESS` | [`26ED3E2F26…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/26ED3E2F2623FF3A1F3B9D1038C3D42E3C973308311F0D2FD05607D93BA30140) |
+| 17 | Partial principal repayment at the call date (`tfLoanOverpayment`) — **best-effort**: the ledger refuses it whenever an instalment falls due during submission (`tecEXPIRED`, friction #14/#33) | ⚠️ `tecEXPIRED` | [`B23D82E99A…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/B23D82E99AFB83C5016B6E3C696A2AED92C3F3074633C17ABCDBB24599CD4472) |
+| 18 | The issuer calls the bond at the call date (`tfLoanFullPayment`, close premium to the vault) | ✅ `tesSUCCESS` | [`5EE3BD7D91…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5EE3BD7D91ED09FE5ECA01DE9BB3F6FBE2E3C9471735895516D985D764596DA4) |
+| 19 | Full `VaultWithdraw`: principal + all accrued yield | ✅ `tesSUCCESS` | [`DC4DD7F010…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/DC4DD7F010F7211CB1C5FA7CF1CF03B3021AA7C88F2DB3AF9280A03E58CC90D2) |
 
-Rows 9 and 10 together are the call-date lock in action: the ledger refuses the investor's principal while it is on loan, and the enforcer refuses to let the issuer make it liquid early.
+Rows 9, 10 and 11 together are the call-date lock in action: the ledger refuses the investor's principal while it is on loan, and the enforcer refuses to let the issuer make it liquid early.
 
 ---
 
@@ -254,7 +256,7 @@ Multisig is not set up by any script: each issuer or investor activates it from 
 2. **Issue (issuer)** — first click **Activer 2/2** on the Issue tab (your wallet signs `SignerListSet` + `AccountSet`; needed once, so the enforcer can co-sign your repayments), then post an ask with amount, annual yield and call date (a datetime; **⚡ Demo: 3-minute bond** fills in call date = now + 3 min and the ledger's maximum rate, 100 %/yr). The platform creates the vault and broker objects on the spot. Rates are annualised on the ledger, so a 3-minute bond earns a few thousand drops; the UI shows yield in drops and PPS to 9 decimals so the movement is visible.
 3. **Invest (investor)** — in *Finance Bonds*, click *Fund* on an open bond, enter an amount (the modal shows the remaining capacity from the live vault state); your wallet signs the `VaultDeposit` and you receive MPT shares. The deposit that fills the vault originates the loan automatically.
 4. **Coupons and harvest** — the issuer pays coupons (`LoanPay`); PPS rises. Investors open *Withdraw*, choose **Yield-Only Partial** and confirm *Redeem Accrued Yield*: only the yield-equivalent shares are burned. The **Full Principal (Guardrail Test)** mode shows the on-ledger rejection while capital is on loan.
-5. **Call date** — before it, an early payoff is refused by the enforcer and principal withdrawals fail on-ledger. At or after it, the issuer settles the remaining coupons; the loan closes, the vault is liquid, investors redeem principal plus yield.
+5. **Principal and the call date** — the issuer has three buttons on *My Positions*: *Pay interest* (the next instalment), *Repay principal (partial)* and *Call the bond (repay all)*. Before the call date the two principal buttons are refused by the enforcer (`blocked:before-call-date`) and principal withdrawals fail on-ledger. From the call date on, repaying is the issuer's choice; once called, the vault is liquid and investors redeem principal plus yield.
 
 ---
 
@@ -266,7 +268,7 @@ Four independent layers, all green. Summary with per-layer results: [`docs/test-
 |---|---|---|
 | Backend unit tests (30) | `npm test` | Enforcer policy (full payment refused before the call date, exact coupon amounts, late payments), loan maths (rate scaling, call date derivation), yield share splitting, engine-code extraction, bid terms |
 | Frontend unit tests (19) | `cd frontend && npm test` | Wallet context, xrpl config/client, app shell |
-| On-chain end-to-end (17 steps) | `npm run e2e` | The full lifecycle of §6 against the live devnet, ~4–5 minutes (two real waits: a coupon going overdue and the call date). Rewrites `docs/e2e-full-report.md` with fresh hashes. |
+| On-chain end-to-end (19 steps) | `npm run e2e` | The full lifecycle of §6 against the live devnet, ~4–5 minutes (two real waits: a coupon going overdue and the call date). Rewrites `docs/e2e-full-report.md` with fresh hashes. |
 | Frontend integration (17) | `cd frontend && npm run test:integration[:close]` | The same lifecycle through the browser's HTTP client against the running shim; `:close` includes settlement |
 
 ```text
@@ -290,7 +292,7 @@ Four independent layers, all green. Summary with per-layer results: [`docs/test-
 | `npm run enforcer` | Enforcer daemon on :8788 |
 | `npm run serve` | Chain shim on :8787; `ENFORCER_URL` selects the daemon, otherwise the policy runs in-process for development. Never wipes local data. |
 | `npm test` | Backend unit tests |
-| `npm run e2e` | 17-step on-chain lifecycle, writes `docs/e2e-full-report.md` |
+| `npm run e2e` | 19-step on-chain lifecycle, writes `docs/e2e-full-report.md` |
 | `npm run check` | Devnet reachability and required amendments (`SingleAssetVault`, `LendingProtocol`, `fixCleanup3_4_0`, …) |
 | `npm run balances` / `npm run all-balances` | On-chain balances of configured accounts / full liquid-vs-reserved report |
 | `npm run vaults` / `npm run objects` | Scan vaults (PPS, loans, call dates) / raw ledger objects |
@@ -326,7 +328,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 - **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so the app has to pick a chain the wallet approved and encode the signed transaction itself (`signPrepared`). It works, but every signature is a phone round trip, the session does not survive a reload, and Xaman cannot show this network's balances: fine for the demo, slow for development.
 - **Discovery and funding windows are off-chain.** An ask is a vault plus off-chain metadata; its funding window has no on-chain effect (a background scan settles stalled bonds at the deadline). We built a bid / accept / decline layer and removed it: nothing on the ledger can reserve an investor's funds against an ask, so a "locked" bid was only a database row (`TokenEscrow` would make it real).
 - **No native "this vault lends only to X".** Neither `VaultCreate` nor `LoanBrokerSet` can restrict the loan counterparty; we record the issuer in the vault's `Data` and enforce it in the shim and the enforcer. A `LoanBrokerSet.AllowedCounterparty` (or a Credential requirement on borrowers) would make it a ledger rule.
-- **Amortising only.** XLS-66 has no interest-only / bullet schedule: every instalment repays a slice of principal, so a "coupon" here is principal + interest, unlike a real AT1 whose coupons are interest-only with principal at the call.
+- **Amortising only.** XLS-66 has no interest-only / bullet schedule: every instalment repays a slice of principal. We approximate an AT1 with a 10,000-instalment schedule (1/10,000 of principal per coupon) and `tfLoanOverpayment` / `tfLoanFullPayment` for principal, gated by the enforcer on the call date; a native `PaymentType` would remove the approximation.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
 - **No oracle-driven trigger.** A CET1-style trigger would need an off-chain oracle; impairment is triggered manually by the broker.
 - **Whitelists are asymmetric.** Depositors can be gated natively (`VaultCreate` `tfVaultPrivate` + `DomainID`, Credentials), which is how an accredited-investor / minimum-ticket rule would be expressed; we did not build it. Borrowers cannot: `LoanBrokerSet` has no `DomainID`, and the depositor gate does not apply to `VaultWithdraw`.
@@ -341,8 +343,8 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 |---|---|
 | Developer feedback report (max 3 pages, 40 % of the score) | [`FEEDBACK_REPORT.md`](FEEDBACK_REPORT.md) |
 | Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md) |
-| Verified on-chain transactions | §6 above (17 steps, 13 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
-| Raw friction log (32 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
+| Verified on-chain transactions | §6 above (19 steps, 14 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
+| Raw friction log (33 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
 | Full analysis compendium (architecture evolution, Track 1 vs 2, custody decisions, every friction with repro) | [`docs/comprehensive-analysis-and-feedback.md`](docs/comprehensive-analysis-and-feedback.md) |
 | DevEx hook | `xrpl-devex-hook/` installed and active on every developer machine |
 

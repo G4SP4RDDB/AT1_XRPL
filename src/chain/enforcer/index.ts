@@ -1,15 +1,18 @@
 // The broker's enforcer seat on the borrower multisig. Holds its own key (.enforcer.env, never .env)
 // and co-signs a borrower transaction only when the policy passes (pipeline §11, decision 2):
 //   1. it is a LoanPay on a loan whose broker we own;
-//   2. tfLoanFullPayment only once the call date (StartDate + PaymentInterval x PaymentTotal) has passed;
-//   3. a coupon Amount must equal the loan's current PeriodicPayment + LoanServiceFee, rounded up;
+//   2. any principal repayment, partial (tfLoanOverpayment) or full (tfLoanFullPayment), only once the
+//      ask's call date (vault Data) has passed; nothing forces the issuer to repay after it;
+//   3. a scheduled instalment's Amount must equal the loan's current PeriodicPayment + LoanServiceFee;
 //   4. otherwise sign.
 import fs from "node:fs";
 import path from "node:path";
 import { Wallet, type Client } from "xrpl";
 import { ledgerEntry, ledgerCloseTime } from "../read.js";
+import { isoToRipple } from "../loanMath.js";
 
-const TF_FULL = 0x00020000;
+const TF_OVER = 0x00010000; // tfLoanOverpayment: partial principal repayment
+const TF_FULL = 0x00020000; // tfLoanFullPayment: call the bond
 const TF_LATE = 0x00040000;
 
 export type BlockedReason =
@@ -96,7 +99,7 @@ export function decide(
   broker: any,
   now: number,
   brokerAddress: string,
-  extra?: { position?: any; vault?: any; loan?: any }
+  extra?: { position?: any; vault?: any; loan?: any; callDate?: number }
 ): Decision {
   if (prepared.TransactionType === "VaultWithdraw") {
     return decideWithdraw(prepared, extra?.vault ?? loan, extra?.loan, extra?.position, brokerAddress);
@@ -108,10 +111,14 @@ export function decide(
     return { ok: false, blocked: "not-loan-pay", reason: "loan is not brokered by this platform" };
   }
   const flags = Number(prepared.Flags ?? 0);
-  if (flags & TF_FULL) {
-    const callDate = callDateRipple(loan);
+  if (flags & (TF_FULL | TF_OVER)) {
+    // Principal leaves the loan only on the issuer's initiative and only from the call date on.
+    const callDate = extra?.callDate ?? callDateRipple(loan);
     if (now < callDate) {
       return { ok: false, blocked: "before-call-date", reason: `call date in ${callDate - now}s (ledger time ${now}, call ${callDate})` };
+    }
+    if (flags & TF_OVER && !(Number(prepared.Amount) > 0)) {
+      return { ok: false, blocked: "wrong-amount", reason: "principal repayment must be a positive amount" };
     }
   } else {
     const base = Math.ceil(Number(loan.PeriodicPayment) + Number(loan.LoanServiceFee ?? 0));
@@ -157,7 +164,13 @@ export async function cosign(client: Client, prepared: Record<string, any>, brok
     const loan = prepared.LoanID ? await ledgerEntry(client, prepared.LoanID).catch(() => undefined) : undefined;
     const broker = loan?.LoanBrokerID ? await ledgerEntry(client, loan.LoanBrokerID).catch(() => undefined) : undefined;
     const now = await ledgerCloseTime(client);
-    const d = decide(prepared, loan, broker, now, brokerAddress);
+    // The call date is the ask's, stored in the vault's Data at creation.
+    let callDate: number | undefined;
+    if (broker?.VaultID) {
+      const vault = await ledgerEntry(client, broker.VaultID).catch(() => undefined);
+      try { const c = vault?.Data ? JSON.parse(Buffer.from(vault.Data, "hex").toString("utf8"))?.c : undefined; if (c) callDate = isoToRipple(c); } catch { /* keep schedule-based fallback */ }
+    }
+    const d = decide(prepared, loan, broker, now, brokerAddress, { callDate });
     if (!d.ok) return d;
     const signed = enforcerWallet().sign(prepared as any, true);
     return { ok: true, blob: signed.tx_blob };

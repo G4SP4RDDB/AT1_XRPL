@@ -20,19 +20,19 @@ export function toLocalInputValue(date: Date): string {
 }
 
 const SECONDS_PER_YEAR = 365 * 24 * 3600
-const INSTALMENTS = 3 // DEMO_LOAN.paymentTotal on the backend
+const INTERVAL_SEC = 60 // DEMO_LOAN.paymentIntervalSec on the backend
+const INSTALMENTS = 10_000 // DEMO_LOAN.paymentTotal: a long schedule so each instalment is interest + 1/10,000 of principal
 
-/** What the ledger will charge for a bond: the annual rate prorated to each instalment's real
- *  duration (that is how XLS-66 applies InterestRate), so the issuer sees the per-minute rate and
- *  the drops of interest before posting. Mirrors termsFromAsk() on the backend. */
+/** What the ledger will charge: the annual rate prorated to each 60 s instalment (that is how XLS-66
+ *  applies InterestRate). Principal is not on the schedule's clock: it is repaid on the issuer's
+ *  initiative from the call date on. Mirrors termsFromAsk() on the backend. */
 export function previewLoanTerms(amountXrp: number, annualPct: number, callDate: Date, now = new Date()) {
-  const secondsToCall = Math.max(60 * INSTALMENTS, Math.floor((callDate.getTime() - now.getTime()) / 1000))
-  const intervalSec = Math.max(60, Math.floor(secondsToCall / INSTALMENTS))
+  const secondsToCall = Math.max(INTERVAL_SEC, Math.floor((callDate.getTime() - now.getTime()) / 1000))
+  const instalmentsToCall = Math.max(1, Math.floor(secondsToCall / INTERVAL_SEC))
   const perMinutePct = annualPct / (SECONDS_PER_YEAR / 60)
-  const perIntervalRate = (annualPct / 100) * (intervalSec / SECONDS_PER_YEAR)
-  // Simple-interest approximation of the ledger's annuity: exact to the drop at these durations.
+  const perIntervalRate = (annualPct / 100) * (INTERVAL_SEC / SECONDS_PER_YEAR)
   const interestPerInstalmentXrp = amountXrp * perIntervalRate
-  const totalInterestXrp = interestPerInstalmentXrp * INSTALMENTS
   const principalPerInstalmentXrp = amountXrp / INSTALMENTS
-  return { secondsToCall, intervalSec, perMinutePct, interestPerInstalmentXrp, totalInterestXrp, principalPerInstalmentXrp, instalments: INSTALMENTS }
+  const interestToCallXrp = interestPerInstalmentXrp * instalmentsToCall
+  return { secondsToCall, intervalSec: INTERVAL_SEC, instalmentsToCall, perMinutePct, interestPerInstalmentXrp, principalPerInstalmentXrp, interestToCallXrp }
 }

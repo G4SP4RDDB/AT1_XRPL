@@ -127,3 +127,16 @@ test("counter-sign: only the vault's own issuer can be the LoanSet counterparty"
   // a vault without a stored bid does not bind anyone
   assert.equal(decideCounterSign(loanSet, lb, undefined, BROKER).ok, true);
 });
+
+test("partial principal repayment (tfLoanOverpayment) is refused before the call date and allowed after; the ask's call date wins over the schedule", () => {
+  const part = pay({ Amount: "100000000", Flags: 0x00010000 });
+  const call = callDateRipple(loan); // 1360 from the schedule
+  const early = decide(part, loan, broker, call - 1, BROKER);
+  assert.equal(early.ok, false); if (!early.ok) assert.equal(early.blocked, "before-call-date");
+  assert.equal(decide(part, loan, broker, call, BROKER).ok, true);
+  // the ask's call date (vault Data) overrides the schedule-derived one, both ways
+  assert.equal(decide(part, loan, broker, call, BROKER, { callDate: call + 100 }).ok, false);
+  assert.equal(decide(pay({ Amount: "700000000", Flags: 0x00020000 }), loan, broker, 900, BROKER, { callDate: 800 }).ok, true);
+  const zero = decide(pay({ Amount: "0", Flags: 0x00010000 }), loan, broker, call, BROKER);
+  assert.equal(zero.ok, false); if (!zero.ok) assert.equal(zero.blocked, "wrong-amount");
+});

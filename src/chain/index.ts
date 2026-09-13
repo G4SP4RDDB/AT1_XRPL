@@ -15,6 +15,7 @@ export const tx = {
   withdraw: (req: WithdrawRequest): Promise<TxReceipt | Blocked> => ops.withdraw(req),
   prepareWithdraw: (req: WithdrawRequest) => ops.prepareWithdraw(req),
   finalRepayment: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.finalRepayment(loanId, borrowerAddress),
+  repayPrincipal: (loanId: string, borrowerAddress: string, amountXrp: string): Promise<TxReceipt | Blocked> => ops.repayPrincipal(loanId, borrowerAddress, amountXrp),
   impair: (loanId: string): Promise<TxReceipt> => ops.impair(loanId),
   unimpair: (loanId: string): Promise<TxReceipt> => ops.unimpair(loanId),
   depositCover: (loanBrokerId: string, amount: string): Promise<TxReceipt> => ops.depositCover(loanBrokerId, amount),

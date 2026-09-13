@@ -18,14 +18,19 @@ export const SECONDS_PER_YEAR = 31_536_000;
 // 3 x 180 s the total interest is about 0.017 XRP (17 000 drops). Visible in drops, not in XRP.
 export const DEMO_LOAN = {
   principalXrp: 1000,
-  paymentTotal: 3,
-  paymentIntervalSec: 180, // spec minimum 60
+  // Interest-only coupons do not exist in XLS-66 (every instalment amortises principal), so a bond
+  // is modelled as a long schedule of small instalments: 10,000 x 60 s means each LoanPay is the
+  // period's interest plus 1/10,000 of the principal. Principal is repaid on the issuer's initiative
+  // (tfLoanOverpayment for a part, tfLoanFullPayment to call the bond), which the enforcer only
+  // co-signs from the ask's call date on. Nothing forces the issuer to call after that date.
+  paymentTotal: 10_000,
+  paymentIntervalSec: 60, // spec minimum 60
   gracePeriodSec: 120,     // spec: 60 <= grace <= interval
   interestRate: 100_000,   // 100 % annual, the maximum, so interest is at least visible in drops
   closeInterestRate: 1_000, // 1 % of principal outstanding charged on an early close
   closePaymentFeeXrp: 1,
   loanServiceFeeXrp: 0,
-  overpaymentAllowed: false, // never set tfLoanOverpayment: the ledger then rejects overpayments itself
+  overpaymentAllowed: true, // LoanSet tfLoanOverpayment: partial principal repayments are allowed, gated by the enforcer
 } as const;
 
 export const DEMO_BROKER = {

@@ -71,6 +71,7 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       prepareWithdraw: (req: WithdrawRequest) => call<{ prepared: Record<string, unknown> } | Blocked>("/tx/prepareWithdraw", [req]),
       /** Before the call date: early close, refused by the enforcer. After: settles the remaining schedule. */
       finalRepayment: (loanId: string, borrowerAddress: string) => call<TxReceipt | Blocked>("/tx/finalRepayment", [loanId, borrowerAddress]),
+      repayPrincipal: (loanId: string, borrowerAddress: string, amountXrp: string) => call<TxReceipt | Blocked>("/tx/repayPrincipal", [loanId, borrowerAddress, amountXrp]),
       /** Broker write-down; accepted only once a payment is overdue. */
       impair: (loanId: string) => call<TxReceipt>("/tx/impair", [loanId]),
       unimpair: (loanId: string) => call<TxReceipt>("/tx/unimpair", [loanId]),

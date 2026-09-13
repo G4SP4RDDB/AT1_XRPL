@@ -14,6 +14,7 @@ import { ledgerEntry, ledgerCloseTime } from "../src/chain/read.js";
 import { callDateRipple } from "../src/chain/enforcer/index.js";
 import { isoToRipple, rippleToIso } from "../src/chain/loanMath.js";
 import type { Ask } from "../shared/types.js";
+import { DEMO_LOAN } from "../src/chain/config.js";
 
 const A = loadAccounts();
 const client = await getClient();
@@ -101,7 +102,7 @@ ask.loanId = o.loanId; ask.status = "originated";
 v = await read.vaultState(ask.vaultId!);
 assertEq("assetsAvailable drained by origination", v.assetsAvailable, "0");
 assertTrue("loan is active", v.loan?.status === "active");
-assertEq("payments remaining", v.loan?.paymentRemaining, 3);
+assertEq("payments remaining", v.loan?.paymentRemaining, DEMO_LOAN.paymentTotal);
 
 console.log("\n=== 4b. issuer binding: a LoanSet for another counterparty is refused before it reaches the ledger ===");
 let binding: { blocked: string; reason: string } | { result: string } = { result: "not-refused" };
@@ -124,8 +125,9 @@ log("LoanManage tfLoanImpair, not yet due", "tecTOO_SOON", await tx.impair(ask.l
 console.log("\n=== 6. guardrail: full withdrawal while principal is on loan ===");
 log("VaultWithdraw full (guardrail)", "tecINSUFFICIENT_FUNDS", await lenderWithdraw("full"));
 
-console.log("\n=== 7. enforcer refuses an early close (3 payments remaining, well before the call date) ===");
-log("finalRepayment, paymentRemaining=3", "blocked:before-call-date", await tx.finalRepayment(ask.loanId!, ask.borrowerAddress));
+console.log("\n=== 7. enforcer refuses principal repayments before the call date: a call, and a partial one ===");
+log("finalRepayment (call the bond) before the call date", "blocked:before-call-date", await tx.finalRepayment(ask.loanId!, ask.borrowerAddress));
+log("repayPrincipal 50 XRP before the call date", "blocked:before-call-date", await tx.repayPrincipal(ask.loanId!, ask.borrowerAddress, "50"));
 
 console.log("\n=== 8. multisig proof: one signature is not a quorum ===");
 const due1 = String(Math.ceil(Number(loan1.PeriodicPayment)));
@@ -148,7 +150,7 @@ console.log("\n=== 10. pay the (now overdue) coupon and the next one; yield accr
 const ppsBeforeCoupon = v.pps;
 log("LoanPay coupon #1 (late)", "tesSUCCESS", await tx.payCoupon(ask.loanId!, ask.borrowerAddress));
 v = await read.vaultState(ask.vaultId!);
-assertEq("payments remaining after coupon 1", v.loan?.paymentRemaining, 2);
+assertEq("payments remaining after coupon 1", v.loan?.paymentRemaining, DEMO_LOAN.paymentTotal - 1);
 assertTrue("pps rose after coupon 1", v.pps > ppsBeforeCoupon, `(${v.pps} > ${ppsBeforeCoupon})`);
 
 console.log("\n=== 11. yield-only withdrawal leaves principal untouched ===");
@@ -161,19 +163,24 @@ assertTrue("shares reduced by exactly the yield shares redeemed", Number(pos.sha
 // slightly, which is correct — each remaining share is worth marginally more XRP. Tolerance is 0.05%.
 assertTrue("principal shares within 0.05% of the original 200,000,000", Math.abs(Number(pos.shares) - 200_000_000) < 100_000, `(${pos.shares})`);
 
-console.log("\n=== 12. debt reimbursement: wait for the call date, then settle the remaining scheduled coupons ===");
+console.log("\n=== 12. the call date: a partial principal repayment is now co-signed, then the issuer calls the bond ===");
 const loan2 = await ledgerEntry(client, ask.loanId!);
-const callAt = callDateRipple(loan2);
+const callAt = isoToRipple((await read.vaultState(ask.vaultId!)).callDate);
 console.log(`    call date: ${rippleToIso(callAt)}  (paymentRemaining=${loan2.PaymentRemaining})`);
-await sleepUntil(callAt, "the loan's call date");
+await sleepUntil(callAt, "the ask's call date");
+const vBeforePartial = await read.vaultState(ask.vaultId!);
+log("repayPrincipal 50 XRP at the call date (tfLoanOverpayment; timing-sensitive, see friction #14/#33)", "tesSUCCESS", await tx.repayPrincipal(ask.loanId!, ask.borrowerAddress, "50"));
+v = await read.vaultState(ask.vaultId!);
+assertTrue("50 XRP of principal came back into the vault", Number(v.assetsAvailable) >= Number(vBeforePartial.assetsAvailable) + 49, `(${vBeforePartial.assetsAvailable} -> ${v.assetsAvailable})`);
+assertTrue("loan still open after the partial repayment", v.loan?.status === "active", `(${v.loan?.status})`);
 
 const vBeforeClose = await read.vaultState(ask.vaultId!);
 const lenderXrpBefore = Number(dropsToXrp((await client.request({ command: "account_info", account: A.lender1.classicAddress, ledger_index: "validated" })).result.account_data.Balance));
-log("finalRepayment at the call date (remaining coupons, tfLoanLatePayment)", "tesSUCCESS", await tx.finalRepayment(ask.loanId!, ask.borrowerAddress));
+log("finalRepayment: the issuer calls the bond (tfLoanFullPayment, close premium to the vault)", "tesSUCCESS", await tx.finalRepayment(ask.loanId!, ask.borrowerAddress));
 v = await read.vaultState(ask.vaultId!);
 assertEq("loan closed", v.loan?.status, "closed");
 assertEq("payments remaining", v.loan?.paymentRemaining, 0);
-assertTrue("coupon interest landed in the vault (pps rose again)", v.pps > vBeforeClose.pps, `(${v.pps} > ${vBeforeClose.pps})`);
+assertTrue("close premium landed in the vault (pps rose again)", v.pps > vBeforeClose.pps, `(${v.pps} > ${vBeforeClose.pps})`);
 assertEq("all assets liquid again", v.assetsAvailable, v.assetsTotal);
 
 console.log("\n=== 13. final withdrawal: principal + all accrued yield ===");

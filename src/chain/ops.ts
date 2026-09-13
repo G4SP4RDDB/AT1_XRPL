@@ -71,11 +71,12 @@ const getBorrowerOpFor = getOperatorFor;
 
 /** Loan terms derived from an ask (the borrower's posted tranche): PaymentTotal fixed,
  *  interval from the call date (min 60 s). */
-export function termsFromAsk(ask: Ask, nowRipple: number) {
+export function termsFromAsk(ask: Ask, _nowRipple: number) {
   const principalDrops = Number(xrpToDrops(ask.amount));
+  // The schedule is not tied to the call date: instalments every paymentIntervalSec until the
+  // issuer calls the bond (see config.ts DEMO_LOAN). The call date lives in the vault's Data.
   const paymentTotal = DEMO_LOAN.paymentTotal;
-  const secondsToCall = Math.max(60 * paymentTotal, isoToRipple(ask.callDate) - nowRipple);
-  const paymentInterval = Math.max(60, Math.floor(secondsToCall / paymentTotal));
+  const paymentInterval = Math.max(60, DEMO_LOAN.paymentIntervalSec);
   const gracePeriod = Math.min(DEMO_LOAN.gracePeriodSec, paymentInterval);
   const interestRate = percentToTenthBp(ask.yieldRate);
   const interestDrops = Math.ceil(totalInterest(principalDrops, interestRate, paymentInterval, paymentTotal));
@@ -240,6 +241,7 @@ export async function originate(ask: Ask): Promise<TxReceipt & { loanId?: string
     TransactionType: "LoanSet", Account: broker().classicAddress, LoanBrokerID: ask.loanBrokerId, Counterparty: ask.borrowerAddress,
     PrincipalRequested: String(t.principalDrops), InterestRate: t.interestRate, CloseInterestRate: DEMO_LOAN.closeInterestRate,
     ClosePaymentFee: xrpToDrops(DEMO_LOAN.closePaymentFeeXrp), PaymentTotal: t.paymentTotal, PaymentInterval: t.paymentInterval, GracePeriod: t.gracePeriod,
+    ...(DEMO_LOAN.overpaymentAllowed ? { Flags: 0x00010000 } : {}), // tfLoanOverpayment: partial principal repayments allowed
   };
   const prepared = await client.autofill(tx);
   prepared.Fee = String(Number(prepared.Fee) * 5);
@@ -258,12 +260,21 @@ export async function originate(ask: Ask): Promise<TxReceipt & { loanId?: string
  *  legs are backend-held (see getOperatorFor above) — no external signature needed here. */
 async function accountMultisigSubmit(tx: Record<string, any>): Promise<TxReceipt | Blocked> {
   const client = await getClient();
-  const prepared = await client.autofill(tx as any, 2);
-  const decision = await enforcerCosign(client, prepared);
-  if (!decision.ok) return { blocked: decision.blocked, reason: decision.reason };
-  const op = getOperatorFor(tx.Account);
-  const opBlob = op.sign(prepared as any, true).tx_blob;
-  return toReceipt(await submitBlob(client, multisign([opBlob, decision.blob])));
+  let last: TxReceipt | undefined;
+  // Two attempts: when this follows other submissions from the same account (overdue instalments
+  // settled right before a principal repayment), the first autofill can pick a Sequence / ledger
+  // window the ledger has already moved past; re-autofill once and resubmit.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const prepared = await client.autofill(tx as any, 2);
+    const decision = await enforcerCosign(client, prepared);
+    if (!decision.ok) return { blocked: decision.blocked, reason: decision.reason };
+    const op = getOperatorFor(tx.Account);
+    const opBlob = op.sign(prepared as any, true).tx_blob;
+    last = toReceipt(await submitBlob(client, multisign([opBlob, decision.blob])));
+    if (!/LastLedgerSequence|tefPAST_SEQ|terPRE_SEQ|tefMAX_LEDGER/.test(last.result)) return last;
+    console.warn(`[submit] ${tx.TransactionType} ${last.result.slice(0, 80)} — re-autofilling once`);
+  }
+  return last!;
 }
 const borrowerSubmit = accountMultisigSubmit;
 
@@ -286,27 +297,69 @@ export async function payCoupon(loanId: string, borrowerAddress: string): Promis
 /** 2.9 repayment at the call date. The call date is the last scheduled due date, so settling the bond means paying
  *  every remaining scheduled payment (late ones flagged late); the last one clears the loan. Before the call date the
  *  only way to close is tfLoanFullPayment (an early close), which the enforcer refuses. */
+/** The ledger refuses a principal repayment (tfLoanOverpayment / tfLoanFullPayment) while an instalment
+ *  is overdue: it answers tecEXPIRED and wants the late instalment (tfLoanLatePayment) first (friction #14).
+ *  Settle whatever is overdue, then return the current Loan entry. */
+async function catchUpOverdueInstalments(client: Awaited<ReturnType<typeof getClient>>, loanId: string, borrowerAddress: string): Promise<any | Blocked> {
+  let loan = await ledgerEntry(client, loanId);
+  for (let i = 0; i < 12 && Number(loan.PaymentRemaining ?? 0) > 0; i++) {
+    const now = await ledgerCloseTime(client);
+    if (now <= Number(loan.NextPaymentDueDate)) break;
+    const r = await payCoupon(loanId, borrowerAddress);
+    if ("blocked" in r) return r;
+    if (r.result !== "tesSUCCESS") return { blocked: "not-supported", reason: `overdue instalment could not be settled first: ${r.result}` };
+    loan = await ledgerEntry(client, loanId);
+  }
+  return loan;
+}
+
 export async function finalRepayment(loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> {
   if (!loanId) return { blocked: "not-loan-pay", reason: "no loanId, originate first" };
   const client = await getClient();
   let loan = await ledgerEntry(client, loanId);
-  if (Number(loan.PaymentRemaining) === 0) return { blocked: "not-loan-pay", reason: "loan already closed" };
-  const now = await ledgerCloseTime(client);
+  if (Number(loan.PaymentRemaining ?? 0) === 0) return { blocked: "not-loan-pay", reason: "loan already closed" };
+  // Before the call date the enforcer refuses anyway; don't spend instalments on a request that will be blocked.
   const { callDateRipple } = await import("./enforcer/index.js");
-  if (now < callDateRipple(loan) && Number(loan.PaymentRemaining) > 1) {
-    // early close attempt: the enforcer decides (and refuses before the call date)
-    const principal = Number(loan.PrincipalOutstanding);
-    const offered = String(Math.ceil(principal * (1 + DEMO_LOAN.closeInterestRate / 100_000 + 0.02) + Number(xrpToDrops(DEMO_LOAN.closePaymentFeeXrp))));
-    return borrowerSubmit({ TransactionType: "LoanPay", Account: borrowerAddress, LoanID: loanId, Amount: offered, Flags: 0x00020000 });
+  const bound = await vaultData(client, (await ledgerEntry(client, loan.LoanBrokerID))?.VaultID ?? "").catch(() => ({} as any));
+  const callAt = bound?.c ? isoToRipple(bound.c) : callDateRipple(loan);
+  if ((await ledgerCloseTime(client)) >= callAt) {
+    const caught = await catchUpOverdueInstalments(client, loanId, borrowerAddress);
+    if ("blocked" in caught) return caught;
+    loan = caught;
+    if (Number(loan.PaymentRemaining ?? 0) === 0) return { blocked: "not-loan-pay", reason: "loan already closed" };
   }
-  // at or after the call date: settle the remaining schedule
-  let last: TxReceipt | Blocked = { blocked: "not-loan-pay", reason: "nothing to pay" };
-  for (let i = 0; i < 12 && Number(loan.PaymentRemaining) > 0; i++) {
-    last = await payCoupon(loanId, borrowerAddress);
-    if ("blocked" in last || last.result !== "tesSUCCESS") return last;
-    loan = await ledgerEntry(client, loanId);
+  // Calling the bond: tfLoanFullPayment settles principal + accrued interest + CloseInterestRate (to the
+  // vault) + ClosePaymentFee (to the broker). The enforcer refuses it before the ask's call date; after
+  // it, it is the issuer's decision, nothing forces the call. Offer a little more than due, the ledger
+  // takes only what is owed.
+  const principal = Number(loan.PrincipalOutstanding);
+  const offered = String(Math.ceil(principal * (1 + DEMO_LOAN.closeInterestRate / 100_000 + 0.02) + Number(xrpToDrops(DEMO_LOAN.closePaymentFeeXrp))));
+  return borrowerSubmit({ TransactionType: "LoanPay", Account: borrowerAddress, LoanID: loanId, Amount: offered, Flags: 0x00020000 });
+}
+
+/** Partial principal repayment (tfLoanOverpayment), the issuer's choice of amount. Refused by the
+ *  enforcer before the ask's call date; an amount covering the whole principal becomes a call. */
+export async function repayPrincipal(loanId: string, borrowerAddress: string, amountXrp: string): Promise<TxReceipt | Blocked> {
+  if (!loanId) return { blocked: "not-loan-pay", reason: "no loanId, originate first" };
+  const client = await getClient();
+  const loan = await ledgerEntry(client, loanId);
+  if (Number(loan.PaymentRemaining ?? 0) === 0) return { blocked: "not-loan-pay", reason: "loan already closed" };
+  const drops = Number(xrpToDrops(amountXrp));
+  if (!(drops > 0)) return { blocked: "wrong-amount", reason: "amount must be positive" };
+  if (drops >= Number(loan.PrincipalOutstanding)) return finalRepayment(loanId, borrowerAddress);
+  // Same rule as the call: an overdue instalment must be settled before the ledger accepts an overpayment.
+  const bound = await vaultData(client, (await ledgerEntry(client, loan.LoanBrokerID))?.VaultID ?? "").catch(() => ({} as any));
+  const { callDateRipple } = await import("./enforcer/index.js");
+  const callAt = bound?.c ? isoToRipple(bound.c) : callDateRipple(loan);
+  if ((await ledgerCloseTime(client)) >= callAt) {
+    const caught = await catchUpOverdueInstalments(client, loanId, borrowerAddress);
+    if ("blocked" in caught) return caught;
+    if (Number(caught.PaymentRemaining ?? 0) === 0) return { blocked: "not-loan-pay", reason: "loan already closed" };
   }
-  return last;
+  // An overpayment rides on the scheduled instalment: Amount = what is due now + the extra principal.
+  const current = await ledgerEntry(client, loanId);
+  const due = Math.ceil(Number(current.PeriodicPayment) + Number(current.LoanServiceFee ?? 0));
+  return borrowerSubmit({ TransactionType: "LoanPay", Account: borrowerAddress, LoanID: loanId, Amount: String(due + drops), Flags: 0x00010000 });
 }
 
 /** 2.7 VaultWithdraw, multisig-active accounts only: routed through the Enforcer daemon for policy

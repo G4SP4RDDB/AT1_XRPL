@@ -71,7 +71,9 @@ export async function vaultStateOf(client: Client, vaultId: string, brokers?: an
   const loan = await findLoan(client, data.b, lb?.index);
   // A closed loan omits PaymentRemaining rather than serializing it as 0 (see loanState above); `?? 0` keeps
   // callDate falling back to the vault's Data-stored bid call date once the loan is gone, instead of NaN > 0.
-  const callDate = loan && Number(loan.PaymentRemaining ?? 0) > 0 ? rippleToIso(callDateRipple(loan)) : (data.c ?? "");
+  // The call date is the ask's (vault Data), not the end of the instalment schedule: the schedule
+  // runs until the issuer calls the bond, which the enforcer allows from this date on.
+  const callDate = data.c ?? (loan && Number(loan.PaymentRemaining ?? 0) > 0 ? rippleToIso(callDateRipple(loan)) : "");
   const liquidAssets = xrp(v.assetsAvailable);
   const principalOutstanding = loan ? xrp(loan.PrincipalOutstanding) : "0";
   const isLiquidityLocked = Number(principalOutstanding) > 0 && Number(liquidAssets) < Number(principalOutstanding);

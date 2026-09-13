@@ -40,7 +40,7 @@ export const MultisigRepayModal: FC<MultisigRepayModalProps> = ({
       <div className="modal-content">
         <div className="modal-header">
           <div>
-            <h3 className="card-title">Final Principal Repayment (Multisig Gate)</h3>
+            <h3 className="card-title">Call the Bond: Repay Everything (Multisig Gate)</h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{vault.vaultId}</span>
           </div>
           <button className="modal-close" onClick={onClose}>&times;</button>

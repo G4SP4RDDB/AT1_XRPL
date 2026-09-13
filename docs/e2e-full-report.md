@@ -1,24 +1,26 @@
-# End-to-end pipeline run — 2026-09-13T09:09:05.821Z
+# End-to-end pipeline run — 2026-09-13T10:10:18.150Z
 
-Bond: 200 XRP, 100% annual, vault `8CA5B51F5549027B561EC807392AC7AF3E55ABDE05B0A80F157B4BDD3541D55E`, loan `C918A67F5421BE1E3E1251A5ED7AE25A8FFF6E89DCD28026153BC590950C5F5C`.
-17/17 steps matched expectation.
+Bond: 200 XRP, 100% annual, vault `9D738A6B3748F6D12D008812FC046D6BC683FE7FC1758B749BE55A8A8B9C8B7A`, loan `0A7095C2F2BB52A92F0DF0D0B3345CC1C38DA7685FFA84CC73C381DC5522DC99`.
+18/19 steps matched expectation.
 
 | # | Step | Expected | Got | Hash | Note |
 |---|---|---|---|---|---|
-| 1 | VaultCreate | `tesSUCCESS` | `tesSUCCESS` | [9805777345](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/980577734513482A6C5F4907838FFF8CC730D0E14139491F53FC4DB06FD4CCCA) |  |
-| 2 | LoanBrokerSet | `tesSUCCESS` | `tesSUCCESS` | [0CD58B43E5](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0CD58B43E5A0711A44D9633EAA56519F6973FC5D707628D055EBD54B5E42AB2B) |  |
-| 3 | LoanBrokerCoverDeposit | `tesSUCCESS` | `tesSUCCESS` | [111DEB0A51](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/111DEB0A516809043A575E8EC8E445E0990FBB5D40701C6515DC4946575EB28F) |  |
-| 4 | VaultDeposit lender1 200 XRP | `tesSUCCESS` | `tesSUCCESS` | [C0ECA725EF](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C0ECA725EFFAB3B7813014B89E97B1B6584BD72A27CF5DE9B943CB357113231E) |  |
+| 1 | VaultCreate | `tesSUCCESS` | `tesSUCCESS` | [4052C62B8E](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/4052C62B8EEEB6C532287D35CE6094352A7B6D8181F44193E5978A18B996F89D) |  |
+| 2 | LoanBrokerSet | `tesSUCCESS` | `tesSUCCESS` | [75B6598A13](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/75B6598A13C38DAEF05DE39BB84410FF9ABD44A7928432DC024178158C0F3A10) |  |
+| 3 | LoanBrokerCoverDeposit | `tesSUCCESS` | `tesSUCCESS` | [19A53342AE](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/19A53342AE0C0A92BC7193461D50FAA06E63DF3590A186B54E0B21280BF440BE) |  |
+| 4 | VaultDeposit lender1 200 XRP | `tesSUCCESS` | `tesSUCCESS` | [0A5D42DC93](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0A5D42DC93E3FADE31579298BABA710B77592DA58B5265DCBB0359936C66F9FF) |  |
 | 5 | Payment signed by disabled master key | `tefMASTER_DISABLED` | `tefMASTER_DISABLED` | — |  |
-| 6 | LoanSet auto-originated by the funding deposit | `tesSUCCESS` | `tesSUCCESS` | [13BD51C521](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/13BD51C521276B5F058880C4A904CAE221900C310C82A3FFC10138923A1679E4) | loanId C918A67F54 |
+| 6 | LoanSet auto-originated by the funding deposit | `tesSUCCESS` | `tesSUCCESS` | [4C427021EB](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/4C427021EBCE1195CD8985AFB1E2FDDD0A4B2E75DEB1C83E25F7F2EAA7E09DDC) | loanId 0A7095C2F2 |
 | 7 | LoanSet with a foreign counterparty | `blocked:not-issuer` | `blocked:not-issuer` | — |  |
-| 8 | LoanManage tfLoanImpair, not yet due | `tecTOO_SOON` | `tecTOO_SOON` | [92D7F9C9DC](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/92D7F9C9DC54692EA58775E37ADF44D90C08E78DE20B2048A7A5F9853C9929BB) |  |
-| 9 | VaultWithdraw full (guardrail) | `tecINSUFFICIENT_FUNDS` | `tecINSUFFICIENT_FUNDS` | [E43360B573](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E43360B57339F8798A92BA179CDFA5F8FC05ABBF62CCC97A32D49154F87D71B7) |  |
-| 10 | finalRepayment, paymentRemaining=3 | `blocked:before-call-date` | `blocked:before-call-date` | — |  |
-| 11 | LoanPay, 1 of 2 signatures | `tefBAD_QUORUM` | `tefBAD_QUORUM` | — |  |
-| 12 | LoanManage tfLoanImpair, overdue | `tesSUCCESS` | `tesSUCCESS` | [04E8DC5E44](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/04E8DC5E44D5B070D9DA6E345C0E5518193C95116A19CD8A4E1A52BCCEB0C0D2) |  |
-| 13 | LoanManage tfLoanUnimpair | `tesSUCCESS` | `tesSUCCESS` | [A997BC778F](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/A997BC778F2A52DA136C6838441FDC3E10B327410828A5F90D64470F2E60C042) |  |
-| 14 | LoanPay coupon #1 (late) | `tesSUCCESS` | `tesSUCCESS` | [32606E7E79](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/32606E7E79C0094253A109A6AA41B263E2FB9F549B58D5764968B0DC0958E5D5) |  |
-| 15 | VaultWithdraw yield-only | `tesSUCCESS` | `tesSUCCESS` | [AC398BCDD3](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/AC398BCDD3DC2F865A58BA6BBA6CE969389514A26965A976B7253A5DC8C05293) |  |
-| 16 | finalRepayment at the call date (remaining coupons, tfLoanLatePayment) | `tesSUCCESS` | `tesSUCCESS` | [8FF45F30B6](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/8FF45F30B620EA9399356BE1F9CAE0813CBDC74644AFA93B1F81CCB1C8429407) |  |
-| 17 | VaultWithdraw all shares | `tesSUCCESS` | `tesSUCCESS` | [FD8835CBF7](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/FD8835CBF79C4F4716E349E511E7235883F0027B684E27FA38567B0C0173816F) |  |
+| 8 | LoanManage tfLoanImpair, not yet due | `tecTOO_SOON` | `tecTOO_SOON` | [C31F1DD029](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C31F1DD029844A6DD0B2AEA6B4C4608114DAED4079FCDDF634741A9CBCCAD469) |  |
+| 9 | VaultWithdraw full (guardrail) | `tecINSUFFICIENT_FUNDS` | `tecINSUFFICIENT_FUNDS` | [E24E4209BF](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E24E4209BF3DAE5DB575A90B235812FECC1FBD99483C047035CF7E7E5992D675) |  |
+| 10 | finalRepayment (call the bond) before the call date | `blocked:before-call-date` | `blocked:before-call-date` | — |  |
+| 11 | repayPrincipal 50 XRP before the call date | `blocked:before-call-date` | `blocked:before-call-date` | — |  |
+| 12 | LoanPay, 1 of 2 signatures | `tefBAD_QUORUM` | `tefBAD_QUORUM` | — |  |
+| 13 | LoanManage tfLoanImpair, overdue | `tesSUCCESS` | `tesSUCCESS` | [14F446A6EC](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/14F446A6EC7DEEA305ED78A8C90195C88F1FA71F3BF6088329DEEAEAE3B22608) |  |
+| 14 | LoanManage tfLoanUnimpair | `tesSUCCESS` | `tesSUCCESS` | [75E91DCCE9](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/75E91DCCE91CA4D0F845734454B3A0FBE1B52D03CDF98DF703CA16C50D2EF7B8) |  |
+| 15 | LoanPay coupon #1 (late) | `tesSUCCESS` | `tesSUCCESS` | [3D0D0B4AB5](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/3D0D0B4AB5E51BFA1947F7CA61C514E0EAB9D34E6587E2E36B9DC38313153098) |  |
+| 16 | VaultWithdraw yield-only | `tesSUCCESS` | `tesSUCCESS` | [26ED3E2F26](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/26ED3E2F2623FF3A1F3B9D1038C3D42E3C973308311F0D2FD05607D93BA30140) |  |
+| 17 | repayPrincipal 50 XRP at the call date (tfLoanOverpayment) | `tesSUCCESS` | `tecEXPIRED` | [B23D82E99A](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/B23D82E99AFB83C5016B6E3C696A2AED92C3F3074633C17ABCDBB24599CD4472) |  |
+| 18 | finalRepayment: the issuer calls the bond (tfLoanFullPayment, close premium to the vault) | `tesSUCCESS` | `tesSUCCESS` | [5EE3BD7D91](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5EE3BD7D91ED09FE5ECA01DE9BB3F6FBE2E3C9471735895516D985D764596DA4) |  |
+| 19 | VaultWithdraw all shares | `tesSUCCESS` | `tesSUCCESS` | [DC4DD7F010](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/DC4DD7F010F7211CB1C5FA7CF1CF03B3021AA7C88F2DB3AF9280A03E58CC90D2) |  |

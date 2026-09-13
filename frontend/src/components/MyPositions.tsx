@@ -7,6 +7,7 @@ import { chainClient } from '@/lib/chainClient'
 import { WithdrawModal } from './WithdrawModal'
 import { CouponModal } from './CouponModal'
 import { MultisigRepayModal } from './MultisigRepayModal'
+import { RepayPrincipalModal } from './RepayPrincipalModal'
 
 export const MyPositions: FC = () => {
   const { currentAccount } = useWallet()
@@ -15,6 +16,7 @@ export const MyPositions: FC = () => {
   const [selectedVaultForWithdraw, setSelectedVaultForWithdraw] = useState<VaultState | null>(null)
   const [selectedVaultForCoupon, setSelectedVaultForCoupon] = useState<VaultState | null>(null)
   const [selectedVaultForRepay, setSelectedVaultForRepay] = useState<VaultState | null>(null)
+  const [selectedVaultForPartial, setSelectedVaultForPartial] = useState<VaultState | null>(null)
 
   const loadData = async () => {
     if (!currentAccount) return
@@ -159,15 +161,25 @@ export const MyPositions: FC = () => {
                       style={{ flex: 1 }}
                       onClick={() => setSelectedVaultForCoupon(vault)}
                     >
-                      Pay Coupon (LoanPay)
+                      Pay interest (instalment)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ flex: 1 }}
+                      onClick={() => setSelectedVaultForPartial(vault)}
+                      title="Partial principal repayment; the Enforcer refuses it before the call date"
+                    >
+                      Repay principal (partial)
                     </button>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
                       style={{ flex: 1 }}
                       onClick={() => setSelectedVaultForRepay(vault)}
+                      title="Call the bond: repay everything; refused before the call date"
                     >
-                      Final Repayment (Multisig)
+                      Call the bond (repay all)
                     </button>
                   </div>
                 ) : (
@@ -201,6 +213,14 @@ export const MyPositions: FC = () => {
           onSuccess={() => {
             loadData()
           }}
+        />
+      )}
+
+      {selectedVaultForPartial && (
+        <RepayPrincipalModal
+          vault={selectedVaultForPartial}
+          onClose={() => setSelectedVaultForPartial(null)}
+          onSuccess={() => { loadData() }}
         />
       )}
 

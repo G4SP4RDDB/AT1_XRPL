@@ -26,7 +26,6 @@ export const CouponModal: FC<CouponModalProps> = ({ vault, onClose, onSuccess })
   const interestPart = Math.max(0, instalment - principalPart)
   const dueDate = loan?.nextPaymentDueDate ? new Date(loan.nextPaymentDueDate) : null
   const overdue = dueDate ? dueDate.getTime() < Date.now() : false
-  const paidSoFar = loan ? Math.max(0, (vault.loanPrincipal ? 3 : remaining) - remaining) : 0
 
   const handlePay = async () => {
     setIsSubmitting(true)
@@ -48,7 +47,7 @@ export const CouponModal: FC<CouponModalProps> = ({ vault, onClose, onSuccess })
       <div className="modal-content">
         <div className="modal-header">
           <div>
-            <h3 className="card-title">Borrower: Pay the Next Instalment (LoanPay)</h3>
+            <h3 className="card-title">Borrower: Pay Interest (next instalment, LoanPay)</h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{vault.vaultId}</span>
           </div>
           <button className="modal-close" onClick={onClose}>&times;</button>
@@ -64,7 +63,7 @@ export const CouponModal: FC<CouponModalProps> = ({ vault, onClose, onSuccess })
               <span style={{ color: 'var(--text-secondary)' }}>of which interest ≈</span>
               <span style={{ textAlign: 'right', color: 'var(--accent-green)' }}>{interestPart.toLocaleString(undefined, { maximumFractionDigits: 6 })} XRP</span>
               <span style={{ color: 'var(--text-secondary)' }}>Instalments remaining</span>
-              <span style={{ textAlign: 'right' }}>{remaining}{paidSoFar ? ` (${paidSoFar} paid)` : ''}</span>
+              <span style={{ textAlign: 'right' }}>{remaining.toLocaleString()} (until the bond is called)</span>
               <span style={{ color: 'var(--text-secondary)' }}>Due</span>
               <span style={{ textAlign: 'right', color: overdue ? 'var(--accent-red)' : 'inherit' }}>
                 {dueDate ? dueDate.toLocaleString() : '—'}{overdue ? ' · overdue (late fee applies)' : ''}
@@ -78,9 +77,10 @@ export const CouponModal: FC<CouponModalProps> = ({ vault, onClose, onSuccess })
         <div className="alert alert-info">
           <strong>Why the amount is fixed:</strong>
           <p style={{ marginTop: '0.25rem', fontSize: '0.8rem' }}>
-            An XLS-66 loan is an amortising schedule: each <code>LoanPay</code> settles one instalment of principal plus the
-            period's interest, computed by the ledger (<code>PeriodicPayment</code>). The enforcer co-signs that exact figure only.
-            The interest part lands in the vault, raising the price per share for every depositor; the last instalment closes the loan.
+            XLS-66 has no interest-only coupon: every <code>LoanPay</code> is the period's interest plus a sliver of principal
+            (1/10,000 here), computed by the ledger (<code>PeriodicPayment</code>). The enforcer co-signs that exact figure only. The
+            interest lands in the vault and raises the price per share for every depositor. Principal is repaid separately, on your
+            initiative, from the call date on.
           </p>
         </div>
 

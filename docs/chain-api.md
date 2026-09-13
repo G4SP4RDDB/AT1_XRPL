@@ -84,6 +84,9 @@ Borrower pays one scheduled `LoanPay`, co-signed by the enforcer. Amount is read
 ### `tx.prepareWithdraw(req: WithdrawRequest): { prepared } | Blocked` + `tx.submitSigned(signedBlob): TxReceipt` — plain accounts
 For a depositor who hasn't activated multisig: prepares the `VaultWithdraw`, the frontend signs with the depositor's own connected wallet and posts the blob to `submitSigned`. Same share-selection rules as `tx.withdraw`.
 
+### `tx.repayPrincipal(loanId, borrowerAddress, amountXrp): TxReceipt | Blocked`
+`LoanPay` with `tfLoanOverpayment`: the issuer repays part of the principal (an amount covering it all becomes a call). `Blocked: before-call-date` until the ask's call date.
+
 ### `tx.finalRepayment(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
 Two behaviours, decided by the call date:
 - **Before the call date** it is an early close: `LoanPay` with `tfLoanFullPayment`. The enforcer refuses and you get `{ blocked: "before-call-date", reason: "call date in 334s ..." }`, nothing is submitted. (If the enforcer ever co-signed it, the ledger would charge principal + accrued interest + 1 % close rate + 1 XRP fee and take nothing more, measured in the spike.)

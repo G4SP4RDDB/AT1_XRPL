@@ -237,11 +237,13 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
                 <span style={{ color: 'var(--text-secondary)' }}>Annual rate → per minute</span>
                 <span style={{ textAlign: 'right' }}>{Number(yieldRate)} %/yr → {preview.perMinutePct.toExponential(3)} %/min</span>
                 <span style={{ color: 'var(--text-secondary)' }}>Schedule</span>
-                <span style={{ textAlign: 'right' }}>{preview.instalments} instalments every {preview.intervalSec} s, last one at the call date</span>
+                <span style={{ textAlign: 'right' }}>one instalment every {preview.intervalSec} s, {preview.instalmentsToCall} until the call date, then until you call the bond</span>
                 <span style={{ color: 'var(--text-secondary)' }}>Each instalment</span>
-                <span style={{ textAlign: 'right' }}>{preview.principalPerInstalmentXrp.toLocaleString(undefined, { maximumFractionDigits: 2 })} XRP principal + <strong style={{ color: 'var(--accent-green)' }}>{fmtXrp(preview.interestPerInstalmentXrp)}</strong> interest</span>
-                <span style={{ color: 'var(--text-secondary)' }}>Total interest to investors</span>
-                <span style={{ textAlign: 'right', color: 'var(--accent-green)', fontWeight: 700 }}>{fmtXrp(preview.totalInterestXrp)}</span>
+                <span style={{ textAlign: 'right' }}><strong style={{ color: 'var(--accent-green)' }}>{fmtXrp(preview.interestPerInstalmentXrp)}</strong> interest + {fmtXrp(preview.principalPerInstalmentXrp)} principal (1/10,000)</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Interest to investors by the call date</span>
+                <span style={{ textAlign: 'right', color: 'var(--accent-green)', fontWeight: 700 }}>{fmtXrp(preview.interestToCallXrp)}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Principal</span>
+                <span style={{ textAlign: 'right' }}>repayable (in part or in full) only from the call date, on your initiative</span>
               </div>
             </div>
           )}

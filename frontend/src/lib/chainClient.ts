@@ -511,6 +511,23 @@ export class ChainBackendClient {
     }
   }
 
+  /** Partial principal repayment (tfLoanOverpayment); the enforcer refuses it before the call date. */
+  async repayPrincipal(vaultId: string, amountXrp: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    const vault = await this.getVault(vaultId)
+    if (!vault?.loan?.loanId) throw new Error('No active loan found for this vault')
+    if (!vault.borrowerAddress) throw new Error('Borrower address missing from on-chain vault data')
+    const receipt = await baseChain.tx.repayPrincipal(vault.loan.loanId, vault.borrowerAddress, amountXrp)
+    if (isBlocked(receipt)) {
+      notifyTx({ title: 'Blocage Enforcer', message: receipt.reason, type: 'error' })
+      return { success: false, error: `[Enforcer 2-of-2 Policy Refusal] ${receipt.reason}` }
+    }
+    const r = receipt as TxReceipt
+    if (r.result !== 'tesSUCCESS') return { success: false, error: `LoanPay rejected on-ledger: ${r.result}` }
+    this.notify()
+    notifyTx({ title: 'Principal remboursé (LoanPay tfLoanOverpayment)', message: `${amountXrp} XRP de principal rendus au vault.`, txHash: r.hash, type: 'success' })
+    return { success: true, txHash: r.hash }
+  }
+
   async executeMultisigRepay(vaultId: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
     const vault = await this.getVault(vaultId)
     if (!vault?.loan?.loanId) {
