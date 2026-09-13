@@ -115,7 +115,16 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
 
     vault = await chain.read.vaultState(bid.vaultId!)
     expect(vault.assetsTotal).toBe(AMOUNT_XRP)
-    expect(vault.assetsAvailable).toBe(AMOUNT_XRP)
+    const auto = depositReceipt.autoOrigination
+    if (auto && 'originated' in auto) {
+      // Money in, loan out: the funding deposit originated the loan at once, so the principal is
+      // already out on loan (AssetsTotal unchanged, AssetsAvailable drained).
+      expect(auto.originated.result).toBe('tesSUCCESS')
+      expect(vault.assetsAvailable).toBe('0')
+      expect(vault.loan).toBeDefined()
+    } else {
+      expect(vault.assetsAvailable).toBe(AMOUNT_XRP)
+    }
     expect(vault.pps).toBe(1)
 
     position = await chain.read.position(demo!.lender, bid.vaultId!)
