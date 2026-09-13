@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
 import { canIssue } from '@/lib/roles'
 import { chainClient } from '@/lib/chainClient'
 import { DURATION_OPTIONS, expiresAtFromNow } from '@/lib/durations'
 import { notifyTx } from '@/lib/notifications'
-import { useBorrowerProfile } from '@/lib/borrowerProfile'
+import { useBorrowerProfile, getStoredBorrowerProfile, saveStoredBorrowerProfile } from '@/lib/borrowerProfile'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -22,6 +22,37 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
   const [durationMs, setDurationMs] = useState<number>(DURATION_OPTIONS[3].ms)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // On-chain truth for the 2-of-2 governance (master key disabled), null while loading.
+  const [multisigActive, setMultisigActive] = useState<boolean | null>(null)
+  const [isActivatingMultisig, setIsActivatingMultisig] = useState(false)
+
+  useEffect(() => {
+    const address = currentAccount?.address
+    if (!address) return
+    let cancelled = false
+    setMultisigActive(null)
+    chainClient.isMasterDisabled(address).then((d) => { if (!cancelled) setMultisigActive(d) }).catch(() => { if (!cancelled) setMultisigActive(false) })
+    return () => { cancelled = true }
+  }, [currentAccount?.address])
+
+  const handleActivateMultisig = async () => {
+    if (!currentAccount?.address) return
+    setIsActivatingMultisig(true)
+    try {
+      const res = await chainClient.setupMultisig(currentAccount.address)
+      if (res.success) {
+        setMultisigActive(true)
+        const stored = getStoredBorrowerProfile(currentAccount.address)
+        if (stored) saveStoredBorrowerProfile({ ...stored, multisigActive: true, txHash: res.txHash ?? stored.txHash })
+      } else if (res.error) {
+        notifyTx({ title: 'Activation du multisig refusée', message: res.error, type: 'error' })
+      }
+    } catch (err: any) {
+      notifyTx({ title: "Échec de l'activation du multisig", message: err?.message ?? String(err), type: 'error' })
+    } finally {
+      setIsActivatingMultisig(false)
+    }
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -29,9 +60,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
     setIsSubmitting(true)
     setSuccessMsg(null)
 
-    const issuerName = borrowerProfile
-      ? `${borrowerProfile.firstName} (${borrowerProfile.role})`
-      : (currentAccount.name || 'AT1 Corporate Issuer')
+    const issuerName = borrowerProfile?.company || currentAccount.name || 'AT1 Corporate Issuer'
 
     try {
       await chainClient.createBid({
@@ -74,10 +103,14 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
           </div>
         )}
 
+        {/* Issuer status: institution + 2-of-2 governance. The multisig is activated here (the
+            issuer's own wallet signs SignerListSet + AccountSet) because origination and every
+            coupon need the enforcer's co-signature on this account. */}
         <div
           style={{
             background: 'var(--bg-surface-elevated)',
             border: '1px solid var(--border-subtle)',
+            borderLeft: `4px solid ${multisigActive ? 'var(--accent-green)' : 'var(--accent-blue)'}`,
             borderRadius: '10px',
             padding: '0.85rem 1.1rem',
             marginBottom: '1.25rem',
@@ -89,24 +122,34 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
         >
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
-              {borrowerProfile ? `👤 Émetteur : ${borrowerProfile.firstName} (${borrowerProfile.role})` : '⚠️ Profil Emprunteur non renseigné'}
+              {borrowerProfile ? `🏢 Émetteur : ${borrowerProfile.company}` : '⚠️ Profil émetteur non renseigné'}
             </div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-              {borrowerProfile
-                ? `Multisig 2-sur-2 : ${borrowerProfile.multisigActive ? '✅ Actif on-chain' : 'En attente'}`
-                : 'Précisez votre prénom et rôle d\'émetteur pour initialiser la gouvernance.'}
+              {multisigActive === null
+                ? 'Gouvernance 2-sur-2 : vérification on-chain…'
+                : multisigActive
+                  ? '🛡️ Gouvernance 2-sur-2 active on-chain (SignerListSet + clé maître désactivée)'
+                  : "Gouvernance 2-sur-2 : à activer avant d'originer — l'Enforcer doit co-signer vos remboursements."}
             </div>
           </div>
-          {onOpenProfile && (
-            <button
-              type="button"
-              className={`btn btn-sm ${borrowerProfile ? 'btn-secondary' : 'btn-primary'}`}
-              onClick={onOpenProfile}
-              style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}
-            >
-              {borrowerProfile ? 'Modifier le Profil' : 'Renseigner mon Profil'}
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+            {multisigActive === false && canIssue(currentAccount?.role) && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={isActivatingMultisig}
+                onClick={handleActivateMultisig}
+                style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+              >
+                {isActivatingMultisig ? 'Signature…' : '🛡️ Activer 2/2'}
+              </button>
+            )}
+            {onOpenProfile && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenProfile} style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
+                {borrowerProfile ? 'Modifier le Profil' : 'Renseigner mon Profil'}
+              </button>
+            )}
+          </div>
         </div>
 
         <form onSubmit={handleSubmit}>

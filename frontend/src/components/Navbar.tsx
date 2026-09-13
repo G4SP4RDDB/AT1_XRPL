@@ -94,10 +94,7 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankPro
                   title="Profil Emprunteur & Statut Multisig (Cliquer pour modifier)"
                 >
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-blue)' }}>
-                    🏢 {borrowerProfile.firstName}
-                  </span>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    ({borrowerProfile.role})
+                    🏢 {borrowerProfile.company}
                   </span>
                   {borrowerProfile.multisigActive && (
                     <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
