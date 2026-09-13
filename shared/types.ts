@@ -4,15 +4,18 @@
 export type Address = string;
 export type IsoDate = string;
 
-export type BidStatus = "open" | "matched" | "originated" | "repaid";
+export type AskStatus = "open" | "matched" | "originated" | "repaid";
 
-export interface Bid {
+// The borrower's posted tranche: what they're asking to borrow, and on what terms. Conventionally
+// an "ask" (the seller/issuer's price) — renamed from the original "Bid" naming, which had this
+// backwards (see docs/bank-profiles-and-order-book.md and FEEDBACK_REPORT.md for the history).
+export interface Ask {
   id: string;
   borrowerAddress: Address;
   amount: string;        // XRP requested
-  yieldRate: number;     // annual, percent, e.g. 8.5
+  yieldRate: number;     // annual, percent, e.g. 8.5 — the borrower's own posted/ceiling rate
   callDate: IsoDate;     // earliest full repayment
-  status: BidStatus;
+  status: AskStatus;
   vaultId?: string;
   loanBrokerId?: string;
   loanId?: string;
@@ -21,16 +24,24 @@ export interface Bid {
   expiresAt?: IsoDate;    // off-chain-only: bidding window closes at this time, no new bids after
 }
 
-export interface Ask {
+export type BidStatus = "pending" | "accepted" | "declined" | "deposited";
+
+// An LP's offer against one Ask: a real proposed amount and rate. "pending" until the borrower
+// accepts or declines it; accepting the first Bid pins the tranche's final rate (XLS-66 allows
+// only one InterestRate per loan), and the backend auto-declines any other pending Bid whose
+// targetYield no longer matches. Off-chain only — see FEEDBACK_REPORT.md for why "locked" here
+// means an app-enforced convention, not a cryptographic guarantee (TokenEscrow could provide
+// that; not built).
+export interface Bid {
   id: string;
   lenderAddress: Address;
   amount: string;        // XRP offered
-  indicated: boolean;    // purely indicative, nothing on-chain until matched
-  matchedBidId?: string;
+  indicated: boolean;    // purely indicative, nothing on-chain until deposited
+  matchedAskId?: string;
   lenderName?: string;
-  targetYield?: number;
-  status?: "pending" | "matched" | "deposited";
-  expiresAt?: IsoDate;    // off-chain-only: bid is void if not funded before this time
+  targetYield?: number;  // the LP's own proposed rate — pins the tranche's rate once accepted
+  status?: BidStatus;
+  expiresAt?: IsoDate;    // off-chain-only: bid is void if not accepted/funded before this time
 }
 
 export type LoanStatus = "none" | "active" | "impaired" | "defaulted" | "closed" | "repaid";

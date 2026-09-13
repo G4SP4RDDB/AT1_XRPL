@@ -40,7 +40,7 @@ Every function is real and validated on the devnet (Sat evening, `npm run demo`)
 | `tx.finalRepayment` | real | `blocked:before-call-date` before the call date (e2e step 9); settles the remaining coupons at the call date (e2e EA805215F3, `tfLoanLatePayment`). 685A52185C45 is the spike run's early close with `tfLoanFullPayment` (0x20000), signed before the call-date policy was wired in |
 | `tx.impair` / `tx.unimpair` | real | tecTOO_SOON until a payment is overdue (spike) |
 
-Signatures changed since the stub: `originate` takes the whole `Bid` (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
+Signatures changed since the stub: `originate` takes the whole `Ask` (the issuer's posted tranche; `Bid` is now the lender's offer) (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
 
 ## `read` — no signing, safe to call as often as the UI likes
 
@@ -131,29 +131,32 @@ Every known profile.
 Shared state so every browser (the bank's and every LP's) sees the same tranche list and
 bid depth instead of each browser's own private copy. Stored in `data/order-book.json`
 (gitignored). Two collections:
-- **tranches** — off-chain-authored `Bid` fields (`borrowerName`, `description`, `expiresAt`)
+- **asks** (tranches) — off-chain-authored `Ask` fields (`borrowerName`, `description`, `expiresAt`)
   that the ledger itself doesn't carry. The frontend merges this with live on-chain vault
   state (`read.listVaults()`) to render the book; the ledger stays the source of truth for
   amount/rate/status once a vault exists.
-- **bids** — LP commitments against a tranche (an `Ask` with `matchedBidId` pointing at the
+- **bids** — LP offers against an ask (a `Bid` with `matchedAskId` pointing at the
   tranche id). `"pending"` until an LP actually funds it via a real `VaultDeposit` (`tx.prepareDeposit` → wallet signature → `tx.submitSigned`)
   (`VaultDeposit`), then `"deposited"`. A pending bid is purely indicative — nothing
   prevents one from exceeding the tranche's remaining capacity; that's enforced natively by
   the vault's own `AssetsMaximum` cap when the deposit is actually submitted, not by this
   store.
 
-### `book.listTranches(): Bid[]`
-### `book.upsertTranche(tranche: Bid): Bid`
+### `book.listAsks(): Ask[]`
+### `book.upsertAsk(ask: Ask): Ask`
 Called right after `tx.createBond` succeeds, so the tranche's off-chain metadata is visible
 to every browser, not just the one that created it.
 
-### `book.listBids(trancheId?: string): Ask[]`
+### `book.listBids(askId?: string): Bid[]`
 Every LP bid, or scoped to one tranche.
 
-### `book.createBid(bid: Ask): Ask`
+### `book.createBid(bid: Bid): Bid`
+A bid at or under the ask's ceiling `yieldRate` is accepted at once; otherwise it stays `pending` for the issuer.
 Throws if `bid.id` or `bid.matchedBidId` (the target tranche id) is missing.
 
-### `book.updateBidStatus(id: string, status: Ask["status"]): Ask`
+### `book.updateBidStatus(id: string, status: Bid["status"]): Bid`
+### `book.acceptBid(bidId): Bid` / `book.declineBid(bidId): Bid`
+Issuer-side decision. Accepting the first bid pins the ask's rate to that bid's `targetYield` and auto-declines other pending bids at a different rate; `prepareDeposit` refuses a bid that is not `accepted`.
 Throws if the bid id is unknown.
 
 ## Blocked shape

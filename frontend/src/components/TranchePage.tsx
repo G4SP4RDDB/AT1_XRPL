@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { canLend } from '@/lib/roles'
 import type { FC, FormEvent } from 'react'
-import type { Bid, Ask } from '@shared/types'
+import type { Ask, Bid } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
 import { useWallet } from '@/lib/wallet'
 import { useBankName } from '@/lib/bankProfiles'
@@ -23,11 +23,12 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
   const { currentAccount } = useWallet()
   const lenderName = useBankName(currentAccount?.address, currentAccount?.name)
 
-  const [bid, setBid] = useState<Bid | null>(null)
-  const [asks, setAsks] = useState<Ask[]>([])
+  const [ask, setAsk] = useState<Ask | null>(null)
+  const [bids, setBids] = useState<Bid[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   const [bidAmount, setBidAmount] = useState('')
+  const [bidRate, setBidRate] = useState('')
   const [bidDurationMs, setBidDurationMs] = useState<number>(DURATION_OPTIONS[1].ms)
   const [isSubmittingBid, setIsSubmittingBid] = useState(false)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
@@ -36,9 +37,9 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
 
   const refresh = async () => {
     try {
-      const [allBids, trancheAsks] = await Promise.all([chainClient.getBids(), chainClient.getAsks(trancheId)])
-      setBid(allBids.find((b) => b.id === trancheId) ?? null)
-      setAsks(trancheAsks)
+      const [allAsks, trancheBids] = await Promise.all([chainClient.getAsks(), chainClient.getBids(trancheId)])
+      setAsk(allAsks.find((a) => a.id === trancheId) ?? null)
+      setBids(trancheBids)
     } catch (err) {
       console.error('Failed to load tranche:', err)
     } finally {
@@ -58,7 +59,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     return <div style={{ ...panelStyle, textAlign: 'center', color: bookTheme.textMuted }}>Loading tranche...</div>
   }
 
-  if (!bid) {
+  if (!ask) {
     return (
       <div style={{ ...panelStyle, textAlign: 'center', color: bookTheme.textMuted }}>
         Tranche not found.
@@ -71,13 +72,15 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     )
   }
 
-  const target = Number(bid.amount) || 0
-  const filled = asks.filter((a) => a.status === 'deposited').reduce((sum, a) => sum + Number(a.amount || 0), 0)
+  const target = Number(ask.amount) || 0
+  const filled = bids.filter((b) => b.status === 'deposited').reduce((sum, b) => sum + Number(b.amount || 0), 0)
   const fillFraction = target > 0 ? Math.min(1, filled / target) : 0
-  const isOwner = Boolean(currentAccount && currentAccount.address === bid.borrowerAddress)
-  const askExpired = isExpired(bid.expiresAt)
+  const isOwner = Boolean(currentAccount && currentAccount.address === ask.borrowerAddress)
+  const askExpired = isExpired(ask.expiresAt)
 
-  const myPendingAsks = asks.filter((a) => a.lenderAddress === currentAccount?.address)
+  const myPendingBids = bids.filter((b) => b.lenderAddress === currentAccount?.address)
+  const pendingBidsForOwner = bids.filter((b) => b.status === 'pending')
+  const rateIsPinned = bids.some((b) => b.status === 'accepted')
 
   const handlePlaceBid = async (e: FormEvent) => {
     e.preventDefault()
@@ -85,16 +88,20 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     setIsSubmittingBid(true)
     setFeedback(null)
     try {
-      await chainClient.createAsk({
+      const placed = await chainClient.createBid({
         lenderAddress: currentAccount.address,
         lenderName,
         amount: bidAmount,
-        targetYield: bid.yieldRate,
-        bidId: bid.id,
+        targetYield: bidRate ? Number(bidRate) : ask.yieldRate,
+        askId: ask.id,
         expiresAt: expiresAtFromNow(bidDurationMs),
       })
       setBidAmount('')
-      setFeedback({ kind: 'success', text: 'Bid placed — indicative only, nothing on-chain yet. Fund it below to actually deposit.' })
+      setFeedback(
+        placed.status === 'accepted'
+          ? { kind: 'success', text: 'Bid matched the ask\'s rate — auto-accepted immediately. You can fund it now.' }
+          : { kind: 'success', text: 'Bid placed — above the ask\'s ceiling rate, so it needs the borrower\'s explicit acceptance before it can be funded.' }
+      )
       refresh()
     } catch (err: any) {
       setFeedback({ kind: 'danger', text: err.message || 'Failed to place bid' })
@@ -103,11 +110,28 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     }
   }
 
-  const handleFundNow = async (askId: string) => {
-    setPendingActionId(askId)
+  const handleRespondToBid = async (bidId: string, accept: boolean) => {
+    setPendingActionId(bidId)
     setFeedback(null)
     try {
-      const res = await chainClient.acceptBid(askId)
+      await chainClient.respondToBid(bidId, accept)
+      setFeedback({
+        kind: 'success',
+        text: accept ? 'Bid accepted — its rate is now locked in for this tranche.' : 'Bid declined.',
+      })
+      refresh()
+    } catch (err: any) {
+      setFeedback({ kind: 'danger', text: err.message || 'Failed to respond to bid' })
+    } finally {
+      setPendingActionId(null)
+    }
+  }
+
+  const handleFundBid = async (bidId: string) => {
+    setPendingActionId(bidId)
+    setFeedback(null)
+    try {
+      const res = await chainClient.fundBid(bidId)
       setFeedback({ kind: 'success', text: `Deposited on-chain. TX ${res.txHash.slice(0, 12)}...` })
       refresh()
     } catch (err: any) {
@@ -121,7 +145,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     setIsOriginating(true)
     setFeedback(null)
     try {
-      const res = await chainClient.originateTranche(bid.id)
+      const res = await chainClient.originateTranche(ask.id)
       setFeedback({
         kind: 'success',
         text: res.loanId ? `Loan originated (${res.loanId}). TX ${res.txHash.slice(0, 12)}...` : `Origination submitted. TX ${res.txHash.slice(0, 12)}...`,
@@ -155,14 +179,14 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontFamily: bookTheme.serif, fontSize: '1.9rem', fontWeight: 400, margin: 0, color: 'var(--text-primary)' }}>
-            <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'AT1 Bond'} />
+            <ResolvedName address={ask.borrowerAddress} fallback={ask.borrowerName || 'AT1 Bond'} />
           </h2>
           <span style={{ fontSize: '0.85rem', color: bookTheme.textSecondary }}>
-            {Number(bid.amount).toLocaleString()} XRP · {bid.yieldRate}% · Call Date {new Date(bid.callDate).toLocaleDateString()}
+            {Number(ask.amount).toLocaleString()} XRP · {ask.yieldRate}%{rateIsPinned ? ' (locked)' : ''} · Call Date {new Date(ask.callDate).toLocaleDateString()}
           </span>
         </div>
         <span style={{ fontSize: '0.8rem', color: askExpired ? 'var(--accent-red)' : bookTheme.textSecondary, textAlign: 'right' }}>
-          Bidding window: {formatTimeRemaining(bid.expiresAt)}
+          Bidding window: {formatTimeRemaining(ask.expiresAt)}
         </span>
       </div>
 
@@ -180,7 +204,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
               <div style={{ width: `${Math.round(fillFraction * 100)}%`, height: '100%', background: fillFraction >= 1 ? 'var(--accent-green)' : 'var(--accent-blue)' }} />
             </div>
 
-            <OrderBookPanel bid={bid} asks={asks} onSelectAmount={setBidAmount} />
+            <OrderBookPanel ask={ask} bids={bids} onSelectAmount={setBidAmount} />
           </div>
 
           {/* Right: role-aware action panel */}
@@ -195,6 +219,47 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
               <div style={{ color: bookTheme.textMuted, fontSize: '0.85rem' }}>Connect a wallet to bid or manage this tranche.</div>
             ) : isOwner ? (
               <div>
+                {pendingBidsForOwner.length > 0 && (
+                  <div style={{ marginBottom: '1.25rem' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: bookTheme.textSecondary, marginBottom: '0.5rem' }}>
+                      Pending bids — accept or decline
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {pendingBidsForOwner.map((b) => (
+                        <div
+                          key={b.id}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: '8px', border: `1px solid ${bookTheme.border}` }}
+                        >
+                          <span style={{ fontSize: '0.82rem' }}>
+                            {Number(b.amount).toLocaleString()} XRP @ {b.targetYield ?? ask.yieldRate}%
+                          </span>
+                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-success btn-sm"
+                              disabled={pendingActionId === b.id}
+                              onClick={() => handleRespondToBid(b.id, true)}
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={pendingActionId === b.id}
+                              onClick={() => handleRespondToBid(b.id, false)}
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ fontSize: '0.72rem', color: bookTheme.textMuted, marginTop: '0.4rem' }}>
+                      Accepting the first bid locks this tranche's rate to that bid's proposed yield; any other
+                      pending bid at a different rate is auto-declined.
+                    </p>
+                  </div>
+                )}
                 <p style={{ fontSize: '0.85rem', color: bookTheme.textSecondary, marginBottom: '1rem' }}>
                   {fillFraction >= 1
                     ? 'This tranche is fully subscribed. Origination is automatic on the funding deposit; use this button only if it was skipped (e.g. 2/2 governance not active at the time).'
@@ -203,10 +268,10 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                 <button
                   type="button"
                   className="btn btn-primary btn-block"
-                  disabled={isOriginating || fillFraction < 1 || bid.status === 'originated'}
+                  disabled={isOriginating || fillFraction < 1 || ask.status === 'originated'}
                   onClick={handleOriginate}
                 >
-                  {bid.status === 'originated' ? 'Already Originated' : isOriginating ? 'Originating...' : 'Originate Loan'}
+                  {ask.status === 'originated' ? 'Already Originated' : isOriginating ? 'Originating...' : 'Originate Loan'}
                 </button>
               </div>
             ) : !canLend(currentAccount.role) ? (
@@ -217,7 +282,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
             ) : (
               <div>
                 <form onSubmit={handlePlaceBid} style={{ marginBottom: '1.25rem' }}>
-                  <label className="form-label">Place a Bid (XRP)</label>
+                  <label className="form-label">Place a Bid</label>
                   <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <input
                       type="number"
@@ -225,9 +290,20 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                       value={bidAmount}
                       onChange={(e) => setBidAmount(e.target.value)}
                       min="1"
-                      placeholder="e.g. 25000"
+                      placeholder="Amount, e.g. 25000"
                       required
                       disabled={askExpired}
+                    />
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={bidRate}
+                      onChange={(e) => setBidRate(e.target.value)}
+                      min="0"
+                      step="0.1"
+                      placeholder={`Rate % (ceiling ${ask.yieldRate})`}
+                      disabled={askExpired || rateIsPinned}
+                      style={{ maxWidth: '9rem' }}
                     />
                     <button type="submit" className="btn btn-primary" disabled={isSubmittingBid || !bidAmount || askExpired}>
                       {isSubmittingBid ? 'Placing...' : 'Bid'}
@@ -246,35 +322,45 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                     ))}
                   </select>
                   <p style={{ fontSize: '0.72rem', color: bookTheme.textMuted, marginTop: '0.4rem' }}>
-                    {askExpired ? "This tranche's bidding window has closed." : 'Off-chain and indicative — you fund it explicitly afterwards.'}
+                    {askExpired
+                      ? "This tranche's bidding window has closed."
+                      : rateIsPinned
+                        ? `This tranche's rate is locked at ${ask.yieldRate}% — bids at or below it auto-accept instantly; above it, they wait for the borrower.`
+                        : `${ask.yieldRate}% is the borrower's ceiling rate. Bidding at or below it auto-accepts instantly, like crossing an order book; asking for more needs the borrower's explicit approval.`}
                   </p>
                 </form>
 
-                {myPendingAsks.length > 0 && (
+                {myPendingBids.length > 0 && (
                   <div>
                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: bookTheme.textSecondary, marginBottom: '0.5rem' }}>
                       Your bids on this tranche
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {myPendingAsks.map((ask) => {
-                        const myBidExpired = isExpired(ask.expiresAt)
+                      {myPendingBids.map((b) => {
+                        const myBidExpired = isExpired(b.expiresAt)
                         return (
                           <div
-                            key={ask.id}
+                            key={b.id}
                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', borderRadius: '8px', border: `1px solid ${bookTheme.border}` }}
                           >
-                            <span style={{ fontSize: '0.82rem' }}>{Number(ask.amount).toLocaleString()} XRP</span>
-                            {ask.status === 'pending' ? (
+                            <span style={{ fontSize: '0.82rem' }}>
+                              {Number(b.amount).toLocaleString()} XRP @ {b.targetYield ?? ask.yieldRate}%
+                            </span>
+                            {b.status === 'accepted' ? (
                               <button
                                 type="button"
                                 className="btn btn-success btn-sm"
-                                disabled={pendingActionId === ask.id || myBidExpired}
-                                onClick={() => handleFundNow(ask.id)}
+                                disabled={pendingActionId === b.id || myBidExpired}
+                                onClick={() => handleFundBid(b.id)}
                               >
-                                {myBidExpired ? 'Expired' : pendingActionId === ask.id ? 'Funding...' : 'Fund Now'}
+                                {myBidExpired ? 'Expired' : pendingActionId === b.id ? 'Funding...' : 'Fund Now'}
                               </button>
-                            ) : (
+                            ) : b.status === 'deposited' ? (
                               <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-green)' }}>Deposited</span>
+                            ) : b.status === 'declined' ? (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--accent-red)' }}>Declined</span>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: bookTheme.textMuted }}>Awaiting borrower</span>
                             )}
                           </div>
                         )
@@ -285,9 +371,9 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
               </div>
             )}
 
-            {bid.vaultId && (
+            {ask.vaultId && (
               <div style={{ marginTop: '1.25rem', fontSize: '0.75rem' }}>
-                <a href={explorerTxUrl(bid.vaultId)} target="_blank" rel="noreferrer" style={{ color: bookTheme.textMuted }}>
+                <a href={explorerTxUrl(ask.vaultId)} target="_blank" rel="noreferrer" style={{ color: bookTheme.textMuted }}>
                   View vault on explorer &rarr;
                 </a>
               </div>

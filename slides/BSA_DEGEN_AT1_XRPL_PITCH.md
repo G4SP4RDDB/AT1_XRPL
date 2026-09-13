@@ -41,7 +41,7 @@
 ### Elegance Over Complexity: Dynamic Single Asset Vaults
 
 ```text
-[Corporate Borrower] ──(Emits Debt Bid)──> [VaultCreate (XLS-65)] + [LoanBrokerSet (XLS-66)]
+[Corporate Borrower] ──(Posts Debt Ask)──> [VaultCreate (XLS-65)] + [LoanBrokerSet (XLS-66)]
                                                       │
 [Investors / Lenders] ──(Indicative Match)──> [VaultDeposit] ──> [Mint MPT Shares @ PPS]
                                                       │
@@ -52,7 +52,7 @@
 - **Indicative Matching Layer**: Off-chain order matching board gives borrowers and lenders pre-execution price discovery without ledger clutter.
 - **Atomicity**: Loan origination and capital disbursement occur in a single atomic transaction (`LoanSet`).
 
-> *Speaker Note (25s)*: "When a borrower posts a debt bid, our backend instantly deploys an isolated open-ended vault. Lenders discover the terms on an indicative board, deposit funds, and receive MPT shares. Principal disburses atomically."
+> *Speaker Note (25s)*: "When a borrower posts a debt ask, our backend instantly deploys an isolated open-ended vault. Lenders discover the terms on an indicative board, deposit funds, and receive MPT shares. Principal disburses atomically."
 
 ---
 
@@ -178,7 +178,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Native **TokenEscrow (XLS-85)** composition for on-chain escrowed repayments.
 - **Contributions Back to the Ecosystem**:
   - **Full E2E Test Suite**: 17-step verified on-chain lifecycle test runner (`npm run e2e`).
-  - **30 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
+  - **31 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
   - **Automated DevEx Hook Active**: Telemetry logged via `xrpl-devex-hook`.
 
 ### Thank you! Questions & Answers (2 mins)

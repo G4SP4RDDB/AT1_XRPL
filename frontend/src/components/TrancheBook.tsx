@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FC } from 'react'
-import type { Bid, Ask } from '@shared/types'
+import type { Ask, Bid } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
 import { ResolvedName } from './ResolvedName'
 import { TranchePage } from './TranchePage'
@@ -10,18 +10,18 @@ import { getTrancheIdFromHash, navigateToTranche } from '@/lib/hashRoute'
 
 type SortKey = 'rate' | 'callDate' | 'expires'
 
-function fillFraction(bid: Bid, asksForBid: Ask[]): number {
-  const target = Number(bid.amount) || 0
+function fillFraction(ask: Ask, bidsForAsk: Bid[]): number {
+  const target = Number(ask.amount) || 0
   if (target <= 0) return 0
-  const filled = asksForBid
-    .filter((a) => a.status === 'deposited')
-    .reduce((sum, a) => sum + Number(a.amount || 0), 0)
+  const filled = bidsForAsk
+    .filter((b) => b.status === 'deposited')
+    .reduce((sum, b) => sum + Number(b.amount || 0), 0)
   return Math.min(1, filled / target)
 }
 
 export const TrancheBook: FC = () => {
-  const [bids, setBids] = useState<Bid[]>([])
-  const [asksByTranche, setAsksByTranche] = useState<Record<string, Ask[]>>({})
+  const [asks, setAsks] = useState<Ask[]>([])
+  const [bidsByTranche, setBidsByTranche] = useState<Record<string, Bid[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [sortKey, setSortKey] = useState<SortKey>('rate')
   const [selectedId, setSelectedId] = useState<string | null>(() => getTrancheIdFromHash())
@@ -34,15 +34,15 @@ export const TrancheBook: FC = () => {
 
   const refresh = async () => {
     try {
-      const [openBids, allAsks] = await Promise.all([chainClient.getBids(), chainClient.getAsks()])
-      const tranches = openBids.filter((b) => b.status === 'open' || b.status === 'matched')
-      setBids(tranches)
-      const grouped: Record<string, Ask[]> = {}
-      for (const ask of allAsks) {
-        if (!ask.matchedBidId) continue
-        ;(grouped[ask.matchedBidId] ??= []).push(ask)
+      const [openAsks, allBids] = await Promise.all([chainClient.getAsks(), chainClient.getBids()])
+      const tranches = openAsks.filter((a) => a.status === 'open' || a.status === 'matched')
+      setAsks(tranches)
+      const grouped: Record<string, Bid[]> = {}
+      for (const bid of allBids) {
+        if (!bid.matchedAskId) continue
+        ;(grouped[bid.matchedAskId] ??= []).push(bid)
       }
-      setAsksByTranche(grouped)
+      setBidsByTranche(grouped)
     } catch (err) {
       console.error('Failed to load order book:', err)
     } finally {
@@ -58,7 +58,7 @@ export const TrancheBook: FC = () => {
     return <TranchePage trancheId={selectedId} />
   }
 
-  const sorted = [...bids].sort((a, b) => {
+  const sorted = [...asks].sort((a, b) => {
     if (sortKey === 'rate') return b.yieldRate - a.yieldRate
     if (sortKey === 'callDate') return new Date(a.callDate).getTime() - new Date(b.callDate).getTime()
     const aExp = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity
@@ -137,14 +137,14 @@ export const TrancheBook: FC = () => {
             <span>Filled</span>
           </div>
 
-          {sorted.map((bid) => {
-            const asksForBid = asksByTranche[bid.id] ?? []
-            const fraction = fillFraction(bid, asksForBid)
-            const expired = isExpired(bid.expiresAt)
+          {sorted.map((ask) => {
+            const bidsForAsk = bidsByTranche[ask.id] ?? []
+            const fraction = fillFraction(ask, bidsForAsk)
+            const expired = isExpired(ask.expiresAt)
             return (
               <div
-                key={bid.id}
-                onClick={() => navigateToTranche(bid.id)}
+                key={ask.id}
+                onClick={() => navigateToTranche(ask.id)}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1.6fr 1fr 0.8fr 1fr 1fr 1.4fr',
@@ -155,16 +155,16 @@ export const TrancheBook: FC = () => {
                   borderBottom: `1px solid ${bookTheme.border}`,
                 }}
               >
-                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }} title={bid.borrowerAddress}>
-                  <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'AT1 Bond'} />
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }} title={ask.borrowerAddress}>
+                  <ResolvedName address={ask.borrowerAddress} fallback={ask.borrowerName || 'AT1 Bond'} />
                 </span>
-                <span>{Number(bid.amount).toLocaleString()} XRP</span>
-                <span style={{ color: 'var(--accent-green)', fontWeight: 700 }}>{bid.yieldRate}%</span>
+                <span>{Number(ask.amount).toLocaleString()} XRP</span>
+                <span style={{ color: 'var(--accent-green)', fontWeight: 700 }}>{ask.yieldRate}%</span>
                 <span style={{ fontSize: '0.82rem', color: bookTheme.textSecondary }}>
-                  {new Date(bid.callDate).toLocaleDateString()}
+                  {new Date(ask.callDate).toLocaleDateString()}
                 </span>
                 <span style={{ fontSize: '0.8rem', color: expired ? 'var(--accent-red)' : bookTheme.textSecondary }}>
-                  {formatTimeRemaining(bid.expiresAt)}
+                  {formatTimeRemaining(ask.expiresAt)}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <div

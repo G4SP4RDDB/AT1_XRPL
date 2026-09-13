@@ -13,17 +13,18 @@ import { isExpired } from '@/lib/durations'
  * spread outward, and a depth bar per row anchored to the right edge.
  *
  * Adapted to this app's actual mechanics, not copied wholesale:
- * - There is only ever one resting **ask** (the tranche's own posted rate/size) — XLS-66
- *   gives every depositor in a vault the same rate, there is no per-lender price
- *   competition (see the order-book design discussion). So the ask side has at most one
- *   real row; the Spread row is honestly 0 given that.
- * - Bid rows have no distinct price to sort by (every bid targets the ask's one posted
- *   rate), so "closest to the spread" is ranked by already-deposited capital first, then
- *   size — the most real bids first — rather than by price.
+ * - There is only ever one resting **ask** (the tranche's own posted rate/size). Bids
+ *   can each propose their own rate until the borrower accepts one — accepting locks the
+ *   tranche's rate to that bid's rate (XLS-66 gives every depositor in a vault the same
+ *   rate, so only one can win); any other pending bid at a different rate is then
+ *   auto-declined. So the ask side has at most one real row; the Spread row is honestly
+ *   0 while no rate is locked yet.
+ * - Bid rows are ranked deposited first, then accepted, then pending, then declined —
+ *   the most "real" commitments first — rather than by price.
  * - No aggregation-tick or size-unit controls: there is only one price level to bucket
  *   and only one unit (XRP) in this project.
  * - No websocket/animation-frame throttling: this panel refreshes on explicit user
- *   actions (place/fund/originate), not a live-streaming feed.
+ *   actions (place/respond/fund/originate), not a live-streaming feed.
  * - Rows are keyed by their actual id (bid/ask id), not price — many bid rows can and do
  *   share the same price here, price alone would not be a stable/unique key.
  * - The lender's name (useful in an institutional lending context, unlike an anonymous
@@ -56,7 +57,7 @@ interface BidRowData {
   total: number
   lenderAddress?: string
   fallbackName?: string
-  status?: Ask['status']
+  status?: Bid['status']
   expiresAt?: string
   overflowCount?: number
 }
@@ -123,12 +124,13 @@ const BidLevelRow: FC<{
   onSelect: () => void
 }> = ({ row, widthPct, highlighted, onHover, onLeave, onSelect }) => {
   const name = useBankName(row.lenderAddress, row.fallbackName)
-  const tooltip = row.overflowCount ? `${row.overflowCount} more bids` : `${name} · ${row.status === 'deposited' ? 'Deposited' : 'Pending'}`
+  const statusLabel = row.status === 'deposited' ? 'Deposited' : row.status === 'accepted' ? 'Accepted' : row.status === 'declined' ? 'Declined' : 'Pending'
+  const tooltip = row.overflowCount ? `${row.overflowCount} more bids` : `${name} · ${statusLabel}`
   return (
     <div style={rowStyle(highlighted)} onMouseEnter={onHover} onMouseLeave={onLeave} onClick={onSelect} title={tooltip}>
       <div style={barStyle(widthPct, BID_BAR_COLOR)} />
       <span style={{ ...numericStyle, position: 'relative', color: 'var(--accent-green)', fontWeight: 700 }}>
-        {row.price.toFixed(2)}%{row.status === 'deposited' ? ' ✓' : ''}
+        {row.price.toFixed(2)}%{row.status === 'deposited' ? ' ✓' : row.status === 'declined' ? ' ✕' : ''}
       </span>
       <span style={{ ...numericStyle, position: 'relative', textAlign: 'right' }}>{row.size.toLocaleString()}</span>
       <span style={{ ...numericStyle, position: 'relative', textAlign: 'right', color: bookTheme.textMuted }}>{row.total.toLocaleString()}</span>
@@ -137,50 +139,50 @@ const BidLevelRow: FC<{
 }
 
 interface OrderBookPanelProps {
-  bid: Bid
-  asks: Ask[]
+  ask: Ask
+  bids: Bid[]
   onSelectAmount: (amount: string) => void
 }
 
-export const OrderBookPanel: FC<OrderBookPanelProps> = ({ bid, asks, onSelectAmount }) => {
+export const OrderBookPanel: FC<OrderBookPanelProps> = ({ ask, bids, onSelectAmount }) => {
   const [hovered, setHovered] = useState<{ side: 'ask' | 'bid'; index: number } | null>(null)
 
-  const target = Number(bid.amount) || 0
-  const depositedTotal = asks.filter((a) => a.status === 'deposited').reduce((sum, a) => sum + Number(a.amount || 0), 0)
+  const target = Number(ask.amount) || 0
+  const depositedTotal = bids.filter((b) => b.status === 'deposited').reduce((sum, b) => sum + Number(b.amount || 0), 0)
   const remaining = Math.max(0, target - depositedTotal)
 
   const askRows: AskRowData[] =
     remaining > 0
-      ? [{ id: bid.id, price: bid.yieldRate, size: remaining, total: remaining, borrowerAddress: bid.borrowerAddress, fallbackName: bid.borrowerName || 'AT1 Bond', expiresAt: bid.expiresAt }]
+      ? [{ id: ask.id, price: ask.yieldRate, size: remaining, total: remaining, borrowerAddress: ask.borrowerAddress, fallbackName: ask.borrowerName || 'AT1 Bond', expiresAt: ask.expiresAt }]
       : []
 
-  const sortedAsks = [...asks].sort((a, b) => {
-    const rank = (s?: string) => (s === 'deposited' ? 0 : s === 'matched' ? 1 : 2)
+  const sortedBids = [...bids].sort((a, b) => {
+    const rank = (s?: string) => (s === 'deposited' ? 0 : s === 'accepted' ? 1 : s === 'pending' ? 2 : 3)
     return rank(a.status) - rank(b.status) || Number(b.amount) - Number(a.amount)
   })
   const maxBidRows = ROWS_PER_SIDE - 1
-  const visible = sortedAsks.slice(0, maxBidRows)
-  const overflow = sortedAsks.slice(maxBidRows)
+  const visible = sortedBids.slice(0, maxBidRows)
+  const overflow = sortedBids.slice(maxBidRows)
 
   const bidRows: BidRowData[] = (() => {
     let cumulative = 0
-    const rows: BidRowData[] = visible.map((ask) => {
-      cumulative += Number(ask.amount || 0)
+    const rows: BidRowData[] = visible.map((bid) => {
+      cumulative += Number(bid.amount || 0)
       return {
-        id: ask.id,
-        price: bid.yieldRate,
-        size: Number(ask.amount || 0),
+        id: bid.id,
+        price: bid.targetYield ?? ask.yieldRate,
+        size: Number(bid.amount || 0),
         total: cumulative,
-        lenderAddress: ask.lenderAddress,
-        fallbackName: ask.lenderName || 'Investor',
-        status: ask.status,
-        expiresAt: ask.expiresAt,
+        lenderAddress: bid.lenderAddress,
+        fallbackName: bid.lenderName || 'Investor',
+        status: bid.status,
+        expiresAt: bid.expiresAt,
       }
     })
     if (overflow.length > 0) {
-      const overflowSize = overflow.reduce((sum, a) => sum + Number(a.amount || 0), 0)
+      const overflowSize = overflow.reduce((sum, b) => sum + Number(b.amount || 0), 0)
       cumulative += overflowSize
-      rows.push({ id: '__overflow', price: bid.yieldRate, size: overflowSize, total: cumulative, overflowCount: overflow.length })
+      rows.push({ id: '__overflow', price: ask.yieldRate, size: overflowSize, total: cumulative, overflowCount: overflow.length })
     }
     return rows
   })()
