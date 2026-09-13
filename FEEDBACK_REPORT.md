@@ -83,7 +83,7 @@ We chose WalletConnect (Xaman) as the only way for investors, issuers and the br
 - **Sessions never survive a reload.** `reconnect()` re-runs `connect()` and proposes a new pairing instead of restoring the approved session from SignClient storage; the proposal is never shown, so the manager silently stays disconnected.
 - **No adapter can produce a multisig `Signers` entry or a `LoanSet` `CounterpartySignature`**, so one co-signing key per 2-of-2 account stays backend-held (§1).
 
-*Proposed fixes*: a CAIP id convention for custom networks (`xrpl:<NetworkID>`) honoured by adapters; take the request `chainId` from the approved session; return `encode(tx_json)` and expose `autofill` as an option; resume stored sessions; add `signForMultisig()` / `signLoanSetAsCounterparty()` adapter primitives. *Our workaround*: a `signPrepared()` helper that calls the WalletConnect client directly with an approved chain id, `autofill: false` (the backend already autofilled, `NetworkID` included) and encodes the returned `tx_json`.
+*Proposed fixes*: a CAIP id convention for custom networks (`xrpl:<NetworkID>`) honoured by adapters; take the request `chainId` from the approved session; return `encode(tx_json)` and expose `autofill` as an option; resume stored sessions; add `signForMultisig()` / `signLoanSetAsCounterparty()` adapter primitives (the latter is required even for wallets that support `xrpl_signTransactionFor`: the counterparty signature uses its own hash prefixes, `0x43505400` / `0x43504d00`). *Our workaround*: a `signPrepared()` helper that calls the WalletConnect client directly with an approved chain id, `autofill: false` (the backend already autofilled, `NetworkID` included) and encodes the returned `tx_json`.
 
 ## 5. DevEx, Infrastructure & Tooling
 
