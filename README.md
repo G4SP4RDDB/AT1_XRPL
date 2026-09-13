@@ -455,3 +455,47 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 │   └── server.ts               # Chain shim HTTP service (:8787)
 └── tests/                      # Backend unit test suite (24 tests)
 ```
+
+---
+
+## 13. Full Documentation Index
+
+Every markdown file in the repository, so nothing is orphaned. The mandatory hackathon
+deliverables are already called out in §10 above; this indexes the rest.
+
+### Technical documentation (`docs/`)
+
+| File | What's in it |
+|---|---|
+| [`docs/chain-api.md`](docs/chain-api.md) | The chain shim's full HTTP contract — every `read.*` / `tx.*` / `profile.*` / `book.*` function, its shape, and what each result code means. |
+| [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | Design and implementation notes for the off-chain bank-profile registry and the tranche order book (Morpho / Hyperliquid / Tenor-inspired UI), including deviations from the reference specs and what was verified live against the devnet. |
+| [`docs/frontend-integration.md`](docs/frontend-integration.md) | Call sequence per screen from the frontend to the chain layer, with real devnet response samples. |
+| [`docs/tech-stack.md`](docs/tech-stack.md) | Architecture rationale, zero-custody boundaries, security model. (Also linked in §10.) |
+| [`docs/dev-pipeline.md`](docs/dev-pipeline.md) | The original end-to-end build plan, from empty repo to submission. |
+| [`docs/plan-foundations.md`](docs/plan-foundations.md) | Subplan 1 (Foundations), cut from the dev pipeline above. |
+| [`frontend/README.md`](frontend/README.md) | Frontend-specific setup notes (Vite + React + TypeScript). |
+
+### Test & verification reports
+
+| File | What's in it |
+|---|---|
+| [`docs/e2e-full-report.md`](docs/e2e-full-report.md) | The 16-step on-chain end-to-end lifecycle run. (Also linked in §10.) |
+| [`docs/test-verification-summary.md`](docs/test-verification-summary.md) | Four-layer verification summary (backend unit tests, on-chain e2e, frontend tests, manual checks) for a full pipeline run. |
+| [`docs/spike-results.md`](docs/spike-results.md) | Raw output from the earliest on-chain lifecycle spike. |
+| [`docs/friction-log.md`](docs/friction-log.md) | Granular friction log with repros and severity tags. (Also linked in §10.) |
+
+### Planning & process
+
+| File | What's in it |
+|---|---|
+| [`two_person_split.md`](two_person_split.md) | The layer-based (not feature-based) split used to keep two people from conflicting on the same files. |
+
+### Event source material (organizer-provided, reference only — not a team deliverable)
+
+| File | What's in it |
+|---|---|
+| [`xrpl-lending-notion.md`](xrpl-lending-notion.md) | The original hackathon brief: format, judging criteria, prizes. |
+| [`xrpl_lending_slides.md`](xrpl_lending_slides.md) | Agent-readable transcription of the organizers' slide decks. |
+| [`slides/XRPL Lending Protocol Hackathon Challenge.md`](<slides/XRPL Lending Protocol Hackathon Challenge.md>) | The challenge brief, as presented. |
+| [`slides/XRPL Workshop - Lending Protocol Hackathon.md`](<slides/XRPL Workshop - Lending Protocol Hackathon.md>) | The pre-event workshop slides. |
+| [`slides/final lending intro.md`](<slides/final lending intro.md>) | The kickoff intro deck. |
