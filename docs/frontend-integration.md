@@ -1,10 +1,10 @@
 # Frontend integration scaffold
 
-Everything the UI needs to talk to the chain layer, with the call sequence per screen and real response samples from the devnet. The frontend never holds a seed and never opens a WebSocket to the ledger: it calls the shim, and the shim signs with the keys on Person A's machine.
+Everything the UI needs to talk to the chain layer, with the call sequence per screen and real response samples from the devnet. The frontend never holds a seed and never opens a WebSocket to the ledger: it calls the shim, and the shim signs with the platform keys on the machine that runs it.
 
 ## 1. Run it
 
-Terminal 1 and 2, repo root (Person A's side, or any machine with the `.env`):
+Terminal 1 and 2, repo root (any machine with the `.env`):
 ```bash
 npm install
 npm run enforcer                                        # the platform's co-signer, http://localhost:8788
@@ -21,7 +21,7 @@ Drop the direct `xrpl` client from `frontend/src/lib/xrpl/`: nothing in the UI s
 
 ## 2. The client
 
-`shared/chainClient.ts` (owned by Person A, import it, do not copy it):
+`shared/chainClient.ts` (owned by the chain layer, import it, do not copy it):
 ```ts
 import { createChainClient, isBlocked, isSuccess } from "../../shared/chainClient";
 import type { Bid, Ask, VaultState, Position } from "../../shared/types";

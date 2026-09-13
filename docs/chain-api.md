@@ -169,7 +169,7 @@ The second key of the borrower multisig lives in `.enforcer.env` (gitignored), r
 
 ## Changes
 
-Only Person A edits `shared/types.ts` and this file. A change to a shape is announced in chat before it lands.
+The chain layer owns `shared/types.ts` and this file; a change to a shape is announced before it lands.
 
 - Lenders and borrowers moved from backend-minted, backend-custodied accounts to independent
   externally-held wallets (GemWallet/Crossmark/Xaman via `xrpl-connect`). `tx.deposit`,
@@ -179,7 +179,7 @@ Only Person A edits `shared/types.ts` and this file. A change to a shape is anno
 
 ---
 
-## Internal modules (Person A only, not part of the frontend contract)
+## Internal modules (chain layer only, not part of the frontend contract)
 
 Listed so anyone picking up `src/chain/` knows what exists. The frontend never imports these.
 
