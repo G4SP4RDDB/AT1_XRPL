@@ -405,7 +405,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                             Définir personnellement le rôle de ce compte :
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
                             <button
                               type="button"
                               className={`btn btn-sm ${editRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -421,14 +421,6 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                               style={{ fontSize: '0.75rem', padding: '0.4rem' }}
                             >
                               💰 Prêteur
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${editRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setEditRole('broker')}
-                              style={{ fontSize: '0.75rem', padding: '0.4rem', borderColor: editRole === 'broker' ? '#9333ea' : undefined, background: editRole === 'broker' ? '#9333ea' : undefined }}
-                            >
-                              🏛️ Courtier
                             </button>
                             <button
                               type="button"
@@ -546,7 +538,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
                   Rôle initial
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
                   <button
                     type="button"
                     className={`btn btn-sm ${newRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -564,15 +556,6 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                   >
                     <span>💰</span>
                     <span style={{ fontWeight: 600 }}>Prêteur</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${newRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setNewRole('broker')}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', padding: '0.5rem', borderColor: newRole === 'broker' ? '#9333ea' : undefined, background: newRole === 'broker' ? '#9333ea' : undefined }}
-                  >
-                    <span>🏛️</span>
-                    <span style={{ fontWeight: 600 }}>Courtier</span>
                   </button>
                 </div>
               </div>

@@ -313,6 +313,9 @@ export async function createDbAccount(params: {
   firstName?: string;
   userRole?: string;
 }): Promise<DbAccount> {
+  if (params.role === "broker") {
+    throw new Error("The broker role is reserved for the platform's own account and cannot be self-assigned to a newly created account.");
+  }
   const { wallet } = await fundNewAccount();
   registerWallet(wallet.seed!);
   const role = params.role ?? "unassigned";
@@ -330,8 +333,6 @@ export async function createDbAccount(params: {
     ? "Emprunteur"
     : role === "lender"
     ? "Prêteur"
-    : role === "broker"
-    ? "Courtier Plateforme"
     : `Compte Aléatoire #${count}`;
 
   const newAcc: DbAccount = {
@@ -339,9 +340,9 @@ export async function createDbAccount(params: {
     role,
     name: params.name || defaultName,
     seed: wallet.seed!,
-    company: params.company || (role === "broker" ? "BSA Platform Structurer" : undefined),
+    company: params.company,
     firstName: params.firstName,
-    userRole: params.userRole || (role === "broker" ? "Structurateur & Risque" : undefined),
+    userRole: params.userRole,
     operatorAddress,
     operatorSeed,
     multisigActive: 0,
@@ -404,6 +405,9 @@ export async function updateDbAccount(params: {
   userRole?: string;
   multisigActive?: number;
 }): Promise<DbAccount> {
+  if (params.role === "broker" && params.address !== broker().classicAddress) {
+    throw new Error("The broker role is reserved for the platform's own account; this address cannot self-assign it.");
+  }
   let seed: string | undefined;
   try {
     const w = walletFor(params.address);
@@ -416,6 +420,24 @@ export async function updateDbAccount(params: {
     seed: seed || undefined,
   });
   return sanitizeDbAccount(updated);
+}
+
+/** The only account ever allowed the 'broker' role is the platform's own fixed account
+ * (the one whose seed the infra operator configured in .env, loadAccounts().broker) — no
+ * user-created account can self-assign it (enforced above in create/updateDbAccount).
+ * Call once at server startup so that account already reads as 'broker' in the DB without
+ * needing anyone to manually set it via the UI. Idempotent. */
+export function ensureBrokerAccountRegistered(): void {
+  const brokerWallet = broker();
+  const existing = getAccount(brokerWallet.classicAddress);
+  if (existing?.role === "broker") return;
+  updateAccount(brokerWallet.classicAddress, {
+    role: "broker",
+    name: existing?.name ?? "AT1 Structuring Desk",
+    company: existing?.company ?? "BSA Platform Structurer",
+    userRole: existing?.userRole ?? "Structurateur & Risque",
+    seed: existing?.seed || "",
+  });
 }
 
 export { dropsToXrp };

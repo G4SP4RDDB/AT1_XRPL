@@ -173,7 +173,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
               Rôle attribué à ce compte <span style={{ color: 'var(--accent-red)' }}>*</span>
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
               <button
                 type="button"
                 className={`btn btn-sm ${accountRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -191,15 +191,6 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               >
                 <span style={{ fontSize: '1.1rem' }}>💰</span>
                 <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Prêteur</span>
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${accountRole === 'broker' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setAccountRole('broker')}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem', borderColor: accountRole === 'broker' ? '#9333ea' : undefined, background: accountRole === 'broker' ? '#9333ea' : undefined }}
-              >
-                <span style={{ fontSize: '1.1rem' }}>🏛️</span>
-                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Courtier</span>
               </button>
               <button
                 type="button"

@@ -3,6 +3,7 @@
 import http from "node:http";
 import { read, tx } from "./index.js";
 import { loadAccounts } from "./accounts.js";
+import { ensureBrokerAccountRegistered } from "./ops.js";
 import * as profile from "./profileStore.js";
 import * as book from "./trancheBookStore.js";
 
@@ -28,6 +29,7 @@ http.createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   const brokerAddr = loadAccounts().broker.classicAddress;
+  ensureBrokerAccountRegistered();
   console.log(`\n======================================================`);
   console.log(`🛡️  PLATFORM BROKER ADDRESS: ${brokerAddr}`);
   console.log(`======================================================`);
