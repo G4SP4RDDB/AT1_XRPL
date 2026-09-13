@@ -178,7 +178,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Native **TokenEscrow (XLS-85)** composition for on-chain escrowed repayments.
 - **Contributions Back to the Ecosystem**:
   - **Full E2E Test Suite**: 17-step verified on-chain lifecycle test runner (`npm run e2e`).
-  - **33 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
+  - **33 Detailed Friction Entries**: Complete documentation in `feedback.md` and `docs/friction-log.md`.
   - **Automated DevEx Hook Active**: Telemetry logged via `xrpl-devex-hook`.
 
 ### Thank you! Questions & Answers (2 mins)
@@ -186,4 +186,4 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
 > *Links*:
 > - GitHub: `github.com/G4SP4RDDB/AT1_XRPL`
 > - Live Explorer: `custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233`
-> - Feedback Report: `FEEDBACK_REPORT.md` at repository root
+> - Feedback Report: `feedback.md` at repository root
