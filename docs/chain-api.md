@@ -68,8 +68,8 @@ All receipts carry `hash`, `result` (engine code, `tesSUCCESS` or a `tec*` code)
 ### `tx.createBond(bid: Bid): { vaultId, loanBrokerId, receipts }`
 Borrower posted a bid. Creates the vault (`VaultCreate`, capped at `bid.amount` so no deposit lands after the bond fills), the broker object (`LoanBrokerSet`) and the first-loss cover (`LoanBrokerCoverDeposit`). Call once per bid, keep the returned ids on the bid.
 
-### `tx.deposit(lenderAddress, vaultId, amount): TxReceipt`
-Matched ask becomes a real `VaultDeposit`. `amount` in XRP. Shares are minted at the current PPS. Rejected above the vault cap.
+### `tx.prepareDeposit(lenderAddress, vaultId, amount): Record<string, unknown>` + `tx.submitSigned(signedBlob): TxReceipt`
+Lenders are independent accounts — this backend never holds their key. `prepareDeposit` autofills a `VaultDeposit` (`amount` in XRP) and returns the unsigned transaction JSON; the frontend hands it to the lender's own connected wallet (`walletManager.sign()`, xrpl-connect) and posts the resulting blob to `submitSigned`. Shares are minted at the current PPS. Rejected above the vault cap.
 
 ### `tx.originate(bid: Bid): TxReceipt & { loanId?: string }`
 Pass the bid with `vaultId` and `loanBrokerId` set. Broker signs `LoanSet`, the two borrower signers add counterparty signatures, principal moves to the borrower in this same transaction; there is no separate drawdown. Requires `assetsAvailable >= bid.amount`. Store the returned `loanId` on the bid. Loan terms: 3 payments spread to the bid's `callDate` (interval at least 60 s), rate = `yieldRate` percent per year.
@@ -77,8 +77,11 @@ Pass the bid with `vaultId` and `loanBrokerId` set. Broker signs `LoanSet`, the 
 ### `tx.payCoupon(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
 Borrower pays one scheduled `LoanPay`, co-signed by the enforcer. Amount is read from the loan's `periodicPayment`, never chosen by the caller. PPS rises after success (measured: +5401 drops on the demo terms). If the payment is already overdue the call adds `tfLoanLatePayment` and the ledger charges the late fee and late interest on top. `Blocked` if the enforcer refuses (wrong amount, or a late payment without the flag). `{ blocked, reason: "loan already closed" }` once `paymentRemaining` is 0.
 
-### `tx.withdraw(req: WithdrawRequest): TxReceipt`
-`mode: "yield-only"` redeems `position.yieldShares` only. `mode: "full"` redeems every share and is expected to fail with `tecINSUFFICIENT_FUNDS` while principal is out on loan: that is the guardrail demo, show the code.
+### `tx.withdraw(req: WithdrawRequest): TxReceipt` — multisig-active accounts only
+`mode: "yield-only"` redeems `position.yieldShares` only. `mode: "full"` redeems every share and is expected to fail with `tecINSUFFICIENT_FUNDS` while principal is out on loan: that is the guardrail demo, show the code. Signed backend-side by the account's operator + enforcer keys (see `tx.prepareAccountMultisigSetup` below) — call only once `read.isMasterDisabled(address)` is true.
+
+### `tx.prepareWithdraw(req: WithdrawRequest): { prepared } | Blocked` + `tx.submitSigned(signedBlob): TxReceipt` — plain accounts
+For a depositor who hasn't activated multisig: prepares the `VaultWithdraw`, the frontend signs with the depositor's own connected wallet and posts the blob to `submitSigned`. Same share-selection rules as `tx.withdraw`.
 
 ### `tx.finalRepayment(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
 Two behaviours, decided by the call date:
@@ -89,17 +92,15 @@ The one-signature bypass is rejected on-chain with `tefBAD_QUORUM`.
 ### `tx.impair(loanId)` / `tx.unimpair(loanId): TxReceipt`
 Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rises and PPS drops, the write-down demo. `unimpair` reverses it. **Only accepted once a payment is overdue** (`tecTOO_SOON` before `nextPaymentDueDate`), so the UI flow is: issuer skips a coupon, due date passes, broker impairs.
 
-### `tx.setupBorrowerMultisig(borrowerAddress?: string): TxReceipt`
-Configures on-chain 2-of-2 multisig governance for a borrower:
-1. Submits `SignerListSet` (Quorum 2) pairing the borrower's dedicated operator key (`borrowerOp`) and the platform enforcer (`brokerEnforcer`).
-2. Submits `AccountSet` with flag `asfDisableMaster` (4), permanently preventing unilateral early payoff or key drain.
-3. Updates `multisigActive = 1` in the SQLite database.
+### `tx.prepareAccountMultisigSetup(accountAddress): { signerListSet, disableMaster }` + `tx.submitAccountMultisigSetup(accountAddress, signerListSetBlob, disableMasterBlob): TxReceipt`
+Converts a borrower or lender's own account to 2-of-2 multisig governance. The account owner's own connected wallet signs both halves — this backend never holds that account's master key:
+1. `prepare` mints (or reuses) an "operator" keypair for this account — held backend-side, since no wallet-connect adapter available today (GemWallet, Crossmark, WalletConnect/Xaman) can produce a multisig-shaped signature — and autofills `SignerListSet` (Quorum 2, entries `[operator, platform enforcer]`) and `AccountSet` (flag 4, `asfDisableMaster`), with the second transaction's `Sequence` bumped past the first.
+2. The frontend gets both signed by the account owner's wallet (`walletManager.sign()`), in order.
+3. `submit` posts both blobs in order and sets `multisigActive = 1` in the SQLite database once the second lands.
 
-### `tx.createAccount(params): DbAccount`
-Requests a fresh account from the Custom Devnet faucet (funded with 1 000 XRP), generates a dedicated operator key if `role === 'borrower'`, and persists the record into the SQLite database (`data/accounts.db`).
+Once active, `tx.payCoupon`/`tx.finalRepayment` (borrower) and `tx.withdraw` (lender) route through this operator key + the platform enforcer automatically — no further signature needed from the account owner for those.
 
-### `tx.registerWallet(seed: string): { address: string }`
-Registers an in-memory session wallet in the backend shim so transactions for that address can be signed dynamically.
+Note: the borrower's operator key is also what counter-signs `LoanSet` (see `tx.originate` above) — `signLoanSetByCounterparty` needs direct private-key access, another thing no wallet-connect adapter supports, so that step stays backend-mediated even for an otherwise fully independent account.
 
 ## `profile` — off-chain bank profile registry, no signing
 
@@ -162,6 +163,12 @@ The second key of the borrower multisig lives in `.enforcer.env` (gitignored), r
 ## Changes
 
 Only Person A edits `shared/types.ts` and this file. A change to a shape is announced in chat before it lands.
+
+- Lenders and borrowers moved from backend-minted, backend-custodied accounts to independent
+  externally-held wallets (GemWallet/Crossmark/Xaman via `xrpl-connect`). `tx.deposit`,
+  `tx.createAccount`, `tx.createRandomAccount`, `tx.registerWallet`, `tx.setupBorrowerMultisig`
+  and `tx.setupLenderMultisig` are gone, replaced by the prepare/sign-externally/submit routes
+  documented above. See `docs/borrower-lender-custody.md` for the full design and its limits.
 
 ---
 

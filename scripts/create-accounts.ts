@@ -1,8 +1,11 @@
 import { fundNewAccount } from "../src/chain/accounts.js";
-import { registerWallet } from "../src/chain/ops.js";
 import { getClient } from "../src/chain/client.js";
 import { wipeCreatedAccounts, addCreatedAccount } from "../src/chain/createdAccounts.js";
 import { dropsToXrp } from "xrpl";
+
+// These accounts are meant to be imported into a real wallet (Xaman, GemWallet, Crossmark) and
+// used as genuinely independent lender/borrower identities — the backend never registers or
+// signs for them (no registerWallet() call here on purpose). See docs/borrower-lender-custody.md.
 
 const count = Number(process.argv[2] ?? 4);
 
@@ -17,7 +20,6 @@ const accounts: Array<{ address: string; seed: string; balanceXrp: number; name:
 for (let i = 1; i <= count; i++) {
   try {
     const { wallet, balanceXrp } = await fundNewAccount();
-    registerWallet(wallet.seed!);
     const name = `Compte Aléatoire #${i}`;
     addCreatedAccount({
       address: wallet.classicAddress,
@@ -66,13 +68,15 @@ try {
     console.log(`\n🔹 ${acc.name} :`);
     console.log(`  Adresse : ${acc.address}`);
     console.log(`  Seed    : ${acc.seed}`);
-    console.log(`  Rôle    : ⚪ Non assigné (Enregistré en base au 1er onboarding)`);
+    console.log(`  Rôle    : ⚪ Non assigné (à choisir lors de la 1ère connexion réelle sur l'app)`);
     console.log(`  Solde   : ${verifiedBalance}`);
   }
   console.log("\n==========================================================================================");
   console.log("💡 Pour utiliser ces comptes :");
-  console.log("   Consultez le fichier 'created_accounts.json' ou 'created_accounts.txt' à la racine du projet,");
-  console.log("   ou connectez-vous sur http://localhost:5173 !");
+  console.log("   1. Importez la seed ci-dessus (ou depuis created_accounts.json/.txt) dans un vrai wallet");
+  console.log("      externe : Xaman, GemWallet ou Crossmark ('Import Account' / 'Restaurer un compte').");
+  console.log("   2. Sur http://localhost:5173, connectez ce wallet réel — l'app ne connaîtra que son");
+  console.log("      adresse publique, jamais cette seed. Choisissez ensuite lender ou borrower.");
   console.log("==========================================================================================\n");
   await client.disconnect();
 } catch (e) {

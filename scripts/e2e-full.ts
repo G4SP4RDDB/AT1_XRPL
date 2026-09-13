@@ -71,7 +71,9 @@ assertEq("fresh vault sharesTotal", v.sharesTotal, "0");
 assertTrue("fresh vault has no loan yet", v.loan === undefined);
 
 console.log("\n=== 2. deposit ===");
-log("VaultDeposit lender1 200 XRP", "tesSUCCESS", await tx.deposit(A.lender1.classicAddress, bid.vaultId!, bid.amount));
+const depositPrepared = await tx.prepareDeposit(A.lender1.classicAddress, bid.vaultId!, bid.amount);
+const depositSigned = A.lender1.sign(depositPrepared as any);
+log("VaultDeposit lender1 200 XRP", "tesSUCCESS", await tx.submitSigned(depositSigned.tx_blob));
 v = await read.vaultState(bid.vaultId!);
 assertEq("assetsTotal after deposit", v.assetsTotal, "200");
 assertEq("pps after deposit", v.pps, 1);

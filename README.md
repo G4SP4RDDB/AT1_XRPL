@@ -469,6 +469,7 @@ deliverables are already called out in §10 above; this indexes the rest.
 |---|---|
 | [`docs/chain-api.md`](docs/chain-api.md) | The chain shim's full HTTP contract — every `read.*` / `tx.*` / `profile.*` / `book.*` function, its shape, and what each result code means. |
 | [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | Design and implementation notes for the off-chain bank-profile registry and the tranche order book (Morpho / Hyperliquid / Tenor-inspired UI), including deviations from the reference specs and what was verified live against the devnet. |
+| [`docs/borrower-lender-custody.md`](docs/borrower-lender-custody.md) | Why lenders/borrowers are independent, externally-signed wallets rather than backend-minted accounts, and the two wallet-tooling gaps (multisig signing, `LoanSet` `CounterpartySignature`) that keep one cosigning key backend-held regardless. |
 | [`docs/frontend-integration.md`](docs/frontend-integration.md) | Call sequence per screen from the frontend to the chain layer, with real devnet response samples. |
 | [`docs/tech-stack.md`](docs/tech-stack.md) | Architecture rationale, zero-custody boundaries, security model. (Also linked in §10.) |
 | [`docs/dev-pipeline.md`](docs/dev-pipeline.md) | The original end-to-end build plan, from empty repo to submission. |

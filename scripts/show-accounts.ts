@@ -3,6 +3,8 @@ import { loadAccounts } from "../src/chain/accounts.js";
 import { listAccounts } from "../src/db/index.js";
 import { getCreatedAccounts } from "../src/chain/createdAccounts.js";
 import { getClient, closeClient } from "../src/chain/client.js";
+import { brokerOperatorWallet } from "../src/chain/brokerOperator.js";
+import { brokerLoanSetWallet } from "../src/chain/brokerLoanSetKey.js";
 
 console.log("\n================================================================================");
 console.log("💎 AT1 XRPL — ACTIVE DEVNET ACCOUNTS & SEEDS");
@@ -12,10 +14,9 @@ try {
   const accounts = loadAccounts();
   const client = await getClient();
 
-  console.log("\n🛡️  PLATEFORME BROKER & ENFORCER (Seuls comptes connus du backend via .env) :");
-  for (const role of ["broker", "brokerEnforcer"] as const) {
-    const wallet = accounts[role];
-    if (!wallet) continue;
+  console.log("\n🛡️  PLATEFORME BROKER (le backend ne connaît que son adresse publique, jamais sa clé) :");
+  {
+    const wallet = accounts.broker;
     let balStr = "...";
     try {
       const res = await client.request({ command: "account_info", account: wallet.classicAddress, ledger_index: "validated" });
@@ -23,15 +24,24 @@ try {
     } catch {
       balStr = "1000 XRP";
     }
-    console.log(`\n🔹 ${role.toUpperCase().padEnd(16)} :`);
-    console.log(`   Adresse : ${wallet.classicAddress}`);
-    if (role === "brokerEnforcer") {
-      console.log(`   Seed    : 🤖 [SÉCURISÉ — CLÉ EXCLUSIVEMENT GÉRÉE PAR LE DAEMON LOGICIEL :8788]`);
-      console.log(`   Accès   : Zéro intervention humaine. Co-signature autonome sous condition temporelle on-chain.`);
-    } else {
-      console.log(`   Seed    : ${wallet.seed}`);
+    console.log(`\n🔹 BROKER (compte plateforme) :`);
+    console.log(`   Adresse       : ${wallet.classicAddress}`);
+    console.log(`   Clé maîtresse : ❌ désactivée on-chain (asfDisableMaster) — jamais connue du backend`);
+    console.log(`   Solde         : ${balStr}`);
+  }
+  console.log("\n🔐 CLÉS DE SIGNATURE DU BROKER (les seules détenues par le backend pour ce compte) :");
+  for (const [label, wallet, note] of [
+    ["Multisig 2/2 — opérateur", (() => { try { return brokerOperatorWallet(); } catch { return undefined; } })(), "VaultCreate / LoanBrokerSet / LoanBrokerCoverDeposit / LoanManage"],
+    ["Multisig 2/2 — enforcer", (() => { try { return accounts.brokerEnforcer; } catch { return undefined; } })(), "🤖 co-signature autonome, condition temporelle on-chain, daemon :8788"],
+    ["RegularKey — LoanSet seul", (() => { try { return brokerLoanSetWallet(); } catch { return undefined; } })(), "seule exception solo-sig — limite du SDK, voir src/chain/brokerLoanSetKey.ts"],
+  ] as const) {
+    if (!wallet) {
+      console.log(`\n🔹 ${label} : ⏳ pas encore configurée (lance npm run setup:broker-multisig)`);
+      continue;
     }
-    console.log(`   Solde   : ${balStr}`);
+    console.log(`\n🔹 ${label} :`);
+    console.log(`   Adresse : ${wallet.classicAddress}`);
+    console.log(`   Rôle    : ${note}`);
   }
 
   const createdAccs = getCreatedAccounts();

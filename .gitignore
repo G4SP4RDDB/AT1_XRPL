@@ -12,6 +12,8 @@ data/
 .grok/
 xrpl-lending-notion.md
 .enforcer.env
+.broker-operator.env
+.broker-loanset.env
 .idea/
 .gemini/
 .github/

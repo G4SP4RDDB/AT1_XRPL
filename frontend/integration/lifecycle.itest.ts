@@ -7,14 +7,38 @@ import { createChainClient, isBlocked, isSuccess, type ChainClient } from '@shar
 import type { Bid, Position, TxReceipt, VaultState } from '@shared/types'
 import { disconnectClient, getClient, network } from '@/lib/xrpl'
 import { ensureLiquid, isHash, sleep } from './helpers'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Wallet } from 'xrpl'
 
 const chainUrl = inject('chainUrl')
 const demo = inject('demo')
 const CLOSE = process.env.INTEGRATION_CLOSE === '1'
 
+// The lender is a real, independent account now (see docs/borrower-lender-custody.md) — this test
+// process (never the app itself) reads its own local seed to sign VaultDeposit, the same way
+// globalSetup.ts derives demo addresses. Never exposed to the chain shim or the frontend bundle.
+function demoLenderWallet(): Wallet {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  const env = fs.readFileSync(path.join(root, '.env'), 'utf8')
+  const seed = env.match(/^LENDER1_SEED=(\S+)/m)?.[1]
+  if (!seed) throw new Error('LENDER1_SEED missing from root .env — run `npm run fund` at the repo root')
+  return Wallet.fromSeed(seed)
+}
+
 const AMOUNT_XRP = '200' // small enough to run many times on the demo balances; interest shows in drops
 const YIELD_PCT = 100 // maximum rate so accrued yield is visible within minutes
 const CALL_MINUTES = 3 // terms floor: 3 payments at least 60 s apart
+
+// The lender never activates multisig in this suite, so every VaultWithdraw is the plain,
+// externally-signed path (prepare here, sign with the demo lender's own key, submit).
+async function withdrawAsLender(chain: ChainClient, vaultId: string, mode: 'yield-only' | 'full') {
+  const result = await chain.tx.prepareWithdraw({ depositorAddress: demo!.lender, vaultId, mode })
+  if ('blocked' in result) return result
+  const signed = demoLenderWallet().sign(result.prepared as never)
+  return chain.tx.submitSigned(signed.tx_blob)
+}
 
 const expectSuccess = (r: TxReceipt | { blocked: string; reason: string }): TxReceipt => {
   if (isBlocked(r as never)) throw new Error(`blocked: ${(r as { reason: string }).reason}`)
@@ -83,7 +107,9 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   })
 
   it('deposit: the matched lender funds the vault and receives shares at PPS 1', async () => {
-    hashes.VaultDeposit = expectSuccess(await chain.tx.deposit(demo!.lender, bid.vaultId!, bid.amount)).hash
+    const preparedDeposit = await chain.tx.prepareDeposit(demo!.lender, bid.vaultId!, bid.amount)
+    const signedDeposit = demoLenderWallet().sign(preparedDeposit as never)
+    hashes.VaultDeposit = expectSuccess(await chain.tx.submitSigned(signedDeposit.tx_blob)).hash
 
     vault = await chain.read.vaultState(bid.vaultId!)
     expect(vault.assetsTotal).toBe(AMOUNT_XRP)
@@ -118,7 +144,7 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   })
 
   it('guardrail: a full withdrawal while the principal is lent is rejected by the ledger', async () => {
-    const r = await chain.tx.withdraw({ depositorAddress: demo!.lender, vaultId: bid.vaultId!, mode: 'full' })
+    const r = await withdrawAsLender(chain, bid.vaultId!, 'full')
     expect(isSuccess(r)).toBe(false)
     if (!isBlocked(r)) {
       expect(r.result).toBe('tecINSUFFICIENT_FUNDS')
@@ -161,7 +187,7 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
     const sharesBefore = Number(position.shares)
     const yieldShares = Number(position.yieldShares)
     hashes['VaultWithdraw (yield)'] = expectSuccess(
-      await chain.tx.withdraw({ depositorAddress: demo!.lender, vaultId: bid.vaultId!, mode: 'yield-only' }),
+      await withdrawAsLender(chain, bid.vaultId!, 'yield-only'),
     ).hash
 
     position = await chain.read.position(demo!.lender, bid.vaultId!)
@@ -200,7 +226,7 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
       expect(vault.loan!.paymentRemaining).toBe(0)
       expect(vault.assetsAvailable).toBe(vault.assetsTotal)
 
-      const full = await chain.tx.withdraw({ depositorAddress: demo!.lender, vaultId: bid.vaultId!, mode: 'full' })
+      const full = await withdrawAsLender(chain, bid.vaultId!, 'full')
       hashes['VaultWithdraw (all)'] = expectSuccess(full).hash
       position = await chain.read.position(demo!.lender, bid.vaultId!)
       expect(position.shares).toBe('0')

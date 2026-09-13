@@ -8,6 +8,12 @@ import type { Address, BankProfile } from "../../shared/types.js";
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "bank-profiles.json");
 
+// RESET_DATA_ON_START (set by `npm run serve`, see src/db/index.ts) — wipe so readStore()
+// re-seeds SEED_PROFILES fresh on the next call instead of resuming a prior run's file.
+if (process.env.RESET_DATA_ON_START && fs.existsSync(STORE_PATH)) {
+  fs.rmSync(STORE_PATH);
+}
+
 // Addresses must match ROLE_ACCOUNTS in frontend/src/lib/wallet.tsx (same convention as the
 // seeds backing them: kept in sync by hand, not imported, since frontend and chain layer
 // don't share a runtime module boundary here).

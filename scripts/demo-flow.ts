@@ -29,7 +29,9 @@ bid.vaultId = created.vaultId; bid.loanBrokerId = created.loanBrokerId; bid.stat
 let v = await read.vaultState(bid.vaultId);
 console.log(`   vault ${bid.vaultId.slice(0, 10)} cap-aware, callDate ${v.callDate}`);
 
-line("2 deposit lender1 1000 XRP", await tx.deposit(A.lender1.classicAddress, bid.vaultId, bid.amount));
+const depositPrepared = await tx.prepareDeposit(A.lender1.classicAddress, bid.vaultId, bid.amount);
+const depositSigned = A.lender1.sign(depositPrepared as any);
+line("2 deposit lender1 1000 XRP", await tx.submitSigned(depositSigned.tx_blob));
 v = await read.vaultState(bid.vaultId);
 console.log(`   total=${v.assetsTotal} avail=${v.assetsAvailable} pps=${v.pps}`);
 

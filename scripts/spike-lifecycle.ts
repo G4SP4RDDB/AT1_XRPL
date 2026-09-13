@@ -6,6 +6,8 @@ import { loadAccounts } from "../src/chain/accounts.js";
 import { DEMO_LOAN, DEMO_BROKER } from "../src/chain/config.js";
 import { submit, submitMultisigned, submitBlob, createdId, type Receipt } from "../src/chain/tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, xrpBalance, ledgerCloseTime } from "../src/chain/read.js";
+import { brokerOperatorWallet } from "../src/chain/brokerOperator.js";
+import { brokerLoanSetWallet } from "../src/chain/brokerLoanSetKey.js";
 
 const client = await getClient();
 const A = loadAccounts();
@@ -22,17 +24,19 @@ function log(step: string, r: Receipt | { result: string; hash?: string }, note 
 const drops = (n: number) => String(Math.ceil(n));
 
 // ---------- 1. Vault ----------
-const vc = await submit(client, { TransactionType: "VaultCreate", Account: A.broker.classicAddress, Asset: { currency: "XRP" }, Data: Buffer.from("AT1 bond #1 BSA Degen").toString("hex") }, A.broker);
+// The broker account holds no seed the backend can sign with: every broker-signed transaction here
+// (except LoanSet, see step 5) goes through its 2-of-2 SignerList (operator + enforcer).
+const vc = await submitMultisigned(client, { TransactionType: "VaultCreate", Account: A.broker.classicAddress, Asset: { currency: "XRP" }, Data: Buffer.from("AT1 bond #1 BSA Degen").toString("hex") }, [brokerOperatorWallet(), enforcer]);
 const vaultId = createdId(vc.meta, "Vault")!;
-log("1 VaultCreate (broker)", vc, `vaultId ${vaultId?.slice(0, 10)}`);
+log("1 VaultCreate (broker multisig)", vc, `vaultId ${vaultId?.slice(0, 10)}`);
 let v = await vaultInfo(client, vaultId);
 const shareMptId = v.shareMptId;
 
 // ---------- 2. Broker + cover ----------
-const bs = await submit(client, { TransactionType: "LoanBrokerSet", Account: A.broker.classicAddress, VaultID: vaultId, ManagementFeeRate: DEMO_BROKER.managementFeeRate, CoverRateMinimum: DEMO_BROKER.coverRateMinimum, CoverRateLiquidation: DEMO_BROKER.coverRateLiquidation }, A.broker);
+const bs = await submitMultisigned(client, { TransactionType: "LoanBrokerSet", Account: A.broker.classicAddress, VaultID: vaultId, ManagementFeeRate: DEMO_BROKER.managementFeeRate, CoverRateMinimum: DEMO_BROKER.coverRateMinimum, CoverRateLiquidation: DEMO_BROKER.coverRateLiquidation }, [brokerOperatorWallet(), enforcer]);
 const loanBrokerId = createdId(bs.meta, "LoanBroker")!;
-log("2 LoanBrokerSet (broker)", bs, `loanBrokerId ${loanBrokerId?.slice(0, 10)}`);
-const cd = await submit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: A.broker.classicAddress, LoanBrokerID: loanBrokerId, Amount: xrpToDrops(DEMO_BROKER.coverDepositXrp) }, A.broker);
+log("2 LoanBrokerSet (broker multisig)", bs, `loanBrokerId ${loanBrokerId?.slice(0, 10)}`);
+const cd = await submitMultisigned(client, { TransactionType: "LoanBrokerCoverDeposit", Account: A.broker.classicAddress, LoanBrokerID: loanBrokerId, Amount: xrpToDrops(DEMO_BROKER.coverDepositXrp) }, [brokerOperatorWallet(), enforcer]);
 log("2b LoanBrokerCoverDeposit 150 XRP", cd);
 
 // ---------- 3. Deposit (top up lender first: reserve is 10 + 2 per object on this devnet) ----------
@@ -68,7 +72,9 @@ const loanSet: any = {
 };
 const prepared = await client.autofill(loanSet);
 prepared.Fee = String(Number(prepared.Fee) * 5); // 1 + 0 signers + 2 counterparty signatures, with margin
-const brokerSigned = A.broker.sign(prepared);
+// LoanSet is the one exception: signLoanSetByCounterparty() needs a plain single Account-side
+// signature, so the broker signs via its dedicated RegularKey rather than the 2-of-2 SignerList.
+const brokerSigned = brokerLoanSetWallet().sign(prepared);
 let ls: Receipt;
 try {
   const s1 = signLoanSetByCounterparty(borrowerOp, brokerSigned.tx_blob, { multisign: true });
@@ -110,10 +116,10 @@ v = await vaultInfo(client, vaultId);
 log("9 VaultWithdraw yield-only shares", wy, `held=${held} principalShares=${principalShares.toFixed(2)} yieldShares=${yieldShares} avail=${v.assetsAvailable}`);
 
 // ---------- 10. Impair / unimpair ----------
-const im = await submit(client, { TransactionType: "LoanManage", Account: A.broker.classicAddress, LoanID: loanId, Flags: 131072 }, A.broker);
+const im = await submitMultisigned(client, { TransactionType: "LoanManage", Account: A.broker.classicAddress, LoanID: loanId, Flags: 131072 }, [brokerOperatorWallet(), enforcer]);
 v = await vaultInfo(client, vaultId);
-log("10 LoanManage tfLoanImpair (broker)", im, `lossUnrealized=${v.lossUnrealized} pps=${v.pps}`);
-const un = await submit(client, { TransactionType: "LoanManage", Account: A.broker.classicAddress, LoanID: loanId, Flags: 262144 }, A.broker);
+log("10 LoanManage tfLoanImpair (broker multisig)", im, `lossUnrealized=${v.lossUnrealized} pps=${v.pps}`);
+const un = await submitMultisigned(client, { TransactionType: "LoanManage", Account: A.broker.classicAddress, LoanID: loanId, Flags: 262144 }, [brokerOperatorWallet(), enforcer]);
 v = await vaultInfo(client, vaultId);
 log("10b LoanManage tfLoanUnimpair", un, `lossUnrealized=${v.lossUnrealized} pps=${v.pps}`);
 

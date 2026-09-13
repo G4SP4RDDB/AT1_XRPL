@@ -41,13 +41,10 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAlreadyMultisig, setIsAlreadyMultisig] = useState(false)
   const [enableMultisig, setEnableMultisig] = useState(true)
-  const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const [createdAccount, setCreatedAccount] = useState<{ address: string; name: string } | null>(null)
 
   // Load existing profile from SQLite DB and on-chain status
   useEffect(() => {
     if (!isOpen || !currentAccount?.address) return
-    setCreatedAccount(null)
 
     chainClient.listAccounts().then((accounts) => {
       const hit = accounts.find((a) => a.address === currentAccount.address)
@@ -74,27 +71,6 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   }, [isOpen, currentAccount?.address])
 
   if (!isOpen) return null
-
-  const handleCreateAccount = async () => {
-    setIsCreatingAccount(true)
-    try {
-      const acc = await chainClient.createRandomAccount()
-      setCreatedAccount({ address: acc.address, name: acc.name })
-      notifyTx({
-        title: 'Nouveau compte créé',
-        message: `${acc.name} (${acc.address.slice(0, 10)}...) financé à 1 000 XRP. Attribuez-lui un rôle depuis l'onglet Connexion.`,
-        type: 'success',
-      })
-    } catch (err: any) {
-      notifyTx({
-        title: 'Échec de la création',
-        message: err.message,
-        type: 'error',
-      })
-    } finally {
-      setIsCreatingAccount(false)
-    }
-  }
 
   const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : 'Investisseur')) : selectedRole
 
@@ -210,8 +186,9 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               }}
             >
               En tant que Courtier, vous structurez les prêts, déposez le First-Loss Capital et pilotez la
-              solvabilité (CET1) des émetteurs depuis le <strong>Broker Hub</strong>. La création de nouveaux
-              comptes de démonstration (Emprunteur/Prêteur) est aussi une action d'administration.
+              solvabilité (CET1) des émetteurs depuis le <strong>Broker Hub</strong>. Les nouveaux comptes
+              emprunteur/prêteur sont désormais des wallets indépendants : lancez{' '}
+              <code>npm run create-accounts</code> pour en financer, à importer dans un vrai wallet.
             </div>
 
             <button
@@ -226,24 +203,6 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               <span>🩺</span>
               <span>Piloter le Health Factor (CET1) — Broker Hub</span>
             </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
-              onClick={handleCreateAccount}
-              disabled={isCreatingAccount}
-            >
-              <span>➕</span>
-              <span>{isCreatingAccount ? 'Création en cours...' : 'Créer un Nouveau Compte de Démonstration'}</span>
-            </button>
-
-            {createdAccount && (
-              <div className="alert alert-success" style={{ fontSize: '0.8rem' }}>
-                Compte créé : <strong>{createdAccount.name}</strong>
-                <div style={{ fontFamily: 'monospace', marginTop: '0.25rem' }}>{createdAccount.address}</div>
-              </div>
-            )}
 
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Fermer

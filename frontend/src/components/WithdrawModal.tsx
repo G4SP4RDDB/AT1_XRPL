@@ -37,7 +37,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
     if (!depositorAddress) return
     setIsActivatingMultisig(true)
     try {
-      const res = await chainClient.setupLenderMultisig(depositorAddress)
+      const res = await chainClient.setupMultisig(depositorAddress)
       if (res.success) {
         setIsMultisig(true)
       }

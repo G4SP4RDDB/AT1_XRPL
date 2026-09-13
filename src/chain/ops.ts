@@ -1,15 +1,32 @@
 // Real implementations behind tx.*: build, sign, submit, read back. Amounts at this boundary are XRP strings.
+//
+// Lenders and borrowers are independent XRPL accounts — their own wallet (Xaman/GemWallet/Crossmark)
+// holds the master key, never this backend. Every transaction that only needs a plain single
+// signature from one of them (VaultDeposit, a non-multisig VaultWithdraw, the two multisig-setup
+// transactions) is split into prepare (autofill here) + sign (in the user's own wallet, frontend
+// side, via xrpl-connect) + submit (here again, given back the already-signed blob).
+//
+// The one thing that stays backend-managed even for these accounts is the "operator" leg of their
+// own 2-of-2 SignerList (used once multisig is active, for LoanPay/VaultWithdraw, and for LoanSet's
+// CounterpartySignature) — see getOperatorFor() below for exactly why: no wallet adapter available
+// in xrpl-connect (GemWallet/Crossmark/Xaman/WalletConnect) can produce a multisig-shaped
+// signature or XLS-66's CounterpartySignature, both of which need direct access to a private key.
+// The account owner still authorizes the *conversion* to multisig themselves (prepareAccountMultisigSetup
+// returns two plain transactions for their own wallet to sign) — the backend just can't be cut out
+// of the ongoing cosigning role that comes after, given today's tooling.
 import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, combineLoanSetCounterpartySigners } from "xrpl";
 import type { Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
-import { loadAccounts, fundNewAccount } from "./accounts.js";
-import { addCreatedAccount, wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
-import { getAccount, listAccounts, saveAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
+import { loadAccounts } from "./accounts.js";
+import { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
+import { getAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
 import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
-import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
+import { submit, submitBlob, submitMultisigned, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
 import { totalInterest, percentToTenthBp, isoToRipple } from "./loanMath.js";
 import { cosign, enforcerWallet, type CosignResult } from "./enforcer/index.js";
+import { brokerOperatorWallet } from "./brokerOperator.js";
+import { brokerLoanSetWallet } from "./brokerLoanSetKey.js";
 
 // The enforcer runs as its own process when ENFORCER_URL is set (npm run enforcer); otherwise in-process (dev only).
 const ENFORCER_URL = process.env.ENFORCER_URL;
@@ -31,36 +48,26 @@ import { positionOf } from "./readLayer.js";
 
 const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, explorerUrl: r.explorerUrl, ledgerIndex: r.ledgerIndex });
 
-const dynamicWallets = new Map<string, Wallet>();
-
-export function registerWallet(seed: string): { address: string } {
-  const w = Wallet.fromSeed(seed.trim());
-  dynamicWallets.set(w.classicAddress, w);
-  return { address: w.classicAddress };
-}
-
-function walletFor(address: string): Wallet {
-  const dynamic = dynamicWallets.get(address);
-  if (dynamic) return dynamic;
-  const dbAcc = getAccount(address);
-  if (dbAcc?.seed) return Wallet.fromSeed(dbAcc.seed);
-  const hit = Object.values(loadAccounts()).find((w) => w?.classicAddress === address);
-  if (!hit) throw new Error(`no seed for ${address} in database or registered session`);
-  return hit;
-}
-
-export function getOperatorFor(address?: string): Wallet {
-  if (address) {
-    const dbAcc = getAccount(address);
-    if (dbAcc?.operatorSeed) return Wallet.fromSeed(dbAcc.operatorSeed);
-  }
-  const acc = loadAccounts();
-  if (acc.borrowerOp) return acc.borrowerOp;
-  throw new Error(`no operator key found for account ${address || "default"}`);
-}
-export const getBorrowerOpFor = getOperatorFor;
-
 const broker = () => loadAccounts().broker;
+
+/** Every broker-signed transaction except LoanSet (see brokerLoanSetKey.ts) is authorized this
+ *  way: the broker account's master key is disabled, and its 2-of-2 SignerList (operator +
+ *  enforcer) is the only thing that can sign for it — the backend never holds a broker seed. */
+function brokerSubmit(client: Awaited<ReturnType<typeof getClient>>, tx: Record<string, unknown>) {
+  return submitMultisigned(client, tx, [brokerOperatorWallet(), enforcerWallet()]);
+}
+
+/** The mechanical "operator" cosigning key for a borrower/lender's own 2-of-2 SignerList. Backend-held
+ *  by necessity (see file header) — never the account owner's own key. Must already exist (set up via
+ *  prepareAccountMultisigSetup + submitAccountMultisigSetup) before this is called. */
+function getOperatorFor(address: string): Wallet {
+  const dbAcc = getAccount(address);
+  if (!dbAcc?.operatorSeed) {
+    throw new Error(`no multisig operator key on record for ${address} — run the multisig setup flow for this account first`);
+  }
+  return Wallet.fromSeed(dbAcc.operatorSeed);
+}
+const getBorrowerOpFor = getOperatorFor;
 
 /** Loan terms derived from a bid: PaymentTotal fixed, interval from the call date (min 60 s). */
 export function termsFromBid(bid: Bid, nowRipple: number) {
@@ -83,25 +90,32 @@ export async function createBond(bid: Bid): Promise<{ vaultId: string; loanBroke
   if (data.length / 2 > 256) throw new Error("bid too large for the 256-byte vault Data field");
   const cap = String(t.principalDrops + t.interestDrops + VAULT_CAP_MARGIN_DROPS);
   const receipts: TxReceipt[] = [];
-  const vc = await submit(client, { TransactionType: "VaultCreate", Account: broker().classicAddress, Asset: { currency: "XRP" }, Data: data, AssetsMaximum: cap }, broker());
+  const vc = await brokerSubmit(client, { TransactionType: "VaultCreate", Account: broker().classicAddress, Asset: { currency: "XRP" }, Data: data, AssetsMaximum: cap });
   receipts.push(toReceipt(vc));
   const vaultId = createdId(vc.meta, "Vault");
   if (!vaultId) return { vaultId: "", loanBrokerId: "", receipts };
-  const bs = await submit(client, { TransactionType: "LoanBrokerSet", Account: broker().classicAddress, VaultID: vaultId, ManagementFeeRate: DEMO_BROKER.managementFeeRate, CoverRateMinimum: DEMO_BROKER.coverRateMinimum, CoverRateLiquidation: DEMO_BROKER.coverRateLiquidation, Data: data }, broker());
+  const bs = await brokerSubmit(client, { TransactionType: "LoanBrokerSet", Account: broker().classicAddress, VaultID: vaultId, ManagementFeeRate: DEMO_BROKER.managementFeeRate, CoverRateMinimum: DEMO_BROKER.coverRateMinimum, CoverRateLiquidation: DEMO_BROKER.coverRateLiquidation, Data: data });
   receipts.push(toReceipt(bs));
   const loanBrokerId = createdId(bs.meta, "LoanBroker");
   if (!loanBrokerId) return { vaultId, loanBrokerId: "", receipts };
   const coverDrops = Math.max(Number(xrpToDrops(DEMO_BROKER.coverDepositXrp)), Math.ceil((t.principalDrops + t.interestDrops) * (DEMO_BROKER.coverRateMinimum / 100_000) * 1.2));
-  const cd = await submit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(coverDrops) }, broker());
+  const cd = await brokerSubmit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(coverDrops) });
   receipts.push(toReceipt(cd));
   return { vaultId, loanBrokerId, receipts };
 }
 
-/** 2.3 VaultDeposit. */
-export async function deposit(lenderAddress: string, vaultId: string, amountXrp: string): Promise<TxReceipt> {
+/** 2.3 VaultDeposit — prepare only. The lender's own wallet signs the result (see chainClient.ts),
+ *  then hands the blob to submitSigned() below. */
+export async function prepareDeposit(lenderAddress: string, vaultId: string, amountXrp: string): Promise<Record<string, any>> {
   const client = await getClient();
-  const w = walletFor(lenderAddress);
-  return toReceipt(await submit(client, { TransactionType: "VaultDeposit", Account: w.classicAddress, VaultID: vaultId, Amount: xrpToDrops(amountXrp) }, w));
+  return client.autofill({ TransactionType: "VaultDeposit", Account: lenderAddress, VaultID: vaultId, Amount: xrpToDrops(amountXrp) } as any);
+}
+
+/** Submit any transaction already signed by an external, independent wallet (a plain single
+ *  signature — VaultDeposit, a non-multisig VaultWithdraw, or one leg of a multisig setup). */
+export async function submitSigned(signedBlob: string): Promise<TxReceipt> {
+  const client = await getClient();
+  return toReceipt(await submitBlob(client, signedBlob));
 }
 
 /** 2.5 LoanSet: broker signs, both borrower signers add counterparty signatures, submit. Principal moves here. */
@@ -117,7 +131,10 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   };
   const prepared = await client.autofill(tx);
   prepared.Fee = String(Number(prepared.Fee) * 5);
-  const first = broker().sign(prepared);
+  // signLoanSetByCounterparty() needs a plain single signature on the Account side (no support for
+  // a multisig Signers array there), so this one transaction type signs via the broker's RegularKey
+  // rather than its 2-of-2 SignerList — see brokerLoanSetKey.ts for why.
+  const first = brokerLoanSetWallet().sign(prepared);
   const op = getBorrowerOpFor(bid.borrowerAddress);
   const s1 = signLoanSetByCounterparty(op, first.tx_blob, { multisign: true });
   const enf = await enforcerCounterSign(first.tx_blob);
@@ -126,7 +143,8 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   return { ...toReceipt(r), loanId: createdId(r.meta, "Loan") };
 }
 
-/** Account transaction: operator signs, enforcer decides and co-signs, multisign, submit. */
+/** Account transaction: operator signs, enforcer decides and co-signs, multisign, submit. Both
+ *  legs are backend-held (see getOperatorFor above) — no external signature needed here. */
 async function accountMultisigSubmit(tx: Record<string, any>): Promise<TxReceipt | Blocked> {
   const client = await getClient();
   const prepared = await client.autofill(tx as any, 2);
@@ -180,24 +198,12 @@ export async function finalRepayment(loanId: string, borrowerAddress: string): P
   return last;
 }
 
-/** 2.7 VaultWithdraw: yield-only redeems position.yieldShares, full redeems every share.
- *  If multisig is active on the account, routed through the Enforcer daemon for policy verification.
- */
+/** 2.7 VaultWithdraw, multisig-active accounts only: routed through the Enforcer daemon for policy
+ *  verification, same backend-held operator+enforcer pair as LoanPay above. For an account that
+ *  hasn't activated multisig, use prepareWithdraw()+submitSigned() instead (plain external signature). */
 export async function withdraw(req: WithdrawRequest): Promise<TxReceipt | Blocked> {
   const client = await getClient();
   const v = await vaultInfo(client, req.vaultId);
-  const dbAcc = getAccount(req.depositorAddress);
-  let isMultisig = dbAcc?.multisigActive === 1;
-  if (!isMultisig) {
-    try {
-      const ai: any = await client.request({ command: "account_info", account: req.depositorAddress, ledger_index: "validated" } as any);
-      if (((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0) {
-        isMultisig = true;
-      }
-    } catch {
-      // ignore
-    }
-  }
 
   let shares: string;
   if (req.mode === "full") {
@@ -209,155 +215,112 @@ export async function withdraw(req: WithdrawRequest): Promise<TxReceipt | Blocke
     if (Number(shares) <= 0) return { hash: "", result: "skipped: no yield shares yet", explorerUrl: "" };
   }
 
-  const txJson = {
+  return accountMultisigSubmit({
     TransactionType: "VaultWithdraw",
     Account: req.depositorAddress,
     VaultID: req.vaultId,
     Amount: { mpt_issuance_id: v.shareMptId, value: shares },
-  };
+  });
+}
 
-  if (isMultisig) {
-    return accountMultisigSubmit(txJson);
+/** 2.7b VaultWithdraw, plain accounts (no multisig yet) — prepare only, external wallet signs. */
+export async function prepareWithdraw(req: WithdrawRequest): Promise<{ prepared: Record<string, any> } | Blocked> {
+  const client = await getClient();
+  const v = await vaultInfo(client, req.vaultId);
+
+  let shares: string;
+  if (req.mode === "full") {
+    shares = await shareBalance(client, req.depositorAddress, v.shareMptId);
+    if (Number(shares) <= 0) return { blocked: "not-supported", reason: "no shares held" };
+  } else {
+    const p = await positionOf(client, req.depositorAddress, req.vaultId);
+    shares = p.yieldShares;
+    if (Number(shares) <= 0) return { blocked: "not-supported", reason: "no yield shares yet" };
   }
 
-  const w = walletFor(req.depositorAddress);
-  return toReceipt(await submit(client, txJson, w));
+  const prepared = await client.autofill({
+    TransactionType: "VaultWithdraw",
+    Account: req.depositorAddress,
+    VaultID: req.vaultId,
+    Amount: { mpt_issuance_id: v.shareMptId, value: shares },
+  } as any);
+  return { prepared };
 }
 
 /** 2.10 write-down: only accepted once a payment is overdue on this devnet. */
 export async function impair(loanId: string): Promise<TxReceipt> {
   const client = await getClient();
-  return toReceipt(await submit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00020000 }, broker()));
+  return toReceipt(await brokerSubmit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00020000 }));
 }
 export async function unimpair(loanId: string): Promise<TxReceipt> {
   const client = await getClient();
-  return toReceipt(await submit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00040000 }, broker()));
+  return toReceipt(await brokerSubmit(client, { TransactionType: "LoanManage", Account: broker().classicAddress, LoanID: loanId, Flags: 0x00040000 }));
 }
-/** 2.11 Configure 2-of-2 Multisig on an account with master key disabled. */
-export async function setupAccountMultisig(accountAddress: string): Promise<TxReceipt> {
+
+/** 2.11 Configure 2-of-2 Multisig on an account with master key disabled — prepare only. Returns
+ *  the two plain, single-signature transactions (SignerListSet, AccountSet asfDisableMaster) for
+ *  the account owner's own wallet to sign; see submitAccountMultisigSetup() for the second half.
+ *  The operator key plugged into the SignerList is generated/reused here and stays backend-held
+ *  (see file header for why) — only the account owner's authorization to install it is external. */
+export async function prepareAccountMultisigSetup(accountAddress: string): Promise<{ signerListSet: Record<string, any>; disableMaster: Record<string, any> }> {
   const client = await getClient();
   const acc = loadAccounts();
-  const targetWallet = walletFor(accountAddress);
-  let dbAcc = getAccount(accountAddress);
-
-  if (!dbAcc?.operatorAddress) {
-    const opWallet = Wallet.generate();
-    dbAcc = updateAccount(accountAddress, {
-      operatorAddress: opWallet.classicAddress,
-      operatorSeed: opWallet.seed,
-    });
-  }
-
-  const opAddress = dbAcc?.operatorAddress ?? (accountAddress === acc.borrower?.classicAddress ? acc.borrowerOp?.classicAddress : undefined);
   const enforcerAddress = acc.brokerEnforcer?.classicAddress;
+  if (!enforcerAddress) throw new Error("platform enforcer address not configured");
 
-  if (!opAddress || !enforcerAddress) {
-    throw new Error("Cannot configure multisig: missing operator or platform enforcer address");
-  }
-
-  // Check if master key is already disabled
-  const ai: any = await client.request({ command: "account_info", account: targetWallet.classicAddress, ledger_index: "validated" } as any);
+  const ai: any = await client.request({ command: "account_info", account: accountAddress, ledger_index: "validated" } as any);
   const masterDisabled = ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0;
   if (masterDisabled) {
     updateAccount(accountAddress, { multisigActive: 1 });
-    return { hash: "", result: "tesSUCCESS", explorerUrl: "", ledgerIndex: ai.result.ledger_index ?? 0 };
+    throw new Error("multisig is already configured for this account (master key already disabled)");
   }
 
-  // 1. SignerListSet: 2-of-2 multisig between Operator and Platform Enforcer
-  await submit(client, {
+  let dbAcc = getAccount(accountAddress);
+  if (!dbAcc?.operatorAddress) {
+    const opWallet = Wallet.generate();
+    dbAcc = updateAccount(accountAddress, { operatorAddress: opWallet.classicAddress, operatorSeed: opWallet.seed });
+  }
+  const operatorAddress = dbAcc.operatorAddress!;
+
+  const signerListSet = await client.autofill({
     TransactionType: "SignerListSet",
-    Account: targetWallet.classicAddress,
+    Account: accountAddress,
     SignerQuorum: 2,
     SignerEntries: [
-      { SignerEntry: { Account: opAddress, SignerWeight: 1 } },
+      { SignerEntry: { Account: operatorAddress, SignerWeight: 1 } },
       { SignerEntry: { Account: enforcerAddress, SignerWeight: 1 } },
     ],
-  }, targetWallet);
-
-  // 2. AccountSet asfDisableMaster
-  const dm = await submit(client, {
+  } as any);
+  const disableMaster = await client.autofill({
     TransactionType: "AccountSet",
-    Account: targetWallet.classicAddress,
+    Account: accountAddress,
     SetFlag: 4, // asfDisableMaster
-  }, targetWallet);
+  } as any);
+  // Both come from the same not-yet-submitted account, autofilled independently — force the second
+  // transaction's Sequence past the first so they don't collide when submitted back to back.
+  disableMaster.Sequence = Number(signerListSet.Sequence) + 1;
 
-  updateAccount(accountAddress, { multisigActive: 1 });
-
-  return toReceipt(dm);
+  return { signerListSet, disableMaster };
 }
 
-export async function setupBorrowerMultisig(borrowerAddress?: string): Promise<TxReceipt> {
-  const addr = borrowerAddress ?? loadAccounts().borrower.classicAddress;
-  return setupAccountMultisig(addr);
-}
-
-export async function setupLenderMultisig(lenderAddress: string): Promise<TxReceipt> {
-  return setupAccountMultisig(lenderAddress);
+/** Second half of prepareAccountMultisigSetup(): submit both transactions once the account owner's
+ *  own wallet has signed them, in order (SignerListSet must land before AccountSet disables master). */
+export async function submitAccountMultisigSetup(accountAddress: string, signerListSetBlob: string, disableMasterBlob: string): Promise<TxReceipt> {
+  const client = await getClient();
+  const r1 = await submitBlob(client, signerListSetBlob);
+  if (r1.result !== "tesSUCCESS") return toReceipt(r1);
+  const r2 = await submitBlob(client, disableMasterBlob);
+  if (r2.result === "tesSUCCESS") {
+    updateAccount(accountAddress, { multisigActive: 1 });
+  }
+  return toReceipt(r2);
 }
 
 /** 2.12 depositCover: Broker deposits First-Loss capital into LoanBroker. */
 export async function depositCover(loanBrokerId: string, amountXrp: string): Promise<TxReceipt> {
   const client = await getClient();
   const drops = xrpToDrops(amountXrp);
-  return toReceipt(await submit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(drops) }, broker()));
-}
-
-/** Dynamic account creation funded on Devnet.
- *  Registers wallet in memory for immediate use, but DOES NOT insert into SQLite DB yet.
- *  The account is persisted to DB only upon first connection & setup.
- */
-export async function createDbAccount(params: {
-  role?: AccountRole;
-  name?: string;
-  company?: string;
-  firstName?: string;
-  userRole?: string;
-}): Promise<DbAccount> {
-  if (params.role === "broker") {
-    throw new Error("The broker role is reserved for the platform's own account and cannot be self-assigned to a newly created account.");
-  }
-  const { wallet } = await fundNewAccount();
-  registerWallet(wallet.seed!);
-  const role = params.role ?? "unassigned";
-  let operatorAddress: string | undefined;
-  let operatorSeed: string | undefined;
-
-  if (role === "borrower" || role === "lender") {
-    const opWallet = Wallet.generate();
-    operatorAddress = opWallet.classicAddress;
-    operatorSeed = opWallet.seed;
-  }
-
-  const count = listAccounts().length + 1;
-  const defaultName = role === "borrower"
-    ? "Emprunteur"
-    : role === "lender"
-    ? "Prêteur"
-    : `Compte Aléatoire #${count}`;
-
-  const newAcc: DbAccount = {
-    address: wallet.classicAddress,
-    role,
-    name: params.name || defaultName,
-    seed: wallet.seed!,
-    company: params.company,
-    firstName: params.firstName,
-    userRole: params.userRole,
-    operatorAddress,
-    operatorSeed,
-    multisigActive: 0,
-    createdAt: new Date().toISOString(),
-  };
-
-  // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
-  addCreatedAccount({
-    address: wallet.classicAddress,
-    seed: wallet.seed!,
-    balanceXrp: 1000,
-    name: newAcc.name,
-    createdAt: newAcc.createdAt,
-  });
-  return sanitizeDbAccount(newAcc);
+  return toReceipt(await brokerSubmit(client, { TransactionType: "LoanBrokerCoverDeposit", Account: broker().classicAddress, LoanBrokerID: loanBrokerId, Amount: String(drops) }));
 }
 
 function sanitizeDbAccount(acc: DbAccount): DbAccount {
@@ -368,34 +331,8 @@ function sanitizeDbAccount(acc: DbAccount): DbAccount {
   };
 }
 
-/** Instant 1-click creation of a random funded account (1,000 XRP) on Devnet.
- *  Registers wallet in memory, but DOES NOT insert into SQLite DB yet.
- *  The account is persisted to DB only upon first connection & setup.
- */
-export async function createRandomAccount(name?: string): Promise<DbAccount> {
-  const { wallet } = await fundNewAccount();
-  registerWallet(wallet.seed!);
-  const count = listAccounts().length + 1;
-  const newAcc: DbAccount = {
-    address: wallet.classicAddress,
-    role: "unassigned",
-    name: name || `Compte Aléatoire #${count}`,
-    seed: wallet.seed!,
-    multisigActive: 0,
-    createdAt: new Date().toISOString(),
-  };
-  // DO NOT saveAccount(newAcc) here! Only registered on first connection & setup
-  addCreatedAccount({
-    address: wallet.classicAddress,
-    seed: wallet.seed!,
-    balanceXrp: 1000,
-    name: newAcc.name,
-    createdAt: newAcc.createdAt,
-  });
-  return sanitizeDbAccount(newAcc);
-}
-
-/** Persist or update an account's role and details in SQLite DB at setup time. */
+/** Persist or update an account's role and details in SQLite DB at signup/setup time. The address
+ *  is always one the caller already controls via their own wallet — this never mints a wallet. */
 export async function updateDbAccount(params: {
   address: string;
   role?: AccountRole;
@@ -412,38 +349,31 @@ export async function updateDbAccount(params: {
   if (params.address === brokerAddress && params.role !== undefined && params.role !== "broker") {
     throw new Error("The platform's broker account cannot be reassigned to another role.");
   }
-  let seed: string | undefined;
-  try {
-    const w = walletFor(params.address);
-    seed = w.seed;
-  } catch {
-    // external wallet without local backend seed
-  }
-  const updated = updateAccount(params.address, {
-    ...params,
-    seed: seed || undefined,
-  });
+  const updated = updateAccount(params.address, params);
   return sanitizeDbAccount(updated);
 }
 
 /** The only account ever allowed the 'broker' role is the platform's own fixed account
- * (the one whose seed the infra operator configured in .env, loadAccounts().broker) — no
- * user-created account can self-assign it (enforced above in create/updateDbAccount).
+ * (the one whose public address the infra operator configured as BROKER_ADDRESS in .env,
+ * loadAccounts().broker — the backend never holds its private key, see brokerOperator.ts) —
+ * no user-created account can self-assign it (enforced above in create/updateDbAccount).
  * Call once at server startup so that account already reads as 'broker' in the DB without
  * needing anyone to manually set it via the UI. Idempotent. */
 export function ensureBrokerAccountRegistered(): void {
   const brokerWallet = broker();
   const existing = getAccount(brokerWallet.classicAddress);
-  if (existing?.role === "broker") return;
+  // Always re-asserted, never skipped once role is already 'broker': the DB must never hold a
+  // signable seed for this row (the backend only knows its public address, see brokerOperator.ts),
+  // so any leftover seed from before that custody change is wiped here too, not just left as-is.
+  if (existing?.role === "broker" && !existing.seed) return;
   updateAccount(brokerWallet.classicAddress, {
     role: "broker",
     name: existing?.name ?? "AT1 Structuring Desk",
     company: existing?.company ?? "BSA Platform Structurer",
     userRole: existing?.userRole ?? "Structurateur & Risque",
-    seed: existing?.seed || "",
+    seed: "",
   });
 }
 
 export { dropsToXrp };
 export { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
-

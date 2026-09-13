@@ -14,6 +14,14 @@ const ROOT_TXT_FILE = path.resolve(process.cwd(), "created_accounts.txt");
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const DATA_JSON_FILE = path.resolve(DATA_DIR, "created_accounts.json");
 
+// RESET_DATA_ON_START (set by `npm run serve`, see src/db/index.ts) — wipe so
+// getCreatedAccounts() starts from [] instead of resuming a prior run's file.
+if (process.env.RESET_DATA_ON_START) {
+  for (const p of [ROOT_JSON_FILE, ROOT_TXT_FILE, DATA_JSON_FILE]) {
+    if (fs.existsSync(p)) fs.rmSync(p);
+  }
+}
+
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });

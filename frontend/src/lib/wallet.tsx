@@ -17,31 +17,22 @@ interface WalletContextType {
   isModalOpen: boolean
   openModal: () => void
   closeModal: () => void
-  connectWalletConnect: (onUri?: (uri: string) => void) => Promise<void>
-  selectRoleAccount: (role: 'borrower' | 'lender1' | 'lender2' | 'broker') => void
+  /** Connect a real, independent wallet — GemWallet/Crossmark (browser extension) or WalletConnect
+   *  (Xaman via QR/deep link). The app only ever learns the public address from here on. */
+  connectAdapter: (id: 'gemwallet' | 'crossmark' | 'walletconnect', onUri?: (uri: string) => void) => Promise<void>
+  /** Ask the connected real wallet to sign a prepared (already-autofilled) transaction. Never
+   *  submits — the caller hands the resulting blob to the backend's submitSigned/submitAccountMultisigSetup. */
+  signTransaction: (tx: Record<string, unknown>) => Promise<{ tx_blob: string }>
+  selectRoleAccount: (role: 'broker') => void
   connectAccount: (account: { address: string; name: string; role?: 'borrower' | 'lender' | 'broker' | 'unassigned' }) => void
   refreshBalance: () => Promise<void>
   disconnect: () => Promise<void>
 }
 
-// These must match the addresses backing the root .env seeds (see `npm run balances` at the repo root).
-// The chain shim signs with those seeds; picking a different address here has no key behind it.
+// The broker is the platform's own fixed, known-in-advance identity (its public address only —
+// the backend never holds its key either, see src/chain/brokerOperator.ts). Lenders and borrowers
+// have no fixed address anymore: they're independent accounts connected via a real wallet below.
 export const ROLE_ACCOUNTS = {
-  borrower: {
-    address: 'rsnFbojcDMuFmC7f3Ws7PdsvzSuA71RTgT',
-    name: 'Borrower (2-of-2 Multisig)',
-    description: 'Corporate issuer with multisig-gated repayment',
-  },
-  lender1: {
-    address: 'rD8F37f4XEpNMfCmSUDerZiSBSG8rD1QzZ',
-    name: 'Lender 1 (Primary Investor)',
-    description: 'Vault depositor & yield accumulator',
-  },
-  lender2: {
-    address: 'rsn5ZUPZWQmtqDfDCnBrGf3bdkJNQCkDcW',
-    name: 'Lender 2 (Secondary Investor)',
-    description: 'Secondary market allocator',
-  },
   broker: {
     address: 'r4r59gviPCnToSNThhHk9qetUwfNc7Rt2N',
     name: 'Platform Broker (Enforcer)',
@@ -155,31 +146,30 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setIsModalOpen(false)
   }
 
-  const connectWalletConnect = async (onUri?: (uri: string) => void) => {
+  const connectAdapter = async (id: 'gemwallet' | 'crossmark' | 'walletconnect', onUri?: (uri: string) => void) => {
     setIsLoading(true)
     try {
-      await walletManager.connect('walletconnect', {
-        onQRCode: (uri: string) => {
-          if (onUri) onUri(uri)
-        },
-      })
+      await walletManager.connect(id, id === 'walletconnect' ? { onQRCode: (uri: string) => { if (onUri) onUri(uri) } } : undefined)
     } catch (err: any) {
-      console.warn('WalletConnect error:', err)
+      console.warn(`${id} connect error:`, err)
       throw err
     } finally {
       setIsLoading(false)
     }
   }
 
-  const selectRoleAccount = (roleKey: 'borrower' | 'lender1' | 'lender2' | 'broker') => {
+  const signTransaction = async (tx: Record<string, unknown>): Promise<{ tx_blob: string }> => {
+    return walletManager.sign(tx as any)
+  }
+
+  const selectRoleAccount = (roleKey: 'broker') => {
     const roleData = ROLE_ACCOUNTS[roleKey]
     if (!roleData) return
-    const role: 'borrower' | 'lender' | 'broker' = roleKey === 'borrower' ? 'borrower' : roleKey === 'broker' ? 'broker' : 'lender'
     const connected: ConnectedAccount = {
       address: roleData.address,
       name: roleData.name,
       balance: '...',
-      role,
+      role: 'broker',
     }
     setCurrentAccount(connected)
     localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
@@ -223,7 +213,8 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
         isModalOpen,
         openModal,
         closeModal,
-        connectWalletConnect,
+        connectAdapter,
+        signTransaction,
         selectRoleAccount,
         connectAccount,
         refreshBalance,

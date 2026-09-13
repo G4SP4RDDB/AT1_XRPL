@@ -1,7 +1,6 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
-import { Wallet } from "xrpl";
 
 export type AccountRole = "borrower" | "lender" | "broker" | "unassigned";
 
@@ -25,6 +24,16 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const DB_PATH = path.join(DATA_DIR, "accounts.db");
+
+// RESET_DATA_ON_START is set by `npm run serve` so every infra restart boots off a
+// fresh, empty, freshly-initialized store instead of resuming whatever a previous
+// run left on disk (hackathon demo convenience, not a prod pattern).
+if (process.env.RESET_DATA_ON_START) {
+  for (const p of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+    if (fs.existsSync(p)) fs.rmSync(p);
+  }
+}
+
 const db = new Database(DB_PATH);
 
 // Check if migration is needed to support 'broker' role
@@ -55,11 +64,41 @@ try {
   // If migration fails or table doesn't exist yet, fallback to CREATE TABLE below
 }
 
+// Mandatory onboarding (no "Libre" option) means no live flow ever persists role='unassigned'
+// anymore — it only exists as a transient in-memory placeholder before a real role is chosen.
+// Drop it from what the database itself can store, and any stray leftover row carrying it.
+try {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'").get() as { sql: string } | undefined;
+  if (tableSql?.sql && tableSql.sql.includes("'unassigned'")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS accounts_new (
+        address TEXT PRIMARY KEY,
+        role TEXT NOT NULL CHECK(role IN ('borrower', 'lender', 'broker')),
+        name TEXT NOT NULL,
+        seed TEXT NOT NULL,
+        company TEXT,
+        firstName TEXT,
+        userRole TEXT,
+        operatorAddress TEXT,
+        operatorSeed TEXT,
+        multisigActive INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL
+      );
+      INSERT INTO accounts_new SELECT * FROM accounts WHERE role != 'unassigned';
+      DROP TABLE accounts;
+      ALTER TABLE accounts_new RENAME TO accounts;
+      CREATE INDEX IF NOT EXISTS idx_accounts_role ON accounts(role);
+    `);
+  }
+} catch (err) {
+  // If migration fails or table doesn't exist yet, fallback to CREATE TABLE below
+}
+
 // Initialize schema if not exists
 db.exec(`
   CREATE TABLE IF NOT EXISTS accounts (
     address TEXT PRIMARY KEY,
-    role TEXT NOT NULL DEFAULT 'unassigned' CHECK(role IN ('borrower', 'lender', 'broker', 'unassigned')),
+    role TEXT NOT NULL CHECK(role IN ('borrower', 'lender', 'broker')),
     name TEXT NOT NULL,
     seed TEXT NOT NULL,
     company TEXT,
@@ -125,14 +164,14 @@ export function updateAccount(address: string, fields: Partial<DbAccount>): DbAc
   let operatorAddress = fields.operatorAddress ?? existing?.operatorAddress;
   let operatorSeed = fields.operatorSeed ?? existing?.operatorSeed;
 
-  const targetRole = fields.role ?? existing?.role ?? "unassigned";
-
-  // Auto-generate operator key if promoted to borrower or lender and lacks one
-  if ((targetRole === "borrower" || targetRole === "lender") && !operatorAddress) {
-    const opWallet = Wallet.generate();
-    operatorAddress = opWallet.classicAddress;
-    operatorSeed = opWallet.seed;
+  const targetRole = fields.role ?? existing?.role;
+  if (!targetRole) {
+    throw new Error(`updateAccount(${address}): no role given and none on record — the database can no longer persist an unassigned account`);
   }
+
+  // The operator key (one leg of this account's own 2-of-2 SignerList) is never generated here —
+  // only prepareAccountMultisigSetup() (src/chain/ops.ts) mints one, when the account owner
+  // actually opts into multisig. Picking a role must not silently plant a backend-held key.
 
   const updated: DbAccount = {
     address,

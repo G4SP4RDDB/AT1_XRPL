@@ -1,5 +1,6 @@
 import { createChainClient, isBlocked } from '@shared/chainClient'
 import { notifyTx } from './notifications'
+import { walletManager } from './xrplConnect'
 import type {
   Bid,
   Ask,
@@ -10,6 +11,7 @@ import type {
   LoanStatus,
   AccountRole,
   DbAccount,
+  Blocked,
 } from '@shared/types'
 
 export type { Bid, Ask, TxReceipt, AccountRole, DbAccount }
@@ -225,6 +227,30 @@ export class ChainBackendClient {
     }
   }
 
+  /** VaultDeposit: prepared here, signed by the lender's own connected wallet (never this backend),
+   *  then submitted. Requires a real wallet (GemWallet/Crossmark/WalletConnect) to be connected as
+   *  `lenderAddress` — throws if the connected wallet doesn't match. */
+  private async signAndSubmitDeposit(lenderAddress: string, vaultId: string, amountXrp: string): Promise<TxReceipt> {
+    if (walletManager.account?.address !== lenderAddress) {
+      throw new Error('Connect the lender wallet for this address before depositing — the backend cannot sign on its behalf.')
+    }
+    const prepared = await baseChain.tx.prepareDeposit(lenderAddress, vaultId, amountXrp)
+    const signed = await walletManager.sign(prepared as any)
+    return baseChain.tx.submitSigned(signed.tx_blob)
+  }
+
+  /** VaultWithdraw for a plain (non-multisig) account: prepared here, signed by the depositor's
+   *  own connected wallet, then submitted. */
+  private async signAndSubmitWithdraw(req: RawWithdrawRequest): Promise<TxReceipt | Blocked> {
+    if (walletManager.account?.address !== req.depositorAddress) {
+      throw new Error('Connect this depositor\'s own wallet before withdrawing — the backend cannot sign on its behalf.')
+    }
+    const result = await baseChain.tx.prepareWithdraw(req)
+    if ('blocked' in result) return result
+    const signed = await walletManager.sign(result.prepared as any)
+    return baseChain.tx.submitSigned(signed.tx_blob)
+  }
+
   async createBid(bidInput: {
     borrowerAddress: string
     borrowerName?: string
@@ -325,7 +351,7 @@ export class ChainBackendClient {
     const vaultId = vault?.vaultId || bid?.vaultId
     if (!vaultId) throw new Error('Tranche vault not found on ledger')
 
-    const receipt = await baseChain.tx.deposit(ask.lenderAddress, vaultId, ask.amount)
+    const receipt = await this.signAndSubmitDeposit(ask.lenderAddress, vaultId, ask.amount)
     if (receipt.result !== 'tesSUCCESS') {
       throw new Error(`Deposit failed on-chain: ${receipt.result}`)
     }
@@ -378,8 +404,8 @@ export class ChainBackendClient {
       throw new Error('Bond vault not found on ledger')
     }
 
-    // 1. Execute VaultDeposit on chain through backend
-    const depositReceipt = await baseChain.tx.deposit(lenderAddress, targetVaultId, amount)
+    // 1. Execute VaultDeposit — prepared by the backend, signed by the lender's own connected wallet
+    const depositReceipt = await this.signAndSubmitDeposit(lenderAddress, targetVaultId, amount)
     if (depositReceipt.result !== 'tesSUCCESS') {
       notifyTx({
         title: 'Échec du dépôt on-chain',
@@ -477,7 +503,12 @@ export class ChainBackendClient {
     }
 
     try {
-      const receipt = await baseChain.tx.withdraw(rawReq)
+      // Multisig-active accounts: the backend holds both cosigning legs (operator + enforcer),
+      // one call settles it. A plain account signs its own VaultWithdraw via its connected wallet.
+      const isMultisig = await this.isMasterDisabled(req.depositorAddress)
+      const receipt = isMultisig
+        ? await baseChain.tx.withdraw(rawReq)
+        : await this.signAndSubmitWithdraw(rawReq)
 
       if (isBlocked(receipt)) {
         notifyTx({
@@ -639,55 +670,20 @@ export class ChainBackendClient {
     }
   }
 
-  async setupBorrowerMultisig(borrowerAddress?: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    try {
-      const receipt = await baseChain.tx.setupBorrowerMultisig(borrowerAddress)
-      if (receipt.result === 'tesSUCCESS') {
-        notifyTx({
-          title: 'Gouvernance Multisig Activée',
-          message: 'Multisig 2-sur-2 configuré on-chain avec clé maître désactivée.',
-          txHash: receipt.hash || undefined,
-          type: 'success',
-        })
-        return { success: true, txHash: receipt.hash }
-      }
-      return { success: false, error: receipt.result }
-    } catch (err: any) {
-      notifyTx({
-        title: 'Erreur activation Multisig',
-        message: err.message,
-        type: 'error',
-      })
-      return { success: false, error: err.message }
-    }
-  }
-
-  async setupLenderMultisig(lenderAddress: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    try {
-      const receipt = await baseChain.tx.setupLenderMultisig(lenderAddress)
-      if (receipt.result === 'tesSUCCESS') {
-        notifyTx({
-          title: 'Gouvernance Multisig Prêteur Activée',
-          message: 'Multisig 2-sur-2 configuré on-chain avec Enforcer et clé maître désactivée.',
-          txHash: receipt.hash || undefined,
-          type: 'success',
-        })
-        return { success: true, txHash: receipt.hash }
-      }
-      return { success: false, error: receipt.result }
-    } catch (err: any) {
-      notifyTx({
-        title: 'Erreur activation Multisig Prêteur',
-        message: err.message,
-        type: 'error',
-      })
-      return { success: false, error: err.message }
-    }
-  }
-
+  /** Converts `address` to a 2-of-2 multisig (operator + platform enforcer, master key disabled).
+   *  The two setup transactions (SignerListSet, AccountSet) are signed by the account's own
+   *  connected wallet — the backend only prepares them and never holds this account's master key.
+   *  The operator cosigning key itself stays backend-held (see src/chain/brokerLoanSetKey.ts-style
+   *  comment in ops.ts: no wallet adapter today can produce a multisig-shaped signature). */
   async setupMultisig(address: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    if (walletManager.account?.address !== address) {
+      return { success: false, error: "Connect this account's own wallet before activating multisig." }
+    }
     try {
-      const receipt = await baseChain.tx.setupAccountMultisig(address)
+      const { signerListSet, disableMaster } = await baseChain.tx.prepareAccountMultisigSetup(address)
+      const signedSignerListSet = await walletManager.sign(signerListSet as any)
+      const signedDisableMaster = await walletManager.sign(disableMaster as any)
+      const receipt = await baseChain.tx.submitAccountMultisigSetup(address, signedSignerListSet.tx_blob, signedDisableMaster.tx_blob)
       if (receipt.result === 'tesSUCCESS') {
         notifyTx({
           title: 'Gouvernance Multisig 2/2 Activée',
@@ -739,14 +735,6 @@ export class ChainBackendClient {
     } catch {
       return null
     }
-  }
-
-  async createAccount(params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) {
-    return await baseChain.tx.createAccount(params)
-  }
-
-  async createRandomAccount(name?: string) {
-    return await baseChain.tx.createRandomAccount(name)
   }
 
   async updateAccount(params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) {

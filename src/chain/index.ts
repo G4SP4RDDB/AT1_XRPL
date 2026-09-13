@@ -6,22 +6,24 @@ export { read } from "./readLayer.js";
 
 export const tx = {
   createBond: (bid: Bid) => ops.createBond(bid),
-  deposit: (lenderAddress: string, vaultId: string, amount: string): Promise<TxReceipt> => ops.deposit(lenderAddress, vaultId, amount),
+  // VaultDeposit is signed by the lender's own external wallet, not this backend: prepare returns
+  // an unsigned, autofilled transaction; submitSigned takes back the blob once they've signed it.
+  prepareDeposit: (lenderAddress: string, vaultId: string, amount: string) => ops.prepareDeposit(lenderAddress, vaultId, amount),
+  submitSigned: (signedBlob: string): Promise<TxReceipt> => ops.submitSigned(signedBlob),
   originate: (bid: Bid) => ops.originate(bid),
   payCoupon: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.payCoupon(loanId, borrowerAddress),
   withdraw: (req: WithdrawRequest): Promise<TxReceipt | Blocked> => ops.withdraw(req),
+  prepareWithdraw: (req: WithdrawRequest) => ops.prepareWithdraw(req),
   finalRepayment: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.finalRepayment(loanId, borrowerAddress),
   impair: (loanId: string): Promise<TxReceipt> => ops.impair(loanId),
   unimpair: (loanId: string): Promise<TxReceipt> => ops.unimpair(loanId),
   depositCover: (loanBrokerId: string, amount: string): Promise<TxReceipt> => ops.depositCover(loanBrokerId, amount),
-  setupBorrowerMultisig: (borrowerAddress?: string): Promise<TxReceipt> => ops.setupBorrowerMultisig(borrowerAddress),
-  setupLenderMultisig: (lenderAddress: string): Promise<TxReceipt> => ops.setupLenderMultisig(lenderAddress),
-  setupAccountMultisig: (accountAddress: string): Promise<TxReceipt> => ops.setupAccountMultisig(accountAddress),
-  createAccount: (params: { role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string }) => ops.createDbAccount(params),
-  createRandomAccount: (name?: string) => ops.createRandomAccount(name),
+  // Multisig setup is also externally signed: prepare returns the two plain transactions for the
+  // account owner's own wallet to sign, submit takes back both blobs.
+  prepareAccountMultisigSetup: (accountAddress: string) => ops.prepareAccountMultisigSetup(accountAddress),
+  submitAccountMultisigSetup: (accountAddress: string, signerListSetBlob: string, disableMasterBlob: string): Promise<TxReceipt> =>
+    ops.submitAccountMultisigSetup(accountAddress, signerListSetBlob, disableMasterBlob),
   updateAccount: (params: { address: string; role?: AccountRole; name?: string; company?: string; firstName?: string; userRole?: string; multisigActive?: number }) => ops.updateDbAccount(params),
-  // ops.registerWallet is synchronous (in-memory Map); wrap so every tx.* value returns a Promise, as server.ts's shim requires.
-  registerWallet: async (seed: string) => ops.registerWallet(seed),
   wipeCreatedAccounts: async () => {
     ops.wipeCreatedAccounts();
     return { success: true };
