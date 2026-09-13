@@ -103,7 +103,7 @@ The broker creates vaults, sets broker terms, posts first-loss cover, originates
 
 **Issuers and investors bring their own wallets.** They fund a Devnet account (`npm run create-accounts N` prints funded addresses and seeds to import into Xaman, GemWallet or Crossmark) and connect through `xrpl-connect`. The backend only ever learns the public address. Every transaction that needs their signature follows **prepare → sign → submit**: the backend autofills the JSON, the wallet signs it, the backend relays the blob. See [`docs/chain-api.md`](docs/chain-api.md) for the routes.
 
-**Onboarding.** The first time an address connects, a mandatory modal asks it to pick **Issuer (borrower)** or **Investor (lender)**, fill in a display identity (name, title, company), and optionally activate the 2-of-2 multisig governance. The owner's own wallet signs the `SignerListSet` + `AccountSet` pair, so the backend can never flip an account to multisig without consent. The `broker` role is reserved for the platform's own address and opens an admin panel.
+**Onboarding.** The first time an address connects, a modal asks one question: is this account an **Issuer (borrower)** or an **Investor (lender)**? Nothing else. Display identity (name, title, company) and the 2-of-2 multisig governance are configured later from the profile (navbar pill or the Issue tab), or, for investors, from the withdraw modal. When an owner does activate multisig, their own wallet signs the `SignerListSet` + `AccountSet` pair, so the backend can never flip an account to multisig without consent. The `broker` role is reserved for the platform's own address and opens an admin panel.
 
 **Why the operator key is backend-held (a documented SDK gap).** No wallet adapter available for this hackathon (`xrpl-connect 0.8.2`: GemWallet, Crossmark, Xaman over WalletConnect) can produce a multisig-shaped `Signers` signature, nor the `CounterpartySignature` that `LoanSet` requires from the issuer. Both need a raw private key through `xrpl.js`'s `Wallet`. So each multisig account gets a dedicated operator key pair generated and held by the backend; the *decision* to convert stays with the owner. Details and the proposed fix: [`docs/borrower-lender-custody.md`](docs/borrower-lender-custody.md).
 
@@ -248,7 +248,7 @@ Multisig is not set up by any script: each issuer or investor activates it from 
 
 ## 8. Using the app
 
-1. **Connect** — *Connect Wallet* (top right) → Xaman via WalletConnect QR, GemWallet or Crossmark. First connection opens the onboarding modal: pick Issuer or Investor, fill in your identity, optionally activate 2-of-2 governance.
+1. **Connect** — *Connect Wallet* (top right) → Xaman via WalletConnect QR, GemWallet or Crossmark. First connection asks only whether you are an Issuer or an Investor. Identity and 2-of-2 governance can be set later from your profile (navbar pill / Issue tab) or the withdraw modal.
 2. **Issue (issuer)** — post a bid with amount, annual yield and call date. The platform creates the vault and broker objects on the spot.
 3. **Invest (investor)** — post an indicative ask, or *Deposit* against an open bid. Your wallet signs the `VaultDeposit`; you receive MPT shares.
 4. **Coupons and harvest** — the issuer pays coupons (`LoanPay`); PPS rises. Investors open *Withdraw*, choose **Yield-Only Partial** and confirm *Redeem Accrued Yield*: only the yield-equivalent shares are burned. The **Full Principal (Guardrail Test)** mode shows the on-ledger rejection while capital is on loan.

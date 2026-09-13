@@ -41,6 +41,11 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAlreadyMultisig, setIsAlreadyMultisig] = useState(false)
   const [enableMultisig, setEnableMultisig] = useState(true)
+  // null while loading; false = this address is not in the registry yet (first connection).
+  // First connection only asks for the role: identity and 2-of-2 activation come later, from
+  // the profile (navbar pill / Issue tab) or, for investors, from the withdraw modal.
+  const [existsInDb, setExistsInDb] = useState<boolean | null>(null)
+  const isFirstConnection = existsInDb !== true
 
   // Load existing profile from SQLite DB and on-chain status
   useEffect(() => {
@@ -49,6 +54,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
     chainClient.listAccounts().then((accounts) => {
       const hit = accounts.find((a) => a.address === currentAccount.address)
       setIsBroker(hit?.role === 'broker')
+      setExistsInDb(!!hit)
       if (hit) {
         setAccountRole(hit.role || 'unassigned')
         if (hit.firstName) setFirstName(hit.firstName)
@@ -95,7 +101,8 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
 
       // 2. If borrower or lender and requested multisig, trigger multisig configuration
       let txHash: string | undefined
-      if ((accountRole === 'borrower' || accountRole === 'lender') && enableMultisig && !isAlreadyMultisig) {
+      const wantsMultisig = !isFirstConnection && enableMultisig
+      if ((accountRole === 'borrower' || accountRole === 'lender') && wantsMultisig && !isAlreadyMultisig) {
         try {
           const res = await chainClient.setupMultisig(currentAccount.address)
           if (res.success) txHash = res.txHash
@@ -110,7 +117,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         company: company.trim() || (accountRole === 'borrower' ? 'Corporate Issuer' : accountRole === 'broker' ? 'BSA Structurer' : 'Asset Management'),
         address: currentAccount.address,
         onboardingCompleted: true,
-        multisigActive: isAlreadyMultisig || ((accountRole === 'borrower' || accountRole === 'lender') && enableMultisig),
+        multisigActive: isAlreadyMultisig || ((accountRole === 'borrower' || accountRole === 'lender') && wantsMultisig),
         configuredAt: new Date().toISOString(),
         txHash,
       }
@@ -160,12 +167,14 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
           <div>
             <h3 className="card-title" style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span>{isBroker ? '🏛️' : '⚙️'}</span>
-              <span>{isBroker ? 'Espace Administration — Courtier Plateforme' : 'Gestion Personnelle du Rôle & Profil'}</span>
+              <span>{isBroker ? 'Espace Administration — Courtier Plateforme' : isFirstConnection ? 'Bienvenue — choisissez votre rôle' : 'Gestion Personnelle du Rôle & Profil'}</span>
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {isBroker
                 ? 'Ce compte est le Courtier fixe de la plateforme — son rôle ne peut pas être modifié.'
-                : 'Vous devez choisir le rôle (Emprunteur ou Prêteur) de ce compte'}
+                : isFirstConnection
+                  ? 'Une seule question pour commencer : ce compte est-il un émetteur ou un investisseur ?'
+                  : 'Modifiez le rôle, l\'identité affichée et la gouvernance 2-sur-2 de ce compte'}
             </span>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -237,6 +246,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
             </div>
           </div>
 
+          {!isFirstConnection && (<>
           {/* Prénom */}
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
@@ -295,9 +305,16 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               onChange={(e) => setCompany(e.target.value)}
             />
           </div>
+          </>)}
 
           {/* Encadré d'explication Multisig si Emprunteur ou Prêteur */}
-          {(accountRole === 'borrower' || accountRole === 'lender') && (
+          {isFirstConnection && (
+            <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+              Vous pourrez renseigner votre identité et activer la gouvernance multisig 2-sur-2 plus tard, depuis votre profil.
+            </p>
+          )}
+
+          {!isFirstConnection && (accountRole === 'borrower' || accountRole === 'lender') && (
             <div
               style={{
                 background: 'var(--bg-surface-elevated)',
@@ -362,7 +379,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               ) : (
                 <>
                   <span>✓</span>
-                  <span>Enregistrer les Modifications</span>
+                  <span>{isFirstConnection ? 'Continuer' : 'Enregistrer les Modifications'}</span>
                 </>
               )}
             </button>

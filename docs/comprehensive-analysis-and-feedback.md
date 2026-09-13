@@ -101,7 +101,7 @@ Contrairement aux architectures naïves qui écrivent tous les comptes en dur da
 
 Pour éviter d'imposer des profils pré-formatés ("Alexandre CFO", "Sophie Investor") :
 - `npm run create-accounts N` génère de simples **comptes aléatoires neutres** financés à 1 000 XRP via le faucet Devnet, listés dans `created_accounts.json` / `.txt` (hors base SQLite). L'utilisateur importe la seed dans un vrai wallet (GemWallet, Crossmark, Xaman) et se connecte via `xrpl-connect`.
-- À la première connexion, une modale d'onboarding obligatoire lui fait choisir **🏢 Emprunteur** ou **💰 Prêteur** (pas d'état "libre" persistant), renseigner son identité, et activer à la demande la gouvernance Multisig 2-sur-2 (`SignerListSet` + `asfDisableMaster`, signés par son propre wallet). Une paire de clés opérateur dédiée (`borrowerOp`) lui est alors allouée côté backend (voir `docs/borrower-lender-custody.md` pour la raison de ce compromis).
+- À la première connexion, une modale ne pose qu'une question : **🏢 Emprunteur** ou **💰 Prêteur** (pas d'état "libre" persistant). L'identité affichée et la gouvernance Multisig 2-sur-2 (`SignerListSet` + `asfDisableMaster`, signés par son propre wallet) se configurent ensuite depuis le profil, ou depuis la modale de retrait pour un investisseur. Une paire de clés opérateur dédiée (`borrowerOp`) lui est alors allouée côté backend (voir `docs/borrower-lender-custody.md` pour la raison de ce compromis).
 
 ---
 
