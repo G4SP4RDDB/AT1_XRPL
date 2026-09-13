@@ -323,7 +323,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 
 - **No native time condition on multisig.** The call-date rule is enforced by the daemon's policy, not by the ledger (§3). Proposed fixes in the feedback report: `SignAfter` on `SignerEntry`, or a `TokenEscrow` composition.
 - **Operator keys are backend-held** because no wallet adapter can produce multisig or `LoanSet` counterparty signatures (§4).
-- **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so a wallet that autofills and submits on its own nodes may refuse to sign. A per-network CAIP id (or a way to pass the node URL in the pairing) is the fix we would propose.
+- **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so the app has to pick a chain the wallet approved and encode the signed transaction itself (`signPrepared`). It works, but every signature is a phone round trip, the session does not survive a reload, and Xaman cannot show this network's balances: fine for the demo, slow for development.
 - **The order book is off-chain.** Bids and asks are frontend state; nothing is on-ledger until a deposit, and a bid's funding window has no on-chain effect (a background scan settles stalled bonds at the deadline).
 - **No native "this vault lends only to X".** Neither `VaultCreate` nor `LoanBrokerSet` can restrict the loan counterparty; we record the issuer in the vault's `Data` and enforce it in the shim and the enforcer. A `LoanBrokerSet.AllowedCounterparty` (or a Credential requirement on borrowers) would make it a ledger rule.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
@@ -341,7 +341,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 | Developer feedback report (max 3 pages, 40 % of the score) | [`FEEDBACK_REPORT.md`](FEEDBACK_REPORT.md) |
 | Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md) |
 | Verified on-chain transactions | §6 above (17 steps, 13 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
-| Raw friction log (29 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
+| Raw friction log (30 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
 | Full analysis compendium (architecture evolution, Track 1 vs 2, custody decisions, every friction with repro) | [`docs/comprehensive-analysis-and-feedback.md`](docs/comprehensive-analysis-and-feedback.md) |
 | DevEx hook | `xrpl-devex-hook/` installed and active on every developer machine |
 
