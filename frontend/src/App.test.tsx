@@ -43,9 +43,11 @@ describe('App', () => {
       })
     })
 
+    // The connect handler reads the live balance over a real devnet WebSocket (nothing is mocked
+    // here), so give it network time instead of the 1 s default.
     await waitFor(() => {
       expect(screen.getByText(/Disconnect/i)).toBeInTheDocument()
-    })
+    }, { timeout: 15_000 })
 
     // Every screen is browsable; only the platform broker gets the Broker Hub. The order-book
     // (LP bid matching) layer was removed entirely — funding a bond is now a direct action from
@@ -55,5 +57,5 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: /Issue Bond/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /My Positions/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Broker Hub/i })).not.toBeInTheDocument()
-  })
+  }, 20_000)
 })
