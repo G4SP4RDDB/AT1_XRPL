@@ -254,11 +254,22 @@ Multisig is not set up by any script: each issuer or investor activates it from 
 1. **Connect** — *Connect Wallet* (top right) → scan the WalletConnect QR code (Xaman or any WalletConnect wallet). This is the only connection method, the platform broker included. First connection asks only whether you are an Issuer or an Investor; the profile later adds your institution name.
    Everyone can browse every screen; only the platform broker gets the *Broker Hub*. Actions are role-gated: only issuers can post a bond, only investors can fund one (`frontend/src/lib/roles.ts`).
 2. **Issue (issuer)** — first click **Activer 2/2** on the Issue tab (your wallet signs `SignerListSet` + `AccountSet`; needed once, so the enforcer can co-sign your repayments), then post an ask with amount, annual yield and call date (a datetime; **⚡ Demo: 3-minute bond** fills in call date = now + 3 min and the ledger's maximum rate, 100 %/yr). The platform creates the vault and broker objects on the spot. Rates are annualised on the ledger, so a 3-minute bond earns a few thousand drops; the UI shows yield in drops and PPS to 9 decimals so the movement is visible.
-3. **Invest (investor)** — in *Finance Bonds*, click *Fund* on an open bond, enter an amount (the modal shows the remaining capacity from the live vault state); your wallet signs the `VaultDeposit` and you receive MPT shares. The deposit that fills the vault originates the loan automatically.
+3. **Invest (investor)** — in *Finance Bonds*, click *Fund* on an open bond, enter an amount (the modal shows the remaining capacity from the live vault state); your wallet signs the `VaultDeposit` and you receive MPT shares. Several investors can share one bond (two lenders funding 500 XRP each of a 1,000 XRP ask, for instance): shares and yield are pro rata, and the deposit that fills the vault originates the loan automatically, earlier ones report "waiting: funded 500 / 1000".
 4. **Coupons and harvest** — the issuer pays coupons (`LoanPay`); PPS rises. Investors open *Withdraw*, choose **Yield-Only Partial** and confirm *Redeem Accrued Yield*: only the yield-equivalent shares are burned. The **Full Principal (Guardrail Test)** mode shows the on-ledger rejection while capital is on loan.
 5. **Principal and the call date** — the issuer has three buttons on *My Positions*: *Pay interest* (the next instalment), *Repay principal (partial)* and *Call the bond (repay all)*. Before the call date the two principal buttons are refused by the enforcer (`blocked:before-call-date`) and principal withdrawals fail on-ledger. From the call date on, repaying is the issuer's choice; once called, the vault is liquid and investors redeem principal plus yield.
 
 ---
+
+### Demo script (3-minute bond, two investors)
+
+1. Issuer (test account #1): connect, choose *Issuer*, **Activer 2/2** (two signatures), then *Issue Bond* → **⚡ Demo: 3-minute bond** → Issue.
+2. Investor A (account #2): choose *Investor*, *Finance Bonds* → *Fund* 500 XRP (signature). Toast: origination waiting, 500 / 1000.
+3. Investor B (account #3): *Fund* the remaining 500 (signature). Toast: `LoanSet` originated automatically.
+4. Issuer, *My Positions*: *Pay interest* (PPS rises), then *Repay principal (partial)* → refused by the enforcer, `blocked:before-call-date`. Do this right after origination, before the 3 minutes elapse.
+5. After the call date: *Call the bond (repay all)* → `tesSUCCESS`, close premium to the vault.
+6. Investors A and B: *Withdraw* → *Yield-Only Partial*, then *Full Principal*.
+
+Rates are annualised on the ledger (max 100 %/yr), so the yield of a 3-minute bond is a few thousand drops: the UI shows drops and PPS to 9 decimals.
 
 ## 9. Tests and verification
 
