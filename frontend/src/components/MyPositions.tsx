@@ -131,8 +131,8 @@ export const MyPositions: FC = () => {
                       Coupon Rate: {vault.loanInterestRate}% | Call: {vault.callDate}
                     </span>
                   </div>
-                  <span className={`card-tag ${vault.loanStatus === 'repaid' ? 'tag-active' : 'tag-locked'}`}>
-                    {vault.loanStatus === 'repaid' ? 'Repaid' : 'Active (Locked)'}
+                  <span className={`card-tag ${vault.loanStatus === 'repaid' ? 'tag-active' : vault.loan ? 'tag-locked' : 'tag-matched'}`}>
+                    {vault.loanStatus === 'repaid' ? 'Repaid' : vault.loan ? 'Active (Locked)' : 'Awaiting Funding'}
                   </span>
                 </div>
 
@@ -147,24 +147,31 @@ export const MyPositions: FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    style={{ flex: 1 }}
-                    onClick={() => setSelectedVaultForCoupon(vault)}
-                  >
-                    Pay Coupon (LoanPay)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ flex: 1 }}
-                    onClick={() => setSelectedVaultForRepay(vault)}
-                  >
-                    Final Repayment (Multisig)
-                  </button>
-                </div>
+                {vault.loan ? (
+                  <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ flex: 1 }}
+                      onClick={() => setSelectedVaultForCoupon(vault)}
+                    >
+                      Pay Coupon (LoanPay)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ flex: 1 }}
+                      onClick={() => setSelectedVaultForRepay(vault)}
+                    >
+                      Final Repayment (Multisig)
+                    </button>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '1rem' }}>
+                    No loan originated yet — this tranche is still awaiting funding. Coupon payments and
+                    final repayment become available once a lender's deposit fills it.
+                  </p>
+                )}
               </div>
             ))}
           </div>
