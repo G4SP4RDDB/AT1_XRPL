@@ -6,7 +6,7 @@ import { chainClient } from '@/lib/chainClient'
 import { DURATION_OPTIONS, expiresAtFromNow } from '@/lib/durations'
 import { notifyTx } from '@/lib/notifications'
 import { useBorrowerProfile, getStoredBorrowerProfile, saveStoredBorrowerProfile } from '@/lib/borrowerProfile'
-import { toLocalInputValue } from '@/lib/format'
+import { toLocalInputValue, previewLoanTerms, fmtXrp } from '@/lib/format'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -23,6 +23,10 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
   const [durationMs, setDurationMs] = useState<number>(DURATION_OPTIONS[3].ms)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  // Live preview of what the ledger will charge: annual rate prorated to each instalment.
+  const preview = amount && yieldRate && callDate && Number(amount) > 0 && Number(yieldRate) > 0 && !Number.isNaN(new Date(callDate).getTime())
+    ? previewLoanTerms(Number(amount), Number(yieldRate), new Date(callDate))
+    : null
   // On-chain truth for the 2-of-2 governance (master key disabled), null while loading.
   const [multisigActive, setMultisigActive] = useState<boolean | null>(null)
   const [isActivatingMultisig, setIsActivatingMultisig] = useState(false)
@@ -225,6 +229,22 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
             </button>
             <span>Call date = now + 3 min, rate = 100 %/yr (the ledger's maximum). Interest is annualised, so expect a few thousand drops of yield, not XRP.</span>
           </div>
+
+          {preview && (
+            <div className="card" style={{ padding: '0.9rem 1.1rem', marginBottom: '1rem', background: 'var(--bg-surface-elevated)', fontSize: '0.82rem' }}>
+              <div style={{ fontWeight: 700, marginBottom: '0.4rem' }}>What the ledger will charge (annual rate prorated to each instalment)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.25rem 1rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Annual rate → per minute</span>
+                <span style={{ textAlign: 'right' }}>{Number(yieldRate)} %/yr → {preview.perMinutePct.toExponential(3)} %/min</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Schedule</span>
+                <span style={{ textAlign: 'right' }}>{preview.instalments} instalments every {preview.intervalSec} s, last one at the call date</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Each instalment</span>
+                <span style={{ textAlign: 'right' }}>{preview.principalPerInstalmentXrp.toLocaleString(undefined, { maximumFractionDigits: 2 })} XRP principal + <strong style={{ color: 'var(--accent-green)' }}>{fmtXrp(preview.interestPerInstalmentXrp)}</strong> interest</span>
+                <span style={{ color: 'var(--text-secondary)' }}>Total interest to investors</span>
+                <span style={{ textAlign: 'right', color: 'var(--accent-green)', fontWeight: 700 }}>{fmtXrp(preview.totalInterestXrp)}</span>
+              </div>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Bidding Window</label>
