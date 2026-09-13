@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react'
 import type { FC } from 'react'
 import { useWallet, type AdapterId } from '@/lib/wallet'
 import { walletManager } from '@/lib/xrplConnect'
-import { chainClient } from '@/lib/chainClient'
-import type { DbAccount } from '@shared/types'
 
 interface ConnectWalletModalProps {
   isOpen: boolean
@@ -17,31 +15,11 @@ const ADAPTERS = [
 
 export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose }) => {
   const { connectAdapter, isConnected } = useWallet()
-  const [activeTab, setActiveTab] = useState<'wallet' | 'registered'>('wallet')
-
-  const [dbAccounts, setDbAccounts] = useState<DbAccount[]>([])
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
 
   const [connectingId, setConnectingId] = useState<string | null>(null)
   const [pairingUri, setPairingUri] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  const loadAccountsFromDb = async () => {
-    setIsLoadingAccounts(true)
-    try {
-      const accounts = await chainClient.listAccounts()
-      setDbAccounts(accounts || [])
-    } catch (err) {
-      console.warn('Could not load accounts from DB:', err)
-    } finally {
-      setIsLoadingAccounts(false)
-    }
-  }
-
-  useEffect(() => {
-    if (isOpen && activeTab === 'registered') loadAccountsFromDb()
-  }, [isOpen, activeTab])
 
   useEffect(() => {
     if (isConnected && isOpen) onClose()
@@ -97,26 +75,6 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${activeTab === 'wallet' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('wallet')}
-            style={{ borderRadius: '8px' }}
-          >
-            🔐 Wallet réel
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${activeTab === 'registered' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('registered')}
-            style={{ borderRadius: '8px' }}
-          >
-            👥 Comptes enregistrés ({dbAccounts.length || '...'})
-          </button>
-        </div>
-
-        {activeTab === 'wallet' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {errorMsg && (
               <div className="alert alert-danger" style={{ fontSize: '0.85rem' }}>
@@ -184,69 +142,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
               Vous choisirez ensuite votre rôle au premier lancement. Le courtier plateforme se connecte de la même
               façon, avec le wallet qui détient l'adresse broker.
             </div>
-
           </div>
-        )}
-
-        {activeTab === 'registered' && (
-          <div>
-            {isLoadingAccounts ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
-                <span>⏳ Chargement des comptes depuis la base SQLite...</span>
-              </div>
-            ) : dbAccounts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--bg-surface-elevated)', borderRadius: '12px', border: '1px dashed var(--border-subtle)' }}>
-                <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📭</div>
-                <div style={{ fontWeight: 600 }}>Aucun compte enregistré pour le moment</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.35rem' }}>
-                  Un compte apparaît ici après sa première connexion réelle et son choix de rôle.
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
-                {dbAccounts.map((acc) => {
-                  const isBorrower = acc.role === 'borrower'
-                  const isLender = acc.role === 'lender'
-                  return (
-                    <div
-                      key={acc.address}
-                      style={{ padding: '0.75rem 1rem', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: '10px' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span
-                          style={{
-                            fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '6px',
-                            background: isBorrower ? 'rgba(37, 99, 235, 0.15)' : isLender ? 'rgba(16, 185, 129, 0.15)' : 'rgba(147, 51, 234, 0.15)',
-                            color: isBorrower ? 'var(--accent-blue)' : isLender ? 'var(--accent-green)' : '#9333ea',
-                          }}
-                        >
-                          {isBorrower ? '🏢 EMPRUNTEUR' : isLender ? '💰 PRÊTEUR' : '🏛️ COURTIER'}
-                        </span>
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>
-                          {acc.firstName ? `${acc.firstName} ${acc.userRole ? `(${acc.userRole})` : ''}` : acc.name}
-                        </span>
-                        {acc.multisigActive === 1 && (
-                          <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                            2/2 MULTISIG
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{acc.address}</div>
-                      {acc.company && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          Société : <strong>{acc.company}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.75rem', textAlign: 'center' }}>
-              Lecture seule — connectez le wallet réel correspondant depuis l'onglet "Wallet réel" pour agir en tant que ce compte.
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
