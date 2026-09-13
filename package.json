@@ -7,7 +7,7 @@
     "check": "tsx scripts/check-devnet.ts",
     "fund": "tsx scripts/fund-accounts.ts",
     "fund:setup": "tsx scripts/fund-and-setup.ts",
-    "serve": "RESET_DATA_ON_START=1 tsx src/chain/server.ts",
+    "serve": "tsx src/chain/server.ts",
     "demo": "tsx scripts/demo-flow.ts",
     "balances": "tsx scripts/balances.ts",
     "spike": "tsx scripts/spike-lifecycle.ts",

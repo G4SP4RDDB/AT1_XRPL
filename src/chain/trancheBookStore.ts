@@ -14,12 +14,6 @@ import type { Bid, Ask } from "../../shared/types.js";
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "order-book.json");
 
-// RESET_DATA_ON_START (set by `npm run serve`, see src/db/index.ts) — wipe so readStore()
-// starts from an empty { tranches: {}, bids: {} } instead of resuming a prior run's file.
-if (process.env.RESET_DATA_ON_START && fs.existsSync(STORE_PATH)) {
-  fs.rmSync(STORE_PATH);
-}
-
 interface Store {
   tranches: Record<string, Bid>;
   bids: Record<string, Ask>;

@@ -25,15 +25,6 @@ if (!fs.existsSync(DATA_DIR)) {
 
 const DB_PATH = path.join(DATA_DIR, "accounts.db");
 
-// RESET_DATA_ON_START is set by `npm run serve` so every infra restart boots off a
-// fresh, empty, freshly-initialized store instead of resuming whatever a previous
-// run left on disk (hackathon demo convenience, not a prod pattern).
-if (process.env.RESET_DATA_ON_START) {
-  for (const p of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
-    if (fs.existsSync(p)) fs.rmSync(p);
-  }
-}
-
 const db = new Database(DB_PATH);
 
 // Check if migration is needed to support 'broker' role

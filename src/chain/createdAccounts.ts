@@ -14,10 +14,6 @@ const ROOT_TXT_FILE = path.resolve(process.cwd(), "created_accounts.txt");
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const DATA_JSON_FILE = path.resolve(DATA_DIR, "created_accounts.json");
 
-// Not wiped on RESET_DATA_ON_START (unlike the SQLite DB, see src/db/index.ts): these files are
-// written by `npm run fund:setup` right before the shim starts, and the accounts they list still
-// exist on the devnet. fund:setup itself calls wipeCreatedAccounts() before regenerating them.
-
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
