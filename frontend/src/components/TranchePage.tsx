@@ -88,7 +88,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
     setIsSubmittingBid(true)
     setFeedback(null)
     try {
-      await chainClient.createBid({
+      const placed = await chainClient.createBid({
         lenderAddress: currentAccount.address,
         lenderName,
         amount: bidAmount,
@@ -97,7 +97,11 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
         expiresAt: expiresAtFromNow(bidDurationMs),
       })
       setBidAmount('')
-      setFeedback({ kind: 'success', text: 'Bid placed — locked pending the borrower\'s decision. Off-chain only until accepted and funded.' })
+      setFeedback(
+        placed.status === 'accepted'
+          ? { kind: 'success', text: 'Bid matched the ask\'s rate — auto-accepted immediately. You can fund it now.' }
+          : { kind: 'success', text: 'Bid placed — above the ask\'s ceiling rate, so it needs the borrower\'s explicit acceptance before it can be funded.' }
+      )
       refresh()
     } catch (err: any) {
       setFeedback({ kind: 'danger', text: err.message || 'Failed to place bid' })
@@ -297,7 +301,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                       onChange={(e) => setBidRate(e.target.value)}
                       min="0"
                       step="0.1"
-                      placeholder={`Rate % (default ${ask.yieldRate})`}
+                      placeholder={`Rate % (ceiling ${ask.yieldRate})`}
                       disabled={askExpired || rateIsPinned}
                       style={{ maxWidth: '9rem' }}
                     />
@@ -321,8 +325,8 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                     {askExpired
                       ? "This tranche's bidding window has closed."
                       : rateIsPinned
-                        ? `This tranche's rate is locked at ${ask.yieldRate}% — bids at a different rate will be auto-declined.`
-                        : "Off-chain and locked pending the borrower's decision — nothing on-chain until accepted and funded."}
+                        ? `This tranche's rate is locked at ${ask.yieldRate}% — bids at or below it auto-accept instantly; above it, they wait for the borrower.`
+                        : `${ask.yieldRate}% is the borrower's ceiling rate. Bidding at or below it auto-accepts instantly, like crossing an order book; asking for more needs the borrower's explicit approval.`}
                   </p>
                 </form>
 

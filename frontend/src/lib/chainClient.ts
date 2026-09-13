@@ -353,11 +353,14 @@ export class ChainBackendClient {
     ;(newBid as any).targetYield = bidInput.targetYield
     ;(newBid as any).expiresAt = bidInput.expiresAt
 
-    await callBookRoute('createBid', [newBid])
+    // The backend may auto-accept this bid immediately if it crosses the ask's ceiling rate
+    // (see trancheBookStore.createBid) — use whatever status it actually comes back with,
+    // not the optimistic 'pending' set above.
+    const saved = await callBookRoute<Bid>('createBid', [newBid])
 
-    this.bids.unshift(newBid)
+    this.bids.unshift(saved)
     this.notify()
-    return newBid
+    return saved
   }
 
   /** Borrower accepts or declines a pending bid. Accepting the first bid on a tranche pins

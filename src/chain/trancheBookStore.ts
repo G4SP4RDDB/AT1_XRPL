@@ -8,6 +8,15 @@
 // at the tranche id) — "pending" until the borrower accepts or declines it, then "deposited"
 // once the accepted LP actually funds (real VaultDeposit).
 //
+// Ask.yieldRate is a ceiling, not a fixed rate: it's what the borrower has said they'll pay
+// AT MOST. A bid asking for that rate or better (lower) already fits the borrower's own
+// declared terms, so it auto-accepts immediately on submission — like an order crossing the
+// book in a real exchange — first bid to clear the ceiling wins and pins the tranche's rate
+// to its own targetYield; later bids are only auto-accepted if they match that pinned rate
+// exactly. A bid asking for MORE than the ceiling (or than the pinned rate, once one exists)
+// stays "pending": it falls outside what the borrower already agreed to, so it needs an
+// explicit accept/decline instead of executing on its own.
+//
 // Accepting a bid is a real state transition now (it pins the tranche's rate and can decline
 // other bids), so read-modify-write cycles go through withLock() below: a promise-chain mutex
 // serializing every store mutation. All the fs calls here are synchronous with no `await`
@@ -69,13 +78,53 @@ export async function listBids(askId?: string): Promise<Bid[]> {
   return askId ? all.filter((b) => b.matchedAskId === askId) : all;
 }
 
+/** True once some bid on this ask has already been accepted — from that point on, the ask's
+ *  own yieldRate IS the pinned rate (accept() mutates it in place on first acceptance). */
+function hasAcceptedBid(store: Store, askId: string): boolean {
+  return Object.values(store.bids).some((b) => b.matchedAskId === askId && b.status === "accepted");
+}
+
+/** Core of acceptance, factored out so both the manual accept route and the auto-accept-on-
+ *  crossing path in createBid() share one rule set. Mutates `store` in place; caller writes it. */
+function acceptLocked(store: Store, bid: Bid, ask: Ask): void {
+  if (!hasAcceptedBid(store, ask.id)) {
+    if (bid.targetYield != null) ask.yieldRate = bid.targetYield;
+    store.tranches[ask.id] = ask;
+  }
+  bid.status = "accepted";
+  store.bids[bid.id] = bid;
+
+  for (const other of Object.values(store.bids)) {
+    if (other.id === bid.id || other.matchedAskId !== ask.id || other.status !== "pending") continue;
+    if (other.targetYield != null && other.targetYield !== ask.yieldRate) {
+      other.status = "declined";
+      store.bids[other.id] = other;
+    }
+  }
+}
+
+/** LP places a bid. If it asks for the ask's ceiling rate or better (lower), it crosses the
+ *  book and auto-accepts immediately — the borrower already agreed to pay at least that much
+ *  by posting the ask, so there's nothing left to decide. Otherwise it waits as "pending" for
+ *  an explicit accept/decline (see the module doc comment above). */
 export async function createBid(bid: Bid): Promise<Bid> {
   if (!bid?.id) throw new Error("bid.id is required");
   if (!bid?.matchedAskId) throw new Error("bid.matchedAskId (target tranche id) is required");
-  const store = readStore();
-  store.bids[bid.id] = bid;
-  writeStore(store);
-  return bid;
+  return withLock(() => {
+    const store = readStore();
+    const ask = store.tranches[bid.matchedAskId!];
+    const crossesTheBook = ask && bid.targetYield != null && bid.targetYield <= ask.yieldRate;
+
+    if (ask && crossesTheBook) {
+      acceptLocked(store, bid, ask);
+    } else {
+      bid.status = bid.status ?? "pending";
+      store.bids[bid.id] = bid;
+    }
+
+    writeStore(store);
+    return bid;
+  });
 }
 
 export async function updateBidStatus(id: string, status: Bid["status"]): Promise<Bid> {
@@ -88,9 +137,11 @@ export async function updateBidStatus(id: string, status: Bid["status"]): Promis
   return existing;
 }
 
-/** Borrower accepts a pending bid: locks it in (off-chain only — see shared/types.ts's Bid
- *  doc comment), pins the tranche's rate to this bid's targetYield on first acceptance, and
- *  auto-declines any other still-pending bid on the same tranche whose rate no longer matches. */
+/** Borrower accepts a pending bid that asked for MORE than the ask's ceiling (or the already-
+ *  pinned rate) — the one case createBid() couldn't already settle on its own. Locks it in
+ *  (off-chain only — see shared/types.ts's Bid doc comment), pins the tranche's rate to this
+ *  bid's targetYield on first acceptance, and auto-declines any other still-pending bid on the
+ *  same tranche whose rate no longer matches. */
 export async function acceptBid(bidId: string): Promise<Bid> {
   return withLock(() => {
     const store = readStore();
@@ -102,25 +153,11 @@ export async function acceptBid(bidId: string): Promise<Bid> {
     const ask = store.tranches[askId];
     if (!ask) throw new Error(`tranche ${askId} not found`);
 
-    const alreadyAccepted = Object.values(store.bids).some((b) => b.matchedAskId === askId && b.status === "accepted");
-    if (!alreadyAccepted) {
-      if (bid.targetYield != null) ask.yieldRate = bid.targetYield;
-      store.tranches[askId] = ask;
-    } else if (bid.targetYield != null && bid.targetYield !== ask.yieldRate) {
+    if (hasAcceptedBid(store, askId) && bid.targetYield != null && bid.targetYield !== ask.yieldRate) {
       throw new Error(`bid ${bidId} rate ${bid.targetYield}% does not match the tranche's already-pinned rate ${ask.yieldRate}%`);
     }
 
-    bid.status = "accepted";
-    store.bids[bidId] = bid;
-
-    for (const other of Object.values(store.bids)) {
-      if (other.id === bidId || other.matchedAskId !== askId || other.status !== "pending") continue;
-      if (other.targetYield != null && other.targetYield !== ask.yieldRate) {
-        other.status = "declined";
-        store.bids[other.id] = other;
-      }
-    }
-
+    acceptLocked(store, bid, ask);
     writeStore(store);
     return bid;
   });
