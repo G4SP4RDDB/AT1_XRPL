@@ -72,7 +72,7 @@ Dans notre implémentation, le compte de l'emprunteur corporate (`borrower`) a s
    Le frontend ne reçoit, ne stocke et ne manipule **que des adresses publiques**, jamais de secret cryptographique.
 2. **Architecture Cible Non-Custodiale (Production)** :
    Dans une infrastructure de production :
-   - La clé `borrowerOp` réside **uniquement sur le matériel du client** (Hardware Wallet Ledger, extension Crossmark, ou coffre-fort d'entreprise HSM).
+   - La clé `borrowerOp` réside **uniquement sur le matériel du client** (wallet WalletConnect supportant `xrpl_signTransactionFor`, ou HSM d'entreprise) — à condition qu'un adaptateur sache produire la `CounterpartySignature` de `LoanSet`, qui utilise des préfixes de signature dédiés (voir friction #19).
    - Le client prépare la transaction et signe **localement** dans son navigateur $\rightarrow$ cela génère un fragment `SignerEntry` (une signature cryptographique publique).
    - Seule la signature est transmise à l'Enforcer, jamais la clé privée.
 
@@ -100,7 +100,7 @@ Contrairement aux architectures naïves qui écrivent tous les comptes en dur da
 ### 3.4 Création de Comptes Aléatoires & Attribution Personnelle des Rôles
 
 Pour éviter d'imposer des profils pré-formatés ("Alexandre CFO", "Sophie Investor") :
-- `npm run create-accounts N` génère de simples **comptes aléatoires neutres** financés à 1 000 XRP via le faucet Devnet, listés dans `created_accounts.json` / `.txt` (hors base SQLite). L'utilisateur importe la seed dans un vrai wallet (GemWallet, Crossmark, Xaman) et se connecte via `xrpl-connect`.
+- `npm run create-accounts N` génère de simples **comptes aléatoires neutres** financés à 1 000 XRP via le faucet Devnet, listés dans `created_accounts.json` / `.txt` (hors base SQLite). L'utilisateur importe la seed dans un wallet WalletConnect (Xaman) et se connecte via `xrpl-connect` — seul moyen de connexion.
 - À la première connexion, une modale ne pose qu'une question : **🏢 Emprunteur** ou **💰 Prêteur** (pas d'état "libre" persistant). L'identité affichée et la gouvernance Multisig 2-sur-2 (`SignerListSet` + `asfDisableMaster`, signés par son propre wallet) se configurent ensuite depuis le profil, ou depuis la modale de retrait pour un investisseur. Une paire de clés opérateur dédiée (`borrowerOp`) lui est alors allouée côté backend (voir `docs/borrower-lender-custody.md` pour la raison de ce compromis).
 
 ---
@@ -257,7 +257,7 @@ Chaque friction est consignée selon le standard rigoureux du hackathon : Catég
 - **Sévérité** : **Haute (Sécurité)**.
 - **Proposition de fix** : 
   1. Purge et sanitization systématique de tous les retours d'API backend (`sanitizeAccount`).
-  2. Adoption du standard de signature locale décentralisée : signature dans le wallet de l'utilisateur (Xaman / Crossmark via `xrpl-connect`) sans que la clé ne quitte son navigateur.
+  2. Adoption du standard de signature locale décentralisée : signature dans le wallet de l'utilisateur (Xaman via WalletConnect) sans que la clé ne quitte son appareil.
 
 ---
 

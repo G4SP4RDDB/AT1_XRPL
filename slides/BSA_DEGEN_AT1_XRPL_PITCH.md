@@ -14,7 +14,7 @@
 
 - **What we built**: An end-to-end on-chain issuance, investment, and risk-management platform for **Additional Tier 1 (AT1) Subordinated Debt**.
 - **The primitives**: Native Open-Ended Single Asset Vault (**XLS-65**) paired with Lending Protocol V1 (**XLS-66**), secured by an autonomous **2-of-2 Multisig Enforcer** and **MPT Shares**.
-- **Live on Devnet**: 16 verified on-chain transactions, 4 native protocol guardrails demonstrated, zero-custody architecture.
+- **Live on Devnet**: 17 verified lifecycle steps, 4 native protocol guardrails + 2 policy refusals demonstrated, wallet-signed investors and issuers.
 
 > *Speaker Note (30s)*: "Hello everyone, we are team BSA Degen. Today we're presenting AT1 on XRPL: bringing institutional Additional Tier 1 perpetual bonds onto the XRP Ledger using XLS-65 and XLS-66."
 
@@ -41,7 +41,7 @@
 ### Elegance Over Complexity: Dynamic Single Asset Vaults
 
 ```text
-[Corporate Borrower] ──(Emits Debt Bid)──> [VaultCreate (XLS-65)] + [LoanBrokerSet (XLS-66)]
+[Corporate Borrower] ──(Posts Debt Ask)──> [VaultCreate (XLS-65)] + [LoanBrokerSet (XLS-66)]
                                                       │
 [Investors / Lenders] ──(Indicative Match)──> [VaultDeposit] ──> [Mint MPT Shares @ PPS]
                                                       │
@@ -52,7 +52,7 @@
 - **Indicative Matching Layer**: Off-chain order matching board gives borrowers and lenders pre-execution price discovery without ledger clutter.
 - **Atomicity**: Loan origination and capital disbursement occur in a single atomic transaction (`LoanSet`).
 
-> *Speaker Note (25s)*: "When a borrower posts a debt bid, our backend instantly deploys an isolated open-ended vault. Lenders discover the terms on an indicative board, deposit funds, and receive MPT shares. Principal disburses atomically."
+> *Speaker Note (25s)*: "When a borrower posts a debt ask, our backend instantly deploys an isolated open-ended vault. Lenders discover the terms on an indicative board, deposit funds, and receive MPT shares. Principal disburses atomically."
 
 ---
 
@@ -103,7 +103,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Generates dedicated per-borrower operator keys (`borrowerOp`).
 - **Cryptographic Independence**:
   - No two borrowers ever share signing credentials.
-  - Lenders and borrowers connect their own wallets via `xrpl-connect` (Xaman / GemWallet / Crossmark); the backend only ever learns their public address (prepare → sign in wallet → submit).
+  - Lenders and borrowers connect their own wallet over WalletConnect (Xaman), the only connection method; the backend only ever learns their public address (prepare → sign in wallet → submit).
 
 > *Speaker Note (25s)*: "In institutional finance, brokers must not custody customer keys. Our backend only holds broker keys. All borrower and lender profiles are dynamically managed in an isolated database with dedicated signing operators."
 
@@ -111,21 +111,21 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
 
 ## Slide 7: Live Demo & Verified On-Chain Transactions
 
-### 16 Verified Lifecycle Transactions on Devnet
+### 17 Verified Lifecycle Steps on Devnet
 
 | Step | Transaction | Result Code | On-Chain State Impact |
 |---|---|---|---|
 | **1-3** | `VaultCreate` + `LoanBrokerSet` + `LoanBrokerCoverDeposit` | `tesSUCCESS` | Vault deployed, first-loss buffer funded |
 | **4** | `VaultDeposit` (lender-signed) | `tesSUCCESS` | 200 XRP deposited, MPT shares minted at PPS 1.0 |
 | **5** | `Payment` signed by the disabled master key | `tefMASTER_DISABLED` | Borrower master key is dead on-ledger |
-| **6** | `LoanSet` (broker + 2-of-2 counterparty signature) | `tesSUCCESS` | Principal atomically disbursed to borrower |
-| **7-8** | `LoanManage` impair (not yet due) / full `VaultWithdraw` | `tecTOO_SOON` / `tecINSUFFICIENT_FUNDS` | Guardrails hold (see next slide) |
-| **9-10** | Early close before call date / `LoanPay` with 1 of 2 signatures | `blocked:before-call-date` / `tefBAD_QUORUM` | Enforcer + quorum both required |
-| **11-12** | `LoanManage` impair (overdue) then unimpair | `tesSUCCESS` | `lossUnrealized` rises, PPS drops, then restored |
-| **13** | `LoanPay` coupon (late-flagged) | `tesSUCCESS` | Interest paid, PPS rises |
-| **14** | `VaultWithdraw` (yield-only) | `tesSUCCESS` | Yield shares redeemed; principal shares intact |
-| **15** | `LoanPay` remaining coupons at the Call Date | `tesSUCCESS` | Enforcer co-signs; loan closes, all assets liquid |
-| **16** | Full `VaultWithdraw` | `tesSUCCESS` | Principal + accrued yield returned to lender |
+| **6-7** | `LoanSet` auto-originated by the funding deposit / `LoanSet` for a foreign counterparty | `tesSUCCESS` / `blocked:not-issuer` | Principal disbursed at once; a vault lends to its issuer only |
+| **8-9** | `LoanManage` impair (not yet due) / full `VaultWithdraw` | `tecTOO_SOON` / `tecINSUFFICIENT_FUNDS` | Guardrails hold (see next slide) |
+| **10-11** | Early close before call date / `LoanPay` with 1 of 2 signatures | `blocked:before-call-date` / `tefBAD_QUORUM` | Enforcer + quorum both required |
+| **12-13** | `LoanManage` impair (overdue) then unimpair | `tesSUCCESS` | `lossUnrealized` rises, PPS drops, then restored |
+| **14** | `LoanPay` coupon (late-flagged) | `tesSUCCESS` | Interest paid, PPS rises |
+| **15** | `VaultWithdraw` (yield-only) | `tesSUCCESS` | Yield shares redeemed; principal shares intact |
+| **16** | `LoanPay` remaining coupons at the Call Date | `tesSUCCESS` | Enforcer co-signs; loan closes, all assets liquid |
+| **17** | Full `VaultWithdraw` | `tesSUCCESS` | Principal + accrued yield returned to lender |
 
 > *Speaker Note (45s)*: "[SWITCH TO LIVE SCREEN] Here is our live dashboard running on the Custom Hackathon Devnet. We see the active bond vault, the real-time PPS, and our 4-pane tmux environment coordinating the Enforcer, Shim, and UI."
 
@@ -177,8 +177,8 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Hardware Enclave (AWS Nitro Enclave / TEE) for zero-human Enforcer deployment.
   - Native **TokenEscrow (XLS-85)** composition for on-chain escrowed repayments.
 - **Contributions Back to the Ecosystem**:
-  - **Full E2E Test Suite**: 16-step verified on-chain lifecycle test runner (`npm run e2e`).
-  - **26 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
+  - **Full E2E Test Suite**: 17-step verified on-chain lifecycle test runner (`npm run e2e`).
+  - **31 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
   - **Automated DevEx Hook Active**: Telemetry logged via `xrpl-devex-hook`.
 
 ### Thank you! Questions & Answers (2 mins)

@@ -467,7 +467,7 @@ export async function updateDbAccount(params: {
 }
 
 /** The only account ever allowed the 'broker' role is the platform's own fixed account
- * (the one whose public address the infra operator configured as BROKER_ADDRESS in .env,
+ * (the platform's own account, whose seed the infra operator configured as BROKER_SEED in .env,
  * (the one whose seed the infra operator configured as BROKER_SEED in .env, loadAccounts().broker) —
  * no user-created account can self-assign it (enforced above in create/updateDbAccount).
  * Call once at server startup so that account already reads as 'broker' in the DB without

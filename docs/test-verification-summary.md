@@ -8,15 +8,15 @@ in any one layer's assumptions would be caught by another. All four are green.
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend (loan maths, enforcer policy, read mapping, bid terms) | `npm test` | **29/29 pass** (24 at the time of this run; 5 bid-terms tests added since) |
-| Frontend (wallet, xrpl config/client, App) | `cd frontend && npm test` | **19/19 pass**, 3 runs in a row, no flake |
+| Backend (loan maths, enforcer policy, read mapping, bid terms) | `npm test` | **39/39 pass** (24 at the time of the 12 September run; bid-terms, enforcer counter-sign and order-book accept/decline tests added since) |
+| Frontend (wallet, xrpl config/client, App) | `cd frontend && npm test` | **22/22 pass** (19 at the time of the 12 September run; role-access tests added since), no flake |
 
 ## 2. Full lifecycle through the public API — `npm run e2e` (`scripts/e2e-full.ts`)
 
 One bond, top to bottom, calling the exact same functions the chain shim exposes to the frontend
 (`src/chain/index.ts`), plus the deliberately-invalid transactions no legitimate caller would ever build,
 submitted straight against the ledger to prove the guardrails hold rather than trusting application code.
-**16/16 steps matched expectation.** Full table with every transaction hash: `docs/e2e-full-report.md`.
+**17/17 steps matched expectation** (re-run 13 September with wallet-onboarded accounts: origination now happens automatically on the funding deposit, and a LoanSet for a foreign counterparty is refused by the issuer binding). Full table with every transaction hash: `docs/e2e-full-report.md`.
 
 Covers, in order: vault creation (VaultCreate + LoanBrokerSet + cover deposit) · deposit · **multisig proof
 1** — a payment signed by the borrower's disabled master key is rejected (`tefMASTER_DISABLED`) · origination

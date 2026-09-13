@@ -62,7 +62,16 @@ export async function ensureBalance(client: import("xrpl").Client, address: stri
   return hashes;
 }
 
-import { listAccounts } from "../db/index.js";
+import { listAccounts, type DbAccount } from "../db/index.js";
+import { getCreatedAccounts } from "./createdAccounts.js";
+
+/** A registered account that connected through a wallet has no seed in the DB; if it was one of the
+ *  faucet-created test accounts (created_accounts.json), scripts can still sign for it from there. */
+function seedOf(row?: DbAccount): string | undefined {
+  if (!row) return undefined;
+  if (row.seed) return row.seed;
+  return getCreatedAccounts().find((c) => c.address === row.address)?.seed || undefined;
+}
 
 /** Wallets for platform roles. The broker is the platform's own account: its seed (BROKER_SEED) is
  *  the one signing key the backend holds for it. Other roles are resolved dynamically from the
@@ -87,10 +96,10 @@ export function loadAccounts(): Record<Role, Wallet> {
 
   if (env.BORROWER_SEED) {
     out.borrower = Wallet.fromSeed(env.BORROWER_SEED);
-  } else if (dbBorrowers[0]?.seed) {
-    out.borrower = Wallet.fromSeed(dbBorrowers[0].seed);
-  } else if (allDbAccounts[0]?.seed) {
-    out.borrower = Wallet.fromSeed(allDbAccounts[0].seed);
+  } else if (seedOf(dbBorrowers[0])) {
+    out.borrower = Wallet.fromSeed(seedOf(dbBorrowers[0])!);
+  } else if (seedOf(allDbAccounts[0])) {
+    out.borrower = Wallet.fromSeed(seedOf(allDbAccounts[0])!);
   }
 
   if (env.BORROWEROP_SEED) {
@@ -105,18 +114,18 @@ export function loadAccounts(): Record<Role, Wallet> {
 
   if (env.LENDER1_SEED) {
     out.lender1 = Wallet.fromSeed(env.LENDER1_SEED);
-  } else if (dbLenders[0]?.seed) {
-    out.lender1 = Wallet.fromSeed(dbLenders[0].seed);
-  } else if (allDbAccounts[1]?.seed) {
-    out.lender1 = Wallet.fromSeed(allDbAccounts[1].seed);
+  } else if (seedOf(dbLenders[0])) {
+    out.lender1 = Wallet.fromSeed(seedOf(dbLenders[0])!);
+  } else if (seedOf(allDbAccounts[1])) {
+    out.lender1 = Wallet.fromSeed(seedOf(allDbAccounts[1])!);
   }
 
   if (env.LENDER2_SEED) {
     out.lender2 = Wallet.fromSeed(env.LENDER2_SEED);
-  } else if (dbLenders[1]?.seed) {
-    out.lender2 = Wallet.fromSeed(dbLenders[1].seed);
-  } else if (allDbAccounts[2]?.seed) {
-    out.lender2 = Wallet.fromSeed(allDbAccounts[2].seed);
+  } else if (seedOf(dbLenders[1])) {
+    out.lender2 = Wallet.fromSeed(seedOf(dbLenders[1])!);
+  } else if (seedOf(allDbAccounts[2])) {
+    out.lender2 = Wallet.fromSeed(seedOf(allDbAccounts[2])!);
   }
 
   return out;

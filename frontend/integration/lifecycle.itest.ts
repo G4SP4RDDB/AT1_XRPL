@@ -53,6 +53,7 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   let chain: ChainClient
   let ask: Ask
   let vault: VaultState
+  let depositReceipt: Awaited<ReturnType<typeof chain.tx.submitSigned>> | undefined
   let position: Position
   const hashes: Record<string, string> = {}
 
@@ -109,11 +110,21 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   it('deposit: the matched lender funds the vault and receives shares at PPS 1', async () => {
     const preparedDeposit = await chain.tx.prepareDeposit(demo!.lender, ask.vaultId!, ask.amount)
     const signedDeposit = demoLenderWallet().sign(preparedDeposit as never)
-    hashes.VaultDeposit = expectSuccess(await chain.tx.submitSigned(signedDeposit.tx_blob)).hash
+    depositReceipt = expectSuccess(await chain.tx.submitSigned(signedDeposit.tx_blob))
+    hashes.VaultDeposit = depositReceipt.hash
 
     vault = await chain.read.vaultState(ask.vaultId!)
     expect(vault.assetsTotal).toBe(AMOUNT_XRP)
-    expect(vault.assetsAvailable).toBe(AMOUNT_XRP)
+    const auto = depositReceipt.autoOrigination
+    if (auto && 'originated' in auto) {
+      // Money in, loan out: the funding deposit originated the loan at once, so the principal is
+      // already out on loan (AssetsTotal unchanged, AssetsAvailable drained).
+      expect(auto.originated.result).toBe('tesSUCCESS')
+      expect(vault.assetsAvailable).toBe('0')
+      expect(vault.loan).toBeDefined()
+    } else {
+      expect(vault.assetsAvailable).toBe(AMOUNT_XRP)
+    }
     expect(vault.pps).toBe(1)
 
     position = await chain.read.position(demo!.lender, ask.vaultId!)
@@ -125,7 +136,9 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   })
 
   it('originate: LoanSet with the multisig borrower moves the principal out of the vault', async () => {
-    const o = await chain.tx.originate(ask)
+    // Origination is automatic on the funding deposit; fall back to the manual route if it was skipped.
+    const auto = depositReceipt?.autoOrigination
+    const o = auto && 'originated' in auto ? auto.originated : await chain.tx.originate(ask)
     expectSuccess(o)
     expect(isHash(o.loanId ?? '')).toBe(true)
     hashes.LoanSet = o.hash

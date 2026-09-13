@@ -10,9 +10,9 @@ UI meant picking one of these backend-held identities — never proving ownershi
 
 Now:
 - Lenders and borrowers fund their own accounts (`npm run create-accounts` at the repo root, then
-  import the printed seed into a real wallet — Xaman, GemWallet, or Crossmark).
+  import the printed seed into a WalletConnect wallet, Xaman).
 - The app connects to that real wallet via `xrpl-connect` (`frontend/src/lib/xrplConnect.ts`,
-  adapters: GemWallet, Crossmark, WalletConnect for Xaman). The backend only ever learns the
+  only the WalletConnect adapter is registered, Xaman). The backend only ever learns the
   connected wallet's public address.
 - The first time a new address connects, the existing mandatory onboarding flow
   (`BorrowerOnboardingModal`) has it pick lender or borrower and writes that to `accounts.db` —
