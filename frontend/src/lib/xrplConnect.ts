@@ -33,7 +33,9 @@ export const walletManager = new WalletManager({
     }),
   ],
   network: hackathonDevnet as any,
-  autoConnect: true,
+  // Off: for WalletConnect, auto-reconnect just opens a new pairing proposal that nobody can
+  // approve without the QR code; the user re-pairs explicitly after a reload.
+  autoConnect: false,
 })
 
 /** Chain ids (CAIP-2, e.g. "xrpl:1") the wallet actually approved for the live session. */

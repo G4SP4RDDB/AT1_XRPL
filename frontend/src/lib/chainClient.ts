@@ -232,7 +232,7 @@ export class ChainBackendClient {
    *  `lenderAddress` — throws if the connected wallet doesn't match. */
   private async signAndSubmitDeposit(lenderAddress: string, vaultId: string, amountXrp: string): Promise<TxReceipt> {
     if (walletManager.account?.address !== lenderAddress) {
-      throw new Error('Connect the lender wallet for this address before depositing — the backend cannot sign on its behalf.')
+      throw new Error(`Aucune session WalletConnect pour ${lenderAddress}${walletManager.account?.address ? ` (wallet connecté : ${walletManager.account.address})` : ' — reconnectez le wallet'} : le backend ne peut pas signer à sa place.`)
     }
     const prepared = await baseChain.tx.prepareDeposit(lenderAddress, vaultId, amountXrp)
     const signed = await signPrepared(prepared as Record<string, unknown>)
@@ -243,7 +243,7 @@ export class ChainBackendClient {
    *  own connected wallet, then submitted. */
   private async signAndSubmitWithdraw(req: RawWithdrawRequest): Promise<TxReceipt | Blocked> {
     if (walletManager.account?.address !== req.depositorAddress) {
-      throw new Error('Connect this depositor\'s own wallet before withdrawing — the backend cannot sign on its behalf.')
+      throw new Error(`Aucune session WalletConnect pour ${req.depositorAddress}${walletManager.account?.address ? ` (wallet connecté : ${walletManager.account.address})` : ' — reconnectez le wallet'} : le backend ne peut pas signer à sa place.`)
     }
     const result = await baseChain.tx.prepareWithdraw(req)
     if ('blocked' in result) return result
@@ -677,7 +677,7 @@ export class ChainBackendClient {
    *  comment in ops.ts: no wallet adapter today can produce a multisig-shaped signature). */
   async setupMultisig(address: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
     if (walletManager.account?.address !== address) {
-      return { success: false, error: "Connect this account's own wallet before activating multisig." }
+      return { success: false, error: `Aucune session WalletConnect pour ${address}${walletManager.account?.address ? ` (wallet connecté : ${walletManager.account.address})` : ' — reconnectez le wallet (la session ne survit pas à un rechargement de page)'}.` }
     }
     try {
       const { signerListSet, disableMaster } = await baseChain.tx.prepareAccountMultisigSetup(address)

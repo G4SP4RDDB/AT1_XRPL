@@ -106,27 +106,11 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     if (walletManager.account?.address) {
       handleConnect(walletManager.account)
     } else {
-      const saved = localStorage.getItem('at1_connected_wallet')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (parsed?.address) {
-            setCurrentAccount(parsed)
-            fetchLiveBalance(parsed.address).then((bal) => {
-              setCurrentAccount((prev) => (prev ? { ...prev, balance: bal } : prev))
-            })
-            // A restored session may predate onboarding or a role change: re-read the registry.
-            chainClient.getAccount(parsed.address).then((registered) => {
-              if (!registered?.role) return
-              setCurrentAccount((prev) =>
-                prev && prev.address === parsed.address ? { ...prev, role: registered.role, name: registered.name || prev.name } : prev
-              )
-            }).catch(() => {})
-          }
-        } catch {
-          // ignore
-        }
-      }
+      // No live WalletConnect session (a reload, or an expired pairing). xrpl-connect cannot
+      // resume a session without a new QR approval, so showing the address saved in
+      // localStorage as "connected" would only lead to "connect this account's own wallet"
+      // errors at signing time. Start disconnected; the user re-pairs.
+      localStorage.removeItem('at1_connected_wallet')
     }
 
     return () => {
