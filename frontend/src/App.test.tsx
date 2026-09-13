@@ -47,8 +47,11 @@ describe('App', () => {
       expect(screen.getByText(/Disconnect/i)).toBeInTheDocument()
     })
 
+    // Not onboarded yet (no role): only the read-only screens are offered.
     expect(screen.getByRole('button', { name: /Finance Bonds/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Issue Bond/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /My Positions/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Order Book/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Issue Bond/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /My Positions/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Broker Hub/i })).not.toBeInTheDocument()
   })
 })

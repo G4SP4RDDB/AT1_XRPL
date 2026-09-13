@@ -14,6 +14,7 @@ import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
 import { BrokerHub } from '@/components/BrokerHub'
 import { loadProfile } from '@/lib/bankProfiles'
 import { chainClient } from '@/lib/chainClient'
+import { canAccessTab } from '@/lib/roles'
 
 type Tab = 'finance' | 'issue' | 'positions' | 'orderbook' | 'broker'
 
@@ -66,6 +67,12 @@ const MainContent: FC = () => {
       })
     }
   }, [isConnected, currentAccount?.address, currentAccount?.role])
+
+  // Never leave an account on a screen its role cannot use (role change, onboarding, deep link).
+  useEffect(() => {
+    if (!isConnected) return
+    if (!canAccessTab(currentAccount?.role, activeTab)) setActiveTab('finance')
+  }, [isConnected, currentAccount?.role, activeTab])
 
   useEffect(() => {
     const initConnector = () => {
@@ -136,15 +143,15 @@ const MainContent: FC = () => {
             {activeTab === 'finance' && (
               <FinanceBonds onNavigateToOrderBook={() => setActiveTab('orderbook')} />
             )}
-            {activeTab === 'issue' && (
+            {activeTab === 'issue' && canAccessTab(currentAccount?.role, 'issue') && (
               <IssueBond
                 onSuccess={() => setActiveTab('finance')}
                 onOpenProfile={() => setIsBorrowerModalOpen(true)}
               />
             )}
-            {activeTab === 'positions' && <MyPositions />}
+            {activeTab === 'positions' && canAccessTab(currentAccount?.role, 'positions') && <MyPositions />}
             {activeTab === 'orderbook' && <TrancheBook />}
-            {activeTab === 'broker' && <BrokerHub />}
+            {activeTab === 'broker' && canAccessTab(currentAccount?.role, 'broker') && <BrokerHub />}
           </>
         )}
       </main>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { canLend } from '@/lib/roles'
 import type { FC, FormEvent } from 'react'
 import type { Bid, Ask } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
@@ -207,6 +208,11 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
                 >
                   {bid.status === 'originated' ? 'Already Originated' : isOriginating ? 'Originating...' : 'Originate Loan'}
                 </button>
+              </div>
+            ) : !canLend(currentAccount.role) ? (
+              <div style={{ color: bookTheme.textMuted, fontSize: '0.85rem' }}>
+                Only investor (lender) accounts can bid on and fund a tranche. This account is registered as
+                {currentAccount.role === 'borrower' ? ' an issuer' : currentAccount.role === 'broker' ? ' the platform broker' : ' not onboarded yet'}.
               </div>
             ) : (
               <div>

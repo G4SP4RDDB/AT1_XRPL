@@ -249,6 +249,7 @@ Multisig is not set up by any script: each issuer or investor activates it from 
 ## 8. Using the app
 
 1. **Connect** — *Connect Wallet* (top right) → Xaman via WalletConnect QR, GemWallet or Crossmark. First connection asks only whether you are an Issuer or an Investor. Identity and 2-of-2 governance can be set later from your profile (navbar pill / Issue tab) or the withdraw modal.
+   The role decides what you see: issuers get *Issue Bond*; investors get *Finance Bonds* funding and *My Positions*; the platform broker gets the *Broker Hub*. Everyone can browse the order book and the bond list, but only investors can bid on or fund a tranche, and only issuers can post one (`frontend/src/lib/roles.ts`).
 2. **Issue (issuer)** — post a bid with amount, annual yield and call date. The platform creates the vault and broker objects on the spot.
 3. **Invest (investor)** — post an indicative ask, or *Deposit* against an open bid. Your wallet signs the `VaultDeposit`; you receive MPT shares.
 4. **Coupons and harvest** — the issuer pays coupons (`LoanPay`); PPS rises. Investors open *Withdraw*, choose **Yield-Only Partial** and confirm *Redeem Accrued Yield*: only the yield-equivalent shares are burned. The **Full Principal (Guardrail Test)** mode shows the on-ledger rejection while capital is on loan.

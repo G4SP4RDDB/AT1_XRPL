@@ -4,6 +4,8 @@ import { network } from '@/lib/xrpl'
 import { useBankName } from '@/lib/bankProfiles'
 import { useBorrowerProfile } from '@/lib/borrowerProfile'
 
+import { TAB_ORDER, canAccessTab } from '@/lib/roles'
+
 type Tab = 'issue' | 'finance' | 'positions' | 'orderbook' | 'broker'
 
 interface NavbarProps {
@@ -46,37 +48,16 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankPro
 
         {isConnected && (
           <nav className="nav-links">
-            <button
-              className={`nav-tab ${activeTab === 'orderbook' ? 'active' : ''}`}
-              onClick={() => setActiveTab('orderbook')}
-            >
-              Order Book
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'finance' ? 'active' : ''}`}
-              onClick={() => setActiveTab('finance')}
-            >
-              Finance Bonds
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'issue' ? 'active' : ''}`}
-              onClick={() => setActiveTab('issue')}
-            >
-              Issue Bond
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'positions' ? 'active' : ''}`}
-              onClick={() => setActiveTab('positions')}
-            >
-              My Positions
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'broker' ? 'active' : ''}`}
-              onClick={() => setActiveTab('broker')}
-              style={currentAccount?.role === 'broker' ? { borderColor: '#9333ea', color: '#9333ea', fontWeight: 700 } : {}}
-            >
-              🏛️ Broker Hub
-            </button>
+            {TAB_ORDER.filter((t) => canAccessTab(currentAccount?.role, t.id)).map((t) => (
+              <button
+                key={t.id}
+                className={`nav-tab ${activeTab === t.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(t.id)}
+                style={t.id === 'broker' ? { borderColor: '#9333ea', color: '#9333ea', fontWeight: 700 } : {}}
+              >
+                {t.label}
+              </button>
+            ))}
           </nav>
         )}
 
