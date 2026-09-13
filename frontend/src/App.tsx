@@ -19,7 +19,7 @@ import { canAccessTab } from '@/lib/roles'
 type Tab = 'finance' | 'issue' | 'positions' | 'orderbook' | 'broker'
 
 const MainContent: FC = () => {
-  const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
+  const { isConnected, isModalOpen, openModal, closeModal, currentAccount, connectAccount } = useWallet()
   // If we're loaded (or reloaded, or opened in a new tab) on a #/orderbook/<id> link — e.g.
   // from a Finance Bonds row's middle-click / open-in-new-tab — land straight on that tab.
   const [activeTab, setActiveTab] = useState<Tab>(() =>
@@ -63,6 +63,9 @@ const MainContent: FC = () => {
         if (!acc) {
           // First connection of an account not yet configured in the DB -> open setup.
           setIsBorrowerModalOpen(true)
+        } else if (acc.role && acc.role !== currentAccount.role) {
+          // Registered with a role the wallet context doesn't carry yet (real-wallet connection).
+          connectAccount({ address: currentAccount.address, name: acc.name || currentAccount.name, role: acc.role })
         }
       })
     }

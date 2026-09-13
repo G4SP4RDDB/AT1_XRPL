@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react'
 import type { FC, ReactNode } from 'react'
 import { walletManager } from '@/lib/xrplConnect'
 import { getClient } from '@/lib/xrpl'
+import { chainClient } from '@/lib/chainClient'
 
 export interface ConnectedAccount {
   address: string
@@ -19,11 +20,11 @@ interface WalletContextType {
   closeModal: () => void
   /** Connect a real, independent wallet — GemWallet/Crossmark (browser extension) or WalletConnect
    *  (Xaman via QR/deep link). The app only ever learns the public address from here on. */
-  connectAdapter: (id: 'gemwallet' | 'crossmark' | 'walletconnect', onUri?: (uri: string) => void) => Promise<void>
+  connectAdapter: (id: AdapterId, onUri?: (uri: string) => void, extra?: { seed?: string }) => Promise<void>
   /** Ask the connected real wallet to sign a prepared (already-autofilled) transaction. Never
    *  submits — the caller hands the resulting blob to the backend's submitSigned/submitAccountMultisigSetup. */
   signTransaction: (tx: Record<string, unknown>) => Promise<{ tx_blob: string }>
-  selectRoleAccount: (role: 'broker') => void
+  selectRoleAccount: (role: 'broker') => Promise<void>
   connectAccount: (account: { address: string; name: string; role?: 'borrower' | 'lender' | 'broker' | 'unassigned' }) => void
   refreshBalance: () => Promise<void>
   disconnect: () => Promise<void>
@@ -32,6 +33,8 @@ interface WalletContextType {
 // The broker is the platform's own fixed, known-in-advance identity (its seed lives in the backend's
 // .env as BROKER_SEED, the only user-role key the backend holds). Lenders and borrowers
 // have no fixed address anymore: they're independent accounts connected via a real wallet below.
+export type AdapterId = 'seed' | 'gemwallet' | 'crossmark' | 'walletconnect'
+
 export const ROLE_ACCOUNTS = {
   broker: {
     address: 'r4r59gviPCnToSNThhHk9qetUwfNc7Rt2N',
@@ -82,11 +85,18 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
       if (!account?.address) return
       setIsLoading(true)
       try {
-        const balance = await fetchLiveBalance(account.address)
+        // The role lives in the backend registry (set at onboarding, or at startup for the
+        // platform broker). Resolve it here so a returning account gets its screens and actions
+        // back without going through onboarding again.
+        const [balance, registered] = await Promise.all([
+          fetchLiveBalance(account.address),
+          chainClient.getAccount(account.address).catch(() => null),
+        ])
         const connected: ConnectedAccount = {
           address: account.address,
-          name: account.adapterName || account.walletName || 'WalletConnect',
+          name: registered?.name || account.adapterName || account.walletName || 'WalletConnect',
           balance,
+          role: registered?.role ?? undefined,
         }
         setCurrentAccount(connected)
         localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
@@ -116,6 +126,13 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
             fetchLiveBalance(parsed.address).then((bal) => {
               setCurrentAccount((prev) => (prev ? { ...prev, balance: bal } : prev))
             })
+            // A restored session may predate onboarding or a role change: re-read the registry.
+            chainClient.getAccount(parsed.address).then((registered) => {
+              if (!registered?.role) return
+              setCurrentAccount((prev) =>
+                prev && prev.address === parsed.address ? { ...prev, role: registered.role, name: registered.name || prev.name } : prev
+              )
+            }).catch(() => {})
           }
         } catch {
           // ignore
@@ -146,10 +163,11 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setIsModalOpen(false)
   }
 
-  const connectAdapter = async (id: 'gemwallet' | 'crossmark' | 'walletconnect', onUri?: (uri: string) => void) => {
+  const connectAdapter = async (id: AdapterId, onUri?: (uri: string) => void, extra?: { seed?: string }) => {
     setIsLoading(true)
     try {
-      await walletManager.connect(id, id === 'walletconnect' ? { onQRCode: (uri: string) => { if (onUri) onUri(uri) } } : undefined)
+      const opts = id === 'walletconnect' ? { onQRCode: (uri: string) => { if (onUri) onUri(uri) } } : id === 'seed' ? { seed: extra?.seed } : undefined
+      await walletManager.connect(id, opts as any)
     } catch (err: any) {
       console.warn(`${id} connect error:`, err)
       throw err
@@ -162,20 +180,24 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
     return walletManager.sign(tx as any)
   }
 
-  const selectRoleAccount = (roleKey: 'broker') => {
+  const selectRoleAccount = async (roleKey: 'broker') => {
     const roleData = ROLE_ACCOUNTS[roleKey]
     if (!roleData) return
+    // The live broker address comes from the backend (BROKER_SEED in its .env, registered in the
+    // DB at startup); the hardcoded one is only a fallback when the shim is unreachable.
+    const live = (await chainClient.listAccounts('broker'))[0]
+    const address = live?.address ?? roleData.address
     const connected: ConnectedAccount = {
-      address: roleData.address,
-      name: roleData.name,
+      address,
+      name: live?.name ?? roleData.name,
       balance: '...',
       role: 'broker',
     }
     setCurrentAccount(connected)
     localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
     setIsModalOpen(false)
-    fetchLiveBalance(roleData.address).then((bal) => {
-      setCurrentAccount((prev) => (prev?.address === roleData.address ? { ...prev, balance: bal } : prev))
+    fetchLiveBalance(address).then((bal) => {
+      setCurrentAccount((prev) => (prev?.address === address ? { ...prev, balance: bal } : prev))
     })
   }
 
