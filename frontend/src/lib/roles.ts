@@ -10,8 +10,11 @@ export function canAccessTab(role: AccountRole | undefined, tab: AppTab): boolea
   return true
 }
 
+// 'orderbook' is intentionally not a visible tab: TranchePage/TrancheBook are still reached by
+// clicking a row in Finance Bonds (FinanceBonds -> onNavigateToOrderBook -> setActiveTab('orderbook'))
+// or via a deep link (#/orderbook/<id>) — see App.tsx. It stays a valid AppTab for that, just not
+// something a user can click into directly from the nav.
 export const TAB_ORDER: ReadonlyArray<{ id: AppTab; label: string }> = [
-  { id: 'orderbook', label: 'Order Book' },
   { id: 'finance', label: 'Finance Bonds' },
   { id: 'issue', label: 'Issue Bond' },
   { id: 'positions', label: 'My Positions' },
