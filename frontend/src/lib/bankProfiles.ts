@@ -1,6 +1,6 @@
-// Off-chain address -> bank-profile registry. Talks to the chain shim's /profile/* routes
-// (backed by src/chain/profileStore.ts) so a bank name persists across browsers/reloads,
-// not just in this tab's localStorage.
+// Address -> display name. The institution entered at onboarding (account registry, `company`)
+// is the source of truth; the chain shim's /profile/* store (src/chain/profileStore.ts) is only
+// consulted as a fallback for the pre-seeded demo banks. There is no bank-profile form anymore.
 import { useEffect, useState } from 'react'
 import type { BankProfile } from '@shared/types'
 
@@ -31,17 +31,40 @@ export function getCachedProfile(address: string): BankProfile | null | undefine
   return cache.get(address)
 }
 
+async function registryCompany(address: string): Promise<{ company?: string | null; name?: string } | null> {
+  const res = await fetch(`${CHAIN_URL}/read/getAccount`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ args: [address] }),
+  })
+  if (!res.ok) return null
+  return res.json()
+}
+
 export async function loadProfile(address: string): Promise<BankProfile | null> {
   if (!address) return null
   try {
-    const profile = await callProfileRoute<BankProfile | null>('get', [address])
+    const [account, stored] = await Promise.all([
+      registryCompany(address).catch(() => null),
+      callProfileRoute<BankProfile | null>('get', [address]).catch(() => null),
+    ])
+    const institution = account?.company?.trim()
+    const profile: BankProfile | null = institution
+      ? { ...(stored ?? { address, createdAt: new Date().toISOString() }), address, bankName: institution }
+      : stored
     cache.set(address, profile)
     notify()
     return profile
   } catch (e) {
-    console.warn('Failed to load bank profile for', address, e)
+    console.warn('Failed to resolve display name for', address, e)
     return cache.get(address) ?? null
   }
+}
+
+/** Forget a cached name so the next render re-resolves it (after onboarding / profile edit). */
+export function invalidateProfile(address: string): void {
+  cache.delete(address)
+  notify()
 }
 
 export interface SaveBankProfileInput {

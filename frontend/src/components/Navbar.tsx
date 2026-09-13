@@ -11,11 +11,10 @@ type Tab = 'issue' | 'finance' | 'positions' | 'orderbook' | 'broker'
 interface NavbarProps {
   activeTab: Tab
   setActiveTab: (tab: Tab) => void
-  onEditBankProfile: () => void
   onOpenBorrowerProfile?: () => void
 }
 
-export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankProfile, onOpenBorrowerProfile }) => {
+export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onOpenBorrowerProfile }) => {
   const { currentAccount, isConnected, disconnect, openModal, refreshBalance } = useWallet()
   const bankName = useBankName(currentAccount?.address)
   const borrowerProfile = useBorrowerProfile(currentAccount?.address)
@@ -124,14 +123,6 @@ export const Navbar: FC<NavbarProps> = ({ activeTab, setActiveTab, onEditBankPro
                 <span className="account-balance">{currentAccount.balance}</span>
                 <span className="account-address">{bankName}</span>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={onEditBankProfile}
-                title="Edit bank profile"
-              >
-                🏦
-              </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"

@@ -8,11 +8,9 @@ import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
 import { TrancheBook } from '@/components/TrancheBook'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
-import { BankProfileModal } from '@/components/BankProfileModal'
 import { NotificationToastContainer } from '@/components/NotificationToast'
 import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
 import { BrokerHub } from '@/components/BrokerHub'
-import { loadProfile } from '@/lib/bankProfiles'
 import { chainClient } from '@/lib/chainClient'
 import { canAccessTab } from '@/lib/roles'
 
@@ -25,24 +23,7 @@ const MainContent: FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(() =>
     window.location.hash.startsWith('#/orderbook') ? 'orderbook' : 'finance'
   )
-  const [isBankProfileModalOpen, setIsBankProfileModalOpen] = useState(false)
-  const [onboardedAddress, setOnboardedAddress] = useState<string | null>(null)
   const [isBorrowerModalOpen, setIsBorrowerModalOpen] = useState(false)
-
-  // First time we see a connected address with no bank profile yet, prompt onboarding once.
-  useEffect(() => {
-    const address = currentAccount?.address
-    if (!address || address === onboardedAddress) return
-    let cancelled = false
-    loadProfile(address).then((profile) => {
-      if (cancelled) return
-      setOnboardedAddress(address)
-      if (!profile) setIsBankProfileModalOpen(true)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [currentAccount?.address, onboardedAddress])
 
   // Switch tab by connected role, and prompt DB-account onboarding if this address hasn't
   // been configured yet. Skipped when a deep link (#/orderbook/<id>) already picked a tab.
@@ -95,7 +76,6 @@ const MainContent: FC = () => {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onEditBankProfile={() => setIsBankProfileModalOpen(true)}
         onOpenBorrowerProfile={() => setIsBorrowerModalOpen(true)}
       />
 
@@ -171,12 +151,6 @@ const MainContent: FC = () => {
       />
       <NotificationToastContainer />
 
-      <BankProfileModal
-        isOpen={isBankProfileModalOpen}
-        address={currentAccount?.address}
-        onClose={() => setIsBankProfileModalOpen(false)}
-        onSaved={() => setIsBankProfileModalOpen(false)}
-      />
 
       {/* Official XRPL Connect Web Component Modal */}
       {createElement('xrpl-wallet-connector', {

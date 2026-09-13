@@ -349,7 +349,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 |---|---|
 | [`docs/chain-api.md`](docs/chain-api.md) | The chain shim's HTTP contract: every `read.*` / `tx.*` / `profile.*` / `book.*` function, shapes, result codes, the enforcer policy |
 | [`docs/borrower-lender-custody.md`](docs/borrower-lender-custody.md) | Why issuers/investors are independent wallets, and the two wallet-tooling gaps that keep one co-signing key backend-held |
-| [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | The off-chain bank-profile registry and the tranche order book (Morpho / Hyperliquid / Tenor-inspired UI) |
+| [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | The tranche order book (Morpho / Hyperliquid / Tenor-inspired UI) and the off-chain bank-profile store. The bank-profile *form* has since been removed: display names now come from the institution entered at onboarding, the store only pre-seeds the three demo banks |
 | [`docs/tech-stack.md`](docs/tech-stack.md) | Stack rationale, zero-custody boundaries, security model |
 | [`docs/frontend-integration.md`](docs/frontend-integration.md) | Call sequence per screen, with real devnet response samples |
 | [`frontend/README.md`](frontend/README.md) | Frontend layout, scripts, tests |

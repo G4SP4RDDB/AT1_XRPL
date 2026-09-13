@@ -4,6 +4,7 @@ import { chainClient } from '@/lib/chainClient'
 import { useWallet } from '@/lib/wallet'
 import { notifyTx } from '@/lib/notifications'
 import { type BorrowerProfile, getStoredBorrowerProfile, saveStoredBorrowerProfile } from '@/lib/borrowerProfile'
+import { invalidateProfile } from '@/lib/bankProfiles'
 import type { AccountRole } from '@shared/types'
 
 export type { BorrowerProfile }
@@ -76,6 +77,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         txHash: previous?.txHash,
       }
       saveStoredBorrowerProfile(profile)
+      invalidateProfile(currentAccount.address)
 
       connectAccount({ address: currentAccount.address, name: updated.name, role: accountRole })
 
