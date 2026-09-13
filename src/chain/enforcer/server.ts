@@ -29,7 +29,9 @@ http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/cosign") {
       const { prepared } = await body(req);
       const d = await cosign(await getClient(), prepared, BROKER);
-      console.log(`[enforcer] ${prepared?.TransactionType} ${prepared?.LoanID?.slice(0, 8) ?? ""} amount=${prepared?.Amount} flags=${prepared?.Flags ?? 0} -> ${d.ok ? "co-signed" : `refused: ${d.blocked} (${d.reason})`}`);
+      const targetId = prepared?.LoanID?.slice(0, 8) ?? prepared?.VaultID?.slice(0, 8) ?? "";
+      const amtStr = typeof prepared?.Amount === "object" ? JSON.stringify(prepared.Amount) : prepared?.Amount;
+      console.log(`[enforcer] ${prepared?.TransactionType} ${targetId} amount=${amtStr} flags=${prepared?.Flags ?? 0} -> ${d.ok ? "co-signed" : `refused: ${d.blocked} (${d.reason})`}`);
       return res.end(JSON.stringify(d));
     }
     if (req.method === "POST" && req.url === "/counter-sign") {

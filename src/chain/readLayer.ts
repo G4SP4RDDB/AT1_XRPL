@@ -149,9 +149,38 @@ export async function listVaultsOf(client: Client): Promise<VaultState[]> {
   return out;
 }
 
+import { listAccounts, getAccount, type DbAccount, type AccountRole } from "../db/index.js";
+
+/** Redact private seeds so keys are NEVER transmitted over HTTP / network */
+function sanitizeAccount(acc: DbAccount): DbAccount {
+  return {
+    ...acc,
+    seed: "",
+    operatorSeed: undefined,
+  };
+}
+
+import { getCreatedAccounts } from "./createdAccounts.js";
+
 export const read = {
   vaultState: async (vaultId: string) => vaultStateOf(await getClient(), vaultId),
   position: async (address: string, vaultId: string) => positionOf(await getClient(), address, vaultId),
   listVaults: async () => listVaultsOf(await getClient()),
   brokerAddress: async () => ({ address: loadAccounts().broker.classicAddress }),
+  roles: async () => Object.fromEntries(Object.entries(loadAccounts()).map(([k, v]) => [k, v.classicAddress])),
+  listAccounts: async (role?: AccountRole) => listAccounts(role).map(sanitizeAccount),
+  getAccount: async (address: string) => {
+    const acc = getAccount(address);
+    return acc ? sanitizeAccount(acc) : null;
+  },
+  createdAccounts: async () => getCreatedAccounts(),
+  isMasterDisabled: async (address: string) => {
+    const client = await getClient();
+    try {
+      const ai: any = await client.request({ command: "account_info", account: address, ledger_index: "validated" } as any);
+      return { masterDisabled: ((ai.result.account_data.Flags ?? 0) & 0x00100000) !== 0 };
+    } catch {
+      return { masterDisabled: false };
+    }
+  },
 };

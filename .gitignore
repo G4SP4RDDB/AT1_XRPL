@@ -15,3 +15,8 @@ xrpl-lending-notion.md
 .idea/
 .gemini/
 .github/
+data/
+*.db
+*.sqlite
+created_accounts.json
+created_accounts.txt

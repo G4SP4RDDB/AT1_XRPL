@@ -98,7 +98,10 @@ export interface TxReceipt {
   stub?: true;
 }
 
-export type Blocked = { blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
+export type Blocked = {
+  blocked: "before-call-date" | "wrong-amount" | "not-loan-pay" | "unauthorized-principal-withdrawal" | "not-supported";
+  reason: string;
+};
 
 // Off-chain only: links an address to a human-readable institution identity so the UI can
 // show "Nordic Capital Bank" instead of a raw address. Never touches the ledger.
@@ -110,4 +113,28 @@ export interface BankProfile {
   logoEmoji?: string;
   rating?: string; // e.g. "AA-", freeform credit rating, off-chain, self-reported
   createdAt: IsoDate;
+}
+
+export type AccountRole = "borrower" | "lender" | "broker" | "unassigned";
+
+export interface DbAccount {
+  address: Address;
+  role: AccountRole;
+  name: string;
+  seed: string;
+  company?: string;
+  firstName?: string;
+  userRole?: string;
+  operatorAddress?: string;
+  operatorSeed?: string;
+  multisigActive: number;
+  createdAt: string;
+}
+
+export interface CreatedAccount {
+  address: Address;
+  seed: string;
+  balanceXrp: number | string;
+  name: string;
+  createdAt: string;
 }

@@ -1,11 +1,12 @@
 {
   "name": "at1_xrpl",
   "version": "1.0.0",
-  "description": "AT1 bond issuance on XRPL (XLS-65/66) \u2014 BSA Degen",
+  "description": "AT1 bond issuance on XRPL (XLS-65/66) — BSA Degen",
   "main": "index.js",
   "scripts": {
     "check": "tsx scripts/check-devnet.ts",
     "fund": "tsx scripts/fund-accounts.ts",
+    "fund:setup": "tsx scripts/fund-and-setup.ts",
     "serve": "tsx src/chain/server.ts",
     "demo": "tsx scripts/demo-flow.ts",
     "balances": "tsx scripts/balances.ts",
@@ -14,7 +15,11 @@
     "test": "tsx --test tests/*.test.ts",
     "objects": "tsx scripts/objects.ts",
     "enforcer": "tsx src/chain/enforcer/server.ts",
-    "create-accounts": "tsx scripts/create-accounts.ts"
+    "create-accounts": "tsx scripts/create-accounts.ts",
+    "e2e": "tsx scripts/e2e-full.ts",
+    "dev:tmux": "bash scripts/start-all.sh",
+    "stop:tmux": "bash scripts/stop-tmux.sh",
+    "show:accounts": "tsx scripts/show-accounts.ts"
   },
   "repository": {
     "type": "git",
@@ -29,10 +34,12 @@
   },
   "homepage": "https://github.com/G4SP4RDDB/AT1_XRPL#readme",
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "xrpl": "^5.2.0",
     "xrpl-connect": "^0.8.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.2",
     "dotenv": "^17.4.2",
     "tsx": "^4.23.13",

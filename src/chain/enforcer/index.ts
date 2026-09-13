@@ -12,8 +12,15 @@ import { ledgerEntry, ledgerCloseTime } from "../read.js";
 const TF_FULL = 0x00020000;
 const TF_LATE = 0x00040000;
 
-export type CosignResult = { ok: true; blob: string } | { ok: false; blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
-export type Decision = { ok: true } | { ok: false; blocked: "before-call-date" | "wrong-amount" | "not-loan-pay"; reason: string };
+export type BlockedReason =
+  | "before-call-date"
+  | "wrong-amount"
+  | "not-loan-pay"
+  | "unauthorized-principal-withdrawal"
+  | "not-supported";
+
+export type CosignResult = { ok: true; blob: string } | { ok: false; blocked: BlockedReason; reason: string };
+export type Decision = { ok: true } | { ok: false; blocked: BlockedReason; reason: string };
 
 let key: Wallet | undefined;
 export function enforcerWallet(): Wallet {
@@ -33,10 +40,68 @@ export function callDateRipple(loan: any): number {
   return Number(loan.NextPaymentDueDate) + Number(loan.PaymentInterval) * (remaining - 1);
 }
 
+/**
+ * The withdrawal policy for lender multisig accounts.
+ * - Yield-only withdrawals (requestedShares <= position.yieldShares): co-signed at any time.
+ * - Principal withdrawals (requestedShares > position.yieldShares): co-signed ONLY once the underlying loan is closed/settled.
+ * - Otherwise rejected with "unauthorized-principal-withdrawal".
+ */
+export function decideWithdraw(
+  prepared: Record<string, any>,
+  vault: any,
+  loan: any,
+  position: any,
+  brokerAddress: string
+): Decision {
+  if (prepared.TransactionType !== "VaultWithdraw") {
+    return { ok: false, blocked: "not-supported", reason: `decideWithdraw expects VaultWithdraw, got ${prepared.TransactionType}` };
+  }
+  const vaultOwner = vault?.brokerAddress ?? vault?.Account ?? vault?.account ?? vault?.Owner ?? vault?.owner;
+  if (!vault || (vaultOwner && vaultOwner !== brokerAddress)) {
+    return { ok: false, blocked: "not-supported", reason: "vault is not brokered by this platform" };
+  }
+
+  const requestedShares = Number(typeof prepared.Amount === "object" ? prepared.Amount?.value : prepared.Amount);
+  if (Number.isNaN(requestedShares) || requestedShares <= 0) {
+    return { ok: false, blocked: "wrong-amount", reason: `invalid withdrawal share amount: ${JSON.stringify(prepared.Amount)}` };
+  }
+
+  const yieldShares = Number(position?.yieldShares ?? 0);
+  // Case 1: yield-only redemption is always permitted
+  if (requestedShares <= yieldShares) {
+    return { ok: true };
+  }
+
+  // Case 2: requesting more than yield shares (attempting to redeem principal)
+  const paymentRemaining = Number(loan?.PaymentRemaining ?? loan?.paymentRemaining ?? 0);
+  const loanStatus = loan?.status ?? (paymentRemaining === 0 ? "closed" : "active");
+  const isClosed = !loan || loanStatus === "closed" || paymentRemaining === 0 || loanStatus === "none";
+
+  if (!isClosed) {
+    return {
+      ok: false,
+      blocked: "unauthorized-principal-withdrawal",
+      reason: `principal withdrawal locked: loan is ${loanStatus} with ${paymentRemaining} payments remaining (yield-only max: ${yieldShares} shares)`,
+    };
+  }
+
+  return { ok: true };
+}
+
 /** The policy, pure: transaction JSON, the Loan and LoanBroker entries, ledger time, and who we broker for. */
-export function decide(prepared: Record<string, any>, loan: any, broker: any, now: number, brokerAddress: string): Decision {
+export function decide(
+  prepared: Record<string, any>,
+  loan: any,
+  broker: any,
+  now: number,
+  brokerAddress: string,
+  extra?: { position?: any; vault?: any; loan?: any }
+): Decision {
+  if (prepared.TransactionType === "VaultWithdraw") {
+    return decideWithdraw(prepared, extra?.vault ?? loan, extra?.loan, extra?.position, brokerAddress);
+  }
   if (prepared.TransactionType !== "LoanPay") {
-    return { ok: false, blocked: "not-loan-pay", reason: `enforcer only co-signs LoanPay, got ${prepared.TransactionType}` };
+    return { ok: false, blocked: "not-loan-pay", reason: `enforcer only co-signs LoanPay and VaultWithdraw, got ${prepared.TransactionType}` };
   }
   if (!loan || !broker || broker.Owner !== brokerAddress) {
     return { ok: false, blocked: "not-loan-pay", reason: "loan is not brokered by this platform" };
@@ -64,13 +129,29 @@ export function decide(prepared: Record<string, any>, loan: any, broker: any, no
   return { ok: true };
 }
 
-/** Decide against the live ledger, then sign. `prepared` is the autofilled transaction JSON the borrower-op also signs. */
+/** Decide against the live ledger, then sign. `prepared` is the autofilled transaction JSON the operator also signs. */
 export async function cosign(client: Client, prepared: Record<string, any>, brokerAddress: string): Promise<CosignResult> {
-  const loan = prepared.LoanID ? await ledgerEntry(client, prepared.LoanID).catch(() => undefined) : undefined;
-  const broker = loan?.LoanBrokerID ? await ledgerEntry(client, loan.LoanBrokerID).catch(() => undefined) : undefined;
-  const now = await ledgerCloseTime(client);
-  const d = decide(prepared, loan, broker, now, brokerAddress);
-  if (!d.ok) return d;
-  const signed = enforcerWallet().sign(prepared as any, true);
-  return { ok: true, blob: signed.tx_blob };
+  if (prepared.TransactionType === "LoanPay") {
+    const loan = prepared.LoanID ? await ledgerEntry(client, prepared.LoanID).catch(() => undefined) : undefined;
+    const broker = loan?.LoanBrokerID ? await ledgerEntry(client, loan.LoanBrokerID).catch(() => undefined) : undefined;
+    const now = await ledgerCloseTime(client);
+    const d = decide(prepared, loan, broker, now, brokerAddress);
+    if (!d.ok) return d;
+    const signed = enforcerWallet().sign(prepared as any, true);
+    return { ok: true, blob: signed.tx_blob };
+  }
+
+  if (prepared.TransactionType === "VaultWithdraw") {
+    const { vaultStateOf, positionOf } = await import("../readLayer.js");
+    const vault = prepared.VaultID ? await vaultStateOf(client, prepared.VaultID).catch(() => undefined) : undefined;
+    const position = (prepared.VaultID && prepared.Account)
+      ? await positionOf(client, prepared.Account, prepared.VaultID).catch(() => undefined)
+      : undefined;
+    const d = decideWithdraw(prepared, vault, vault?.loan, position, brokerAddress);
+    if (!d.ok) return d;
+    const signed = enforcerWallet().sign(prepared as any, true);
+    return { ok: true, blob: signed.tx_blob };
+  }
+
+  return { ok: false, blocked: "not-loan-pay", reason: `enforcer does not support ${prepared.TransactionType}` };
 }

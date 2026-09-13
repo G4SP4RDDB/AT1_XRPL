@@ -7,20 +7,26 @@ import { FinanceBonds } from '@/components/FinanceBonds'
 import { IssueBond } from '@/components/IssueBond'
 import { MyPositions } from '@/components/MyPositions'
 import { TrancheBook } from '@/components/TrancheBook'
-import { DevExPanel } from '@/components/DevExPanel'
 import { ConnectWalletModal } from '@/components/ConnectWalletModal'
 import { BankProfileModal } from '@/components/BankProfileModal'
+import { NotificationToastContainer } from '@/components/NotificationToast'
+import { BorrowerOnboardingModal } from '@/components/BorrowerOnboardingModal'
+import { BrokerHub } from '@/components/BrokerHub'
 import { loadProfile } from '@/lib/bankProfiles'
+import { chainClient } from '@/lib/chainClient'
+
+type Tab = 'finance' | 'issue' | 'positions' | 'orderbook' | 'broker'
 
 const MainContent: FC = () => {
   const { isConnected, isModalOpen, openModal, closeModal, currentAccount } = useWallet()
   // If we're loaded (or reloaded, or opened in a new tab) on a #/orderbook/<id> link — e.g.
   // from a Finance Bonds row's middle-click / open-in-new-tab — land straight on that tab.
-  const [activeTab, setActiveTab] = useState<'finance' | 'issue' | 'positions' | 'orderbook'>(() =>
+  const [activeTab, setActiveTab] = useState<Tab>(() =>
     window.location.hash.startsWith('#/orderbook') ? 'orderbook' : 'finance'
   )
   const [isBankProfileModalOpen, setIsBankProfileModalOpen] = useState(false)
   const [onboardedAddress, setOnboardedAddress] = useState<string | null>(null)
+  const [isBorrowerModalOpen, setIsBorrowerModalOpen] = useState(false)
 
   // First time we see a connected address with no bank profile yet, prompt onboarding once.
   useEffect(() => {
@@ -36,6 +42,30 @@ const MainContent: FC = () => {
       cancelled = true
     }
   }, [currentAccount?.address, onboardedAddress])
+
+  // Switch tab by connected role, and prompt DB-account onboarding if this address hasn't
+  // been configured yet. Skipped when a deep link (#/orderbook/<id>) already picked a tab.
+  useEffect(() => {
+    if (!isConnected || !currentAccount) return
+    if (!window.location.hash.startsWith('#/orderbook')) {
+      if (currentAccount.role === 'broker') {
+        setActiveTab('broker')
+      } else if (currentAccount.role === 'borrower') {
+        setActiveTab('issue')
+      } else if (currentAccount.role === 'lender') {
+        setActiveTab('finance')
+      }
+    }
+
+    if (currentAccount.address) {
+      chainClient.getAccount(currentAccount.address).then((acc) => {
+        if (!acc) {
+          // First connection of an account not yet configured in the DB -> open setup.
+          setIsBorrowerModalOpen(true)
+        }
+      })
+    }
+  }, [isConnected, currentAccount?.address, currentAccount?.role])
 
   useEffect(() => {
     const initConnector = () => {
@@ -56,6 +86,7 @@ const MainContent: FC = () => {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onEditBankProfile={() => setIsBankProfileModalOpen(true)}
+        onOpenBorrowerProfile={() => setIsBorrowerModalOpen(true)}
       />
 
       <main style={{ minHeight: '60vh', padding: '1rem 0' }}>
@@ -106,17 +137,25 @@ const MainContent: FC = () => {
               <FinanceBonds onNavigateToOrderBook={() => setActiveTab('orderbook')} />
             )}
             {activeTab === 'issue' && (
-              <IssueBond onSuccess={() => setActiveTab('finance')} />
+              <IssueBond
+                onSuccess={() => setActiveTab('finance')}
+                onOpenProfile={() => setIsBorrowerModalOpen(true)}
+              />
             )}
             {activeTab === 'positions' && <MyPositions />}
             {activeTab === 'orderbook' && <TrancheBook />}
+            {activeTab === 'broker' && <BrokerHub />}
           </>
         )}
       </main>
 
-      <DevExPanel />
-
-      <ConnectWalletModal isOpen={isModalOpen} onClose={closeModal} />
+      <ConnectWalletModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        onOpenSetupModal={() => setIsBorrowerModalOpen(true)}
+      />
+      <BorrowerOnboardingModal isOpen={isBorrowerModalOpen} onClose={() => setIsBorrowerModalOpen(false)} />
+      <NotificationToastContainer />
 
       <BankProfileModal
         isOpen={isBankProfileModalOpen}

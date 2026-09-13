@@ -7,6 +7,7 @@ export interface ConnectedAccount {
   address: string
   name: string
   balance: string
+  role?: 'borrower' | 'lender' | 'broker' | 'unassigned'
 }
 
 interface WalletContextType {
@@ -18,6 +19,7 @@ interface WalletContextType {
   closeModal: () => void
   connectWalletConnect: (onUri?: (uri: string) => void) => Promise<void>
   selectRoleAccount: (role: 'borrower' | 'lender1' | 'lender2' | 'broker') => void
+  connectAccount: (account: { address: string; name: string; role?: 'borrower' | 'lender' | 'broker' | 'unassigned' }) => void
   refreshBalance: () => Promise<void>
   disconnect: () => Promise<void>
 }
@@ -172,16 +174,33 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const selectRoleAccount = (roleKey: 'borrower' | 'lender1' | 'lender2' | 'broker') => {
     const roleData = ROLE_ACCOUNTS[roleKey]
     if (!roleData) return
+    const role: 'borrower' | 'lender' | 'broker' = roleKey === 'borrower' ? 'borrower' : roleKey === 'broker' ? 'broker' : 'lender'
     const connected: ConnectedAccount = {
       address: roleData.address,
       name: roleData.name,
       balance: '...',
+      role,
     }
     setCurrentAccount(connected)
     localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
     setIsModalOpen(false)
     fetchLiveBalance(roleData.address).then((bal) => {
       setCurrentAccount((prev) => (prev?.address === roleData.address ? { ...prev, balance: bal } : prev))
+    })
+  }
+
+  const connectAccount = (account: { address: string; name: string; role?: 'borrower' | 'lender' | 'broker' | 'unassigned' }) => {
+    const connected: ConnectedAccount = {
+      address: account.address,
+      name: account.name,
+      balance: '...',
+      role: account.role,
+    }
+    setCurrentAccount(connected)
+    localStorage.setItem('at1_connected_wallet', JSON.stringify(connected))
+    setIsModalOpen(false)
+    fetchLiveBalance(account.address).then((bal) => {
+      setCurrentAccount((prev) => (prev?.address === account.address ? { ...prev, balance: bal } : prev))
     })
   }
 
@@ -206,6 +225,7 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
         closeModal,
         connectWalletConnect,
         selectRoleAccount,
+        connectAccount,
         refreshBalance,
         disconnect,
       }}
