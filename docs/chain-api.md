@@ -40,7 +40,7 @@ Every function is real and validated on the devnet (Sat evening, `npm run demo`)
 | `tx.finalRepayment` | real | `blocked:before-call-date` before the call date (e2e step 9); settles the remaining coupons at the call date (e2e EA805215F3, `tfLoanLatePayment`). 685A52185C45 is the spike run's early close with `tfLoanFullPayment` (0x20000), signed before the call-date policy was wired in |
 | `tx.impair` / `tx.unimpair` | real | tecTOO_SOON until a payment is overdue (spike) |
 
-Signatures changed since the stub: `originate` takes the whole `Ask` (the issuer's posted tranche; `Bid` is now the lender's offer) (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
+Signatures changed since the stub: `originate` takes the whole `Ask` (the issuer's posted tranche) (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
 
 ## `read` — no signing, safe to call as often as the UI likes
 
@@ -66,14 +66,14 @@ Queries the ledger (`account_info`) to check if the account's master key is disa
 
 All receipts carry `hash`, `result` (engine code, `tesSUCCESS` or a `tec*` code), and `explorerUrl`. A non-`tes` result is returned, not thrown: the UI must display it, since guardrail rejections are part of the demo.
 
-### `tx.createBond(bid: Bid): { vaultId, loanBrokerId, receipts }`
-Borrower posted a bid. Creates the vault (`VaultCreate`, capped at `bid.amount` so no deposit lands after the bond fills), the broker object (`LoanBrokerSet`) and the first-loss cover (`LoanBrokerCoverDeposit`). Call once per bid, keep the returned ids on the bid.
+### `tx.createBond(ask: Ask): { vaultId, loanBrokerId, receipts }`
+Borrower posted an ask. Creates the vault (`VaultCreate`, capped at `bid.amount` so no deposit lands after the bond fills), the broker object (`LoanBrokerSet`) and the first-loss cover (`LoanBrokerCoverDeposit`). Call once per bid, keep the returned ids on the bid.
 
 ### `tx.prepareDeposit(lenderAddress, vaultId, amount): Record<string, unknown>` + `tx.submitSigned(signedBlob): TxReceipt`
 Lenders are independent accounts — this backend never holds their key. `prepareDeposit` autofills a `VaultDeposit` (`amount` in XRP) and returns the unsigned transaction JSON; the frontend hands it to the lender's own connected wallet and posts the resulting blob to `submitSigned`. Shares are minted at the current PPS. Rejected above the vault cap. **Money in, loan out**: when the deposit brings `assetsAvailable` up to the bid's principal and no loan exists yet, `submitSigned` originates the loan immediately and the receipt carries `autoOrigination: { originated: TxReceipt & { loanId } } | { skipped: reason }` (reasons: partially funded, issuer without 2-of-2 governance, loan already originated).
 
-### `tx.originate(bid: Bid): TxReceipt & { loanId?: string }`
-Pass the bid with `vaultId` and `loanBrokerId` set. Broker signs `LoanSet`, the two borrower signers add counterparty signatures, principal moves to the borrower in this same transaction; there is no separate drawdown. Requires `assetsAvailable >= bid.amount`. Store the returned `loanId` on the bid. Loan terms: 3 payments spread to the bid's `callDate` (interval at least 60 s), rate = `yieldRate` percent per year.
+### `tx.originate(ask: Ask): TxReceipt & { loanId?: string }`
+Pass the ask with `vaultId` and `loanBrokerId` set. Broker signs `LoanSet`, the two borrower signers add counterparty signatures, principal moves to the borrower in this same transaction; there is no separate drawdown. Requires `assetsAvailable >= bid.amount`. Store the returned `loanId` on the bid. Loan terms: 3 payments spread to the bid's `callDate` (interval at least 60 s), rate = `yieldRate` percent per year.
 
 ### `tx.payCoupon(loanId: string, borrowerAddress: string): TxReceipt | Blocked`
 Borrower pays one scheduled `LoanPay`, co-signed by the enforcer. Amount is read from the loan's `periodicPayment`, never chosen by the caller. PPS rises after success (measured: +5401 drops on the demo terms). If the payment is already overdue the call adds `tfLoanLatePayment` and the ledger charges the late fee and late interest on top. `Blocked` if the enforcer refuses (wrong amount, or a late payment without the flag). `{ blocked, reason: "loan already closed" }` once `paymentRemaining` is 0.
@@ -126,38 +126,12 @@ Upsert. Throws if `address` or `bankName` is missing/blank.
 ### `profile.list(): BankProfile[]`
 Every known profile.
 
-## `book` — off-chain tranche order book, no signing
+## `book` — off-chain ask metadata, no signing
 
-Shared state so every browser (the bank's and every LP's) sees the same tranche list and
-bid depth instead of each browser's own private copy. Stored in `data/order-book.json`
-(gitignored). Two collections:
-- **asks** (tranches) — off-chain-authored `Ask` fields (`borrowerName`, `description`, `expiresAt`)
-  that the ledger itself doesn't carry. The frontend merges this with live on-chain vault
-  state (`read.listVaults()`) to render the book; the ledger stays the source of truth for
-  amount/rate/status once a vault exists.
-- **bids** — LP offers against an ask (a `Bid` with `matchedAskId` pointing at the
-  tranche id). `"pending"` until an LP actually funds it via a real `VaultDeposit` (`tx.prepareDeposit` → wallet signature → `tx.submitSigned`)
-  (`VaultDeposit`), then `"deposited"`. A pending bid is purely indicative — nothing
-  prevents one from exceeding the tranche's remaining capacity; that's enforced natively by
-  the vault's own `AssetsMaximum` cap when the deposit is actually submitted, not by this
-  store.
+What the ledger cannot hold about a posted bond: `borrowerName`, `description`, `expiresAt` (the funding window, off-chain only). Stored in `data/order-book.json`, keyed by the ask id that is also in the vault's `Data`. The bid / accept / decline mechanism that once lived here was removed on 13 September (funding is a direct `VaultDeposit` from the bond list); see `docs/bank-profiles-and-order-book.md` for the record.
 
 ### `book.listAsks(): Ask[]`
 ### `book.upsertAsk(ask: Ask): Ask`
-Called right after `tx.createBond` succeeds, so the tranche's off-chain metadata is visible
-to every browser, not just the one that created it.
-
-### `book.listBids(askId?: string): Bid[]`
-Every LP bid, or scoped to one tranche.
-
-### `book.createBid(bid: Bid): Bid`
-A bid at or under the ask's ceiling `yieldRate` is accepted at once; otherwise it stays `pending` for the issuer.
-Throws if `bid.id` or `bid.matchedBidId` (the target tranche id) is missing.
-
-### `book.updateBidStatus(id: string, status: Bid["status"]): Bid`
-### `book.acceptBid(bidId): Bid` / `book.declineBid(bidId): Bid`
-Issuer-side decision. Accepting the first bid pins the ask's rate to that bid's `targetYield` and auto-declines other pending bids at a different rate; `prepareDeposit` refuses a bid that is not `accepted`.
-Throws if the bid id is unknown.
 
 ## Blocked shape
 

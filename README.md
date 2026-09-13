@@ -37,9 +37,9 @@ This platform maps each of those properties onto a native XRPL primitive:
 | Harvesting the coupon | A partial `VaultWithdraw` sized to the accrued yield, leaving the principal shares untouched |
 | Principal locked until the call date | Two layers: the vault is illiquid while the principal is out on loan (native `tecINSUFFICIENT_FUNDS`), and an early payoff by the issuer needs a co-signature the platform's **enforcer** only gives at or after the call date (§3) |
 | Loss absorption | Broker first-loss capital (`LoanBrokerCoverDeposit`) and write-down via `LoanManage tfLoanImpair` |
-| Bid/ask discovery | An off-chain order book in the frontend; nothing is written on-ledger until a deposit happens |
+| Discovery | The Finance Bonds list, read from the ledger; nothing is written on-ledger until a deposit happens |
 
-The frontend is a marketplace with order-book conventions: issuers post **asks** (amount, ceiling yield, call date), investors place **bids** (amount and rate) against them, the issuer accepts or declines (a bid at or under the ask's ceiling rate is accepted automatically), accepting the first bid pins the tranche's rate (one `InterestRate` per loan), and only an accepted bid can be funded.
+The frontend is a marketplace: issuers post **asks** (amount, yield, call date) that become vaults, investors fund them straight from the bond list with a `VaultDeposit` signed in their wallet (an off-chain bid / accept / decline layer was built and removed on the last morning; funding is direct).
 
 ---
 
@@ -132,7 +132,7 @@ flowchart TD
     subgraph UI ["Frontend (:5173)"]
         React["React 19 + TypeScript + Vite"]
         Wallet["xrpl-connect: WalletConnect (Xaman)"]
-        Book["Ask / bid order book (off-chain)"]
+        Book["Finance Bonds list + Fund modal"]
         Dash["Vault, PPS and yield dashboard"]
     end
 
@@ -161,7 +161,7 @@ flowchart TD
 
 | Service | Where | What it does |
 |---|---|---|
-| **Frontend** | `frontend/`, port 5173 | Wallet connection and onboarding, bid/ask tranche order book, per-vault pages, live PPS, yield-only or full withdrawal, transaction toasts with explorer links. The platform broker address opens an admin panel. |
+| **Frontend** | `frontend/`, port 5173 | Wallet connection and onboarding, the Finance Bonds list with a direct *Fund* modal (remaining capacity read from the live vault), live PPS, yield-only or full withdrawal, transaction toasts with explorer links. The platform broker address opens an admin panel. |
 | **Chain shim** | `src/chain/server.ts`, port 8787 | JSON-over-HTTP API: `read.*`, `tx.*`, `profile.*`, `book.*`. Loads only `BROKER_SEED`. User transactions are prepared here, signed in the wallet, submitted here. |
 | **Enforcer** | `src/chain/enforcer/server.ts`, port 8788 | Holds the enforcer key; applies the §3 policy against the validated ledger close time before co-signing. |
 | **Registry** | `data/accounts.db`, `src/db/index.ts` | Participants, onboarding profiles, operator key pairs. |
@@ -174,23 +174,23 @@ One bond (200 XRP, 100 % annual, 3 coupons to a 3-minute call date), run top to 
 
 | # | Step | Result | Explorer |
 |---|---|---|---|
-| 1 | `VaultCreate` | ✅ `tesSUCCESS` | [`AD3FA56724…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/AD3FA56724EB2C3664B60DBF3FE3AA57FAB87FBD52519B635E92E62E81C8C8BC) |
-| 2 | `LoanBrokerSet` | ✅ `tesSUCCESS` | [`BCC15292C1…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/BCC15292C1C4C07B30A2E486D98C09BDE03873F7BD335E6C7037ED8EEC2F588F) |
-| 3 | `LoanBrokerCoverDeposit` (first-loss buffer) | ✅ `tesSUCCESS` | [`32B59B979C…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/32B59B979CA62B8767464F377AD1469CD7C197AB699BE0DA169AE4527A81AAE0) |
-| 4 | `VaultDeposit`, investor-signed, 200 XRP | ✅ `tesSUCCESS` | [`3FA9CF4577…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/3FA9CF457753295929C390DA8A35007E2392B385F02450BFA12E502D574F5C20) |
+| 1 | `VaultCreate` | ✅ `tesSUCCESS` | [`9805777345…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/980577734513482A6C5F4907838FFF8CC730D0E14139491F53FC4DB06FD4CCCA) |
+| 2 | `LoanBrokerSet` | ✅ `tesSUCCESS` | [`0CD58B43E5…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0CD58B43E5A0711A44D9633EAA56519F6973FC5D707628D055EBD54B5E42AB2B) |
+| 3 | `LoanBrokerCoverDeposit` (first-loss buffer) | ✅ `tesSUCCESS` | [`111DEB0A51…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/111DEB0A516809043A575E8EC8E445E0990FBB5D40701C6515DC4946575EB28F) |
+| 4 | `VaultDeposit`, investor-signed, 200 XRP | ✅ `tesSUCCESS` | [`C0ECA725EF…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C0ECA725EFFAB3B7813014B89E97B1B6584BD72A27CF5DE9B943CB357113231E) |
 | 5 | `Payment` signed by the disabled master key | 🛡️ `tefMASTER_DISABLED` | rejected before validation |
-| 6 | `LoanSet`, **originated automatically by the funding deposit**, broker + 2-of-2 counterparty signature | ✅ `tesSUCCESS` | [`AD5AAC42DD…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/AD5AAC42DD90BCE97B8ACF3DB959B90A87C2CD3B09AD9AEC3B9C1D985FEBF5C0) |
+| 6 | `LoanSet`, **originated automatically by the funding deposit**, broker + 2-of-2 counterparty signature | ✅ `tesSUCCESS` | [`13BD51C521…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/13BD51C521276B5F058880C4A904CAE221900C310C82A3FFC10138923A1679E4) |
 | 7 | `LoanSet` for a counterparty other than the vault's issuer | 🛡️ `blocked:not-issuer` | refused by the shim and the enforcer policy, never submitted |
-| 8 | `LoanManage tfLoanImpair` on a loan not yet due | 🛡️ `tecTOO_SOON` | [`E8921F7721…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E8921F772154D4483688D259B0FEF08735F6B1A09944B9465EC317F8F7C84DAD) |
-| 9 | Full `VaultWithdraw` while principal is on loan | 🛡️ `tecINSUFFICIENT_FUNDS` | [`C64485D302…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/C64485D302472C0636D6CDCCFB3F726CE1B54855824B6BCEE36E52B6C11930C0) |
+| 8 | `LoanManage tfLoanImpair` on a loan not yet due | 🛡️ `tecTOO_SOON` | [`92D7F9C9DC…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/92D7F9C9DC54692EA58775E37ADF44D90C08E78DE20B2048A7A5F9853C9929BB) |
+| 9 | Full `VaultWithdraw` while principal is on loan | 🛡️ `tecINSUFFICIENT_FUNDS` | [`E43360B573…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/E43360B57339F8798A92BA179CDFA5F8FC05ABBF62CCC97A32D49154F87D71B7) |
 | 10 | Early close (`tfLoanFullPayment`) before the call date | 🛡️ `blocked:before-call-date` | refused by the enforcer, never submitted |
 | 11 | `LoanPay` with 1 of 2 signatures | 🛡️ `tefBAD_QUORUM` | rejected before validation |
-| 12 | `LoanManage tfLoanImpair` once overdue | ✅ `tesSUCCESS` | [`14ACE5F538…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/14ACE5F538B43521097219AD3958A879AAA5DFDF4E718784384C00584EAA6770) |
-| 13 | `LoanManage tfLoanUnimpair` | ✅ `tesSUCCESS` | [`B2B7BFD564…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/B2B7BFD564EA1D6E1AEA20736AC6860E15446D1D7055D344C26CAC2DA683A110) |
-| 14 | `LoanPay` coupon #1, late-flagged; PPS rises | ✅ `tesSUCCESS` | [`5AD7702137…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5AD7702137B7BDFE09FC5184BCCF903C04AD6DD0B491D3E282790F52EC555970) |
-| 15 | `VaultWithdraw`, yield only; principal shares intact | ✅ `tesSUCCESS` | [`CB494E5BBC…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/CB494E5BBC7C2313754D4C868C13FFCDAC79A70C9972B665C7CC87A357D3EE15) |
-| 16 | Settlement at the call date: remaining coupons (`tfLoanLatePayment`), last one closes the loan | ✅ `tesSUCCESS` | [`01AEABF9D5…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/01AEABF9D5595C47CD6A2186529E60139D51803D2406199C41F0C631B4AB9DD7) |
-| 17 | Full `VaultWithdraw`: principal + all accrued yield | ✅ `tesSUCCESS` | [`5E28EFD752…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5E28EFD752CE2548055E4924AF34FA4636683292656CB90BA943BCD0CC09C194) |
+| 12 | `LoanManage tfLoanImpair` once overdue | ✅ `tesSUCCESS` | [`04E8DC5E44…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/04E8DC5E44D5B070D9DA6E345C0E5518193C95116A19CD8A4E1A52BCCEB0C0D2) |
+| 13 | `LoanManage tfLoanUnimpair` | ✅ `tesSUCCESS` | [`A997BC778F…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/A997BC778F2A52DA136C6838441FDC3E10B327410828A5F90D64470F2E60C042) |
+| 14 | `LoanPay` coupon #1, late-flagged; PPS rises | ✅ `tesSUCCESS` | [`32606E7E79…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/32606E7E79C0094253A109A6AA41B263E2FB9F549B58D5764968B0DC0958E5D5) |
+| 15 | `VaultWithdraw`, yield only; principal shares intact | ✅ `tesSUCCESS` | [`AC398BCDD3…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/AC398BCDD3DC2F865A58BA6BBA6CE969389514A26965A976B7253A5DC8C05293) |
+| 16 | Settlement at the call date: remaining coupons (`tfLoanLatePayment`), last one closes the loan | ✅ `tesSUCCESS` | [`8FF45F30B6…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/8FF45F30B620EA9399356BE1F9CAE0813CBDC74644AFA93B1F81CCB1C8429407) |
+| 17 | Full `VaultWithdraw`: principal + all accrued yield | ✅ `tesSUCCESS` | [`FD8835CBF7…`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/FD8835CBF79C4F4716E349E511E7235883F0027B684E27FA38567B0C0173816F) |
 
 Rows 9 and 10 together are the call-date lock in action: the ledger refuses the investor's principal while it is on loan, and the enforcer refuses to let the issuer make it liquid early.
 
@@ -250,9 +250,9 @@ Multisig is not set up by any script: each issuer or investor activates it from 
 ## 8. Using the app
 
 1. **Connect** — *Connect Wallet* (top right) → scan the WalletConnect QR code (Xaman or any WalletConnect wallet). This is the only connection method, the platform broker included. First connection asks only whether you are an Issuer or an Investor; the profile later adds your institution name.
-   Everyone can browse every screen; only the platform broker gets the *Broker Hub*. Actions are role-gated: only issuers can post a bond, only investors can bid on or fund an ask (`frontend/src/lib/roles.ts`).
+   Everyone can browse every screen; only the platform broker gets the *Broker Hub*. Actions are role-gated: only issuers can post a bond, only investors can fund one (`frontend/src/lib/roles.ts`).
 2. **Issue (issuer)** — first click **Activer 2/2** on the Issue tab (your wallet signs `SignerListSet` + `AccountSet`; needed once, so the enforcer can co-sign your repayments), then post an ask with amount, ceiling annual yield and call date. The platform creates the vault and broker objects on the spot.
-3. **Invest (investor)** — place a bid (amount and rate) against an open ask. It is accepted automatically if it is at or under the ask's ceiling rate, otherwise the issuer accepts or declines it; once accepted, *Fund* it: your wallet signs the `VaultDeposit` and you receive MPT shares. The platform refuses a deposit for a bid that was never accepted.
+3. **Invest (investor)** — in *Finance Bonds*, click *Fund* on an open bond, enter an amount (the modal shows the remaining capacity from the live vault state); your wallet signs the `VaultDeposit` and you receive MPT shares. The deposit that fills the vault originates the loan automatically.
 4. **Coupons and harvest** — the issuer pays coupons (`LoanPay`); PPS rises. Investors open *Withdraw*, choose **Yield-Only Partial** and confirm *Redeem Accrued Yield*: only the yield-equivalent shares are burned. The **Full Principal (Guardrail Test)** mode shows the on-ledger rejection while capital is on loan.
 5. **Call date** — before it, an early payoff is refused by the enforcer and principal withdrawals fail on-ledger. At or after it, the issuer settles the remaining coupons; the loan closes, the vault is liquid, investors redeem principal plus yield.
 
@@ -264,7 +264,7 @@ Four independent layers, all green. Summary with per-layer results: [`docs/test-
 
 | Layer | Command | Covers |
 |---|---|---|
-| Backend unit tests (39) | `npm test` | Enforcer policy (full payment refused before the call date, exact coupon amounts, late payments), loan maths (rate scaling, call date derivation), yield share splitting, engine-code extraction, bid terms |
+| Backend unit tests (30) | `npm test` | Enforcer policy (full payment refused before the call date, exact coupon amounts, late payments), loan maths (rate scaling, call date derivation), yield share splitting, engine-code extraction, bid terms |
 | Frontend unit tests (19) | `cd frontend && npm test` | Wallet context, xrpl config/client, app shell |
 | On-chain end-to-end (17 steps) | `npm run e2e` | The full lifecycle of §6 against the live devnet, ~4–5 minutes (two real waits: a coupon going overdue and the call date). Rewrites `docs/e2e-full-report.md` with fresh hashes. |
 | Frontend integration (17) | `cd frontend && npm run test:integration[:close]` | The same lifecycle through the browser's HTTP client against the running shim; `:close` includes settlement |
@@ -324,7 +324,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 - **No native time condition on multisig.** The call-date rule is enforced by the daemon's policy, not by the ledger (§3). Proposed fixes in the feedback report: `SignAfter` on `SignerEntry`, or a `TokenEscrow` composition.
 - **Operator keys are backend-held** because no wallet adapter can produce multisig or `LoanSet` counterparty signatures (§4).
 - **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so the app has to pick a chain the wallet approved and encode the signed transaction itself (`signPrepared`). It works, but every signature is a phone round trip, the session does not survive a reload, and Xaman cannot show this network's balances: fine for the demo, slow for development.
-- **The order book is off-chain.** Bids and asks are frontend state; nothing is on-ledger until a deposit, and an ask's funding window has no on-chain effect (a background scan settles stalled bonds at the deadline). A lender's accepted bid is likewise only an off-chain row: nothing reserves funds against an ask (`TokenEscrow` would).
+- **Discovery and funding windows are off-chain.** An ask is a vault plus off-chain metadata; its funding window has no on-chain effect (a background scan settles stalled bonds at the deadline). We built a bid / accept / decline layer and removed it: nothing on the ledger can reserve an investor's funds against an ask, so a "locked" bid was only a database row (`TokenEscrow` would make it real).
 - **No native "this vault lends only to X".** Neither `VaultCreate` nor `LoanBrokerSet` can restrict the loan counterparty; we record the issuer in the vault's `Data` and enforce it in the shim and the enforcer. A `LoanBrokerSet.AllowedCounterparty` (or a Credential requirement on borrowers) would make it a ledger rule.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
 - **No oracle-driven trigger.** A CET1-style trigger would need an off-chain oracle; impairment is triggered manually by the broker.
@@ -351,7 +351,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 |---|---|
 | [`docs/chain-api.md`](docs/chain-api.md) | The chain shim's HTTP contract: every `read.*` / `tx.*` / `profile.*` / `book.*` function, shapes, result codes, the enforcer policy |
 | [`docs/borrower-lender-custody.md`](docs/borrower-lender-custody.md) | Why issuers/investors are independent wallets, and the two wallet-tooling gaps that keep one co-signing key backend-held |
-| [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | The tranche order book (Morpho / Hyperliquid / Tenor-inspired UI) and the off-chain bank-profile store. The bank-profile *form* has since been removed: display names now come from the institution entered at onboarding, the store only pre-seeds the three demo banks |
+| [`docs/bank-profiles-and-order-book.md`](docs/bank-profiles-and-order-book.md) | Design record of the tranche order book (Morpho / Hyperliquid / Tenor-inspired) and the bank-profile store. **Both were removed on 13 September**: funding is a direct deposit from the bond list, names come from the onboarding institution. Kept for the reasoning and the friction it surfaced (#31) |
 | [`docs/tech-stack.md`](docs/tech-stack.md) | Stack rationale, zero-custody boundaries, security model |
 | [`docs/frontend-integration.md`](docs/frontend-integration.md) | Call sequence per screen, with real devnet response samples |
 | [`frontend/README.md`](frontend/README.md) | Frontend layout, scripts, tests |
