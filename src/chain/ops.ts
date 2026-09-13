@@ -20,7 +20,8 @@ import { getClient } from "./client.js";
 import { loadAccounts } from "./accounts.js";
 import { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
 import { getAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
-import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
+import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS, DEADLINE_ORIGINATION } from "./config.js";
+import * as book from "./trancheBookStore.js";
 import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
 import { totalInterest, percentToTenthBp, isoToRipple } from "./loanMath.js";
@@ -42,7 +43,7 @@ async function enforcerCounterSign(blob: string): Promise<any> {
   if (!r.ok || d.error) throw new Error(`enforcer: ${d.error ?? r.statusText}`);
   return d.tx;
 }
-import { positionOf, vaultStateOf, vaultData, brokerFor } from "./readLayer.js";
+import { positionOf, vaultStateOf, vaultData, brokerFor, listVaultsOf } from "./readLayer.js";
 
 const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, explorerUrl: r.explorerUrl, ledgerIndex: r.ledgerIndex });
 
@@ -162,6 +163,63 @@ export async function autoOriginateIfFunded(vaultId: string): Promise<AutoOrigin
   } finally {
     originating.delete(vaultId);
   }
+}
+
+/** Deadline fallback for a bid that never reached full funding: once its off-chain expiresAt
+ *  (order-book.json, no on-chain effect of its own — see friction-log #28) has passed, originate
+ *  anyway for whatever was actually deposited, as long as it clears DEADLINE_ORIGINATION.minFundedRatio
+ *  of the requested principal. Below that ratio the vault is left stalled; nothing here ever moves
+ *  or refunds a depositor's funds, they remain free to VaultWithdraw themselves at any time. */
+export async function originateStalledIfPastDeadline(vaultId: string): Promise<AutoOrigination> {
+  if (originating.has(vaultId)) return { skipped: "origination already in progress" };
+  originating.add(vaultId);
+  try {
+    const client = await getClient();
+    const state = await vaultStateOf(client, vaultId);
+    if (state.loan) return { skipped: "loan already originated" };
+    if (!state.borrowerAddress || !state.loanPrincipal || !state.callDate || !state.bidId) return { skipped: "vault carries no bid" };
+
+    const tranche = (await book.listTranches()).find((t) => t.id === state.bidId);
+    if (!tranche?.expiresAt) return { skipped: "bid has no funding deadline" };
+    if (new Date(tranche.expiresAt).getTime() > Date.now()) return { skipped: "funding deadline not reached yet" };
+
+    const principalDrops = Number(xrpToDrops(state.loanPrincipal));
+    const availableDrops = Number(xrpToDrops(state.assetsAvailable));
+    if (availableDrops <= 0) return { skipped: "nothing was deposited before the deadline" };
+    const fundedRatio = availableDrops / principalDrops;
+    if (fundedRatio < DEADLINE_ORIGINATION.minFundedRatio) {
+      return { skipped: `funded ${(fundedRatio * 100).toFixed(1)}% at deadline, below the ${DEADLINE_ORIGINATION.minFundedRatio * 100}% minimum — left for manual withdrawal` };
+    }
+
+    const lb = await brokerFor(client, vaultId);
+    if (!lb) return { skipped: "no loan broker on this vault" };
+    if (!getAccount(state.borrowerAddress)?.operatorSeed) return { skipped: "issuer has not activated 2-of-2 governance yet" };
+
+    // Amount is the actual raised total, not the original ask: the loan is sized to what showed up.
+    const bid: Bid = {
+      id: state.bidId, borrowerAddress: state.borrowerAddress, amount: state.assetsAvailable,
+      yieldRate: state.loanInterestRate ?? 0, callDate: state.callDate, status: "matched", vaultId, loanBrokerId: lb.index,
+    };
+    const r = await originate(bid);
+    return { originated: r };
+  } catch (e) {
+    return { skipped: `deadline origination failed: ${(e as Error).message}` };
+  } finally {
+    originating.delete(vaultId);
+  }
+}
+
+/** Called on an interval by server.ts: scan every vault the broker owns for one that is past its
+ *  bid's funding deadline with no loan yet, and settle it one way or the other. */
+export async function scanStalledOriginations(): Promise<Record<string, AutoOrigination>> {
+  const client = await getClient();
+  const vaults = await listVaultsOf(client);
+  const out: Record<string, AutoOrigination> = {};
+  for (const v of vaults) {
+    if (v.loan) continue;
+    out[v.vaultId] = await originateStalledIfPastDeadline(v.vaultId);
+  }
+  return out;
 }
 
 /** 2.5 LoanSet: broker signs, both borrower signers add counterparty signatures, submit. Principal moves here. */

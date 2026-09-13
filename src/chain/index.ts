@@ -28,5 +28,7 @@ export const tx = {
     ops.wipeCreatedAccounts();
     return { success: true };
   },
+  // Called by server.ts on an interval (DEADLINE_ORIGINATION.scanIntervalSec) — see ops.ts.
+  scanStalledOriginations: () => ops.scanStalledOriginations(),
 };
 
