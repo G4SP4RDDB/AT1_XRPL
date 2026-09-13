@@ -101,7 +101,7 @@ BROKERENFORCER_SEED=s███████████████████�
 
 The broker creates vaults, sets broker terms, posts first-loss cover, originates loans and triggers write-downs. Its seed signs those directly.
 
-**Issuers and investors bring their own wallets.** They fund a Devnet account (`npm run create-accounts N` prints funded addresses and seeds to import into Xaman, GemWallet or Crossmark) and connect through `xrpl-connect`. The backend only ever learns the public address. Every transaction that needs their signature follows **prepare → sign → submit**: the backend autofills the JSON, the wallet signs it, the backend relays the blob. See [`docs/chain-api.md`](docs/chain-api.md) for the routes.
+**Issuers and investors bring their own wallets.** They fund a Devnet account (`npm run create-accounts N` prints funded addresses and seeds to import into a WalletConnect-compatible wallet such as Xaman) and connect through `xrpl-connect`'s **WalletConnect** adapter (QR code / deep link). That is the only connection method, for investors, issuers and the platform broker alike. The backend only ever learns the public address. Every transaction that needs their signature follows **prepare → sign → submit**: the backend autofills the JSON, the wallet signs it, the backend relays the blob. See [`docs/chain-api.md`](docs/chain-api.md) for the routes.
 
 **Onboarding.** The first time an address connects, a modal asks one question: is this account an **Issuer (borrower)** or an **Investor (lender)**? Nothing else. Display identity (name, title, company) and the 2-of-2 multisig governance are configured later from the profile (navbar pill or the Issue tab), or, for investors, from the withdraw modal. When an owner does activate multisig, their own wallet signs the `SignerListSet` + `AccountSet` pair, so the backend can never flip an account to multisig without consent. The `broker` role is reserved for the platform's own address and opens an admin panel.
 
@@ -131,7 +131,7 @@ The broker creates vaults, sets broker terms, posts first-loss cover, originates
 flowchart TD
     subgraph UI ["Frontend (:5173)"]
         React["React 19 + TypeScript + Vite"]
-        Wallet["xrpl-connect: Xaman / GemWallet / Crossmark"]
+        Wallet["xrpl-connect: WalletConnect (Xaman)"]
         Book["Bid / ask order book (off-chain)"]
         Dash["Vault, PPS and yield dashboard"]
     end
@@ -242,13 +242,13 @@ cd frontend && npm run dev                         # 3: http://localhost:5173
 
 Multisig is not set up by any script: each issuer or investor activates it from the onboarding modal, signing with their own wallet.
 
-> Wallets must be pointed at the hackathon devnet (`wss://lending-hackathon.dev.ripplex.io:51233`) in their own network settings before they can sign for this app.
+> Caveat: this ledger is a custom network (NetworkID 4001) while WalletConnect's `xrpl:2` chain id denotes the public XRPL devnet, so a wallet that autofills and submits against its own nodes may refuse to sign for it (`request() chainId`). WalletConnect is nonetheless the single entry point, by product decision; see §12.
 
 ---
 
 ## 8. Using the app
 
-1. **Connect** — *Connect Wallet* (top right) → Xaman via WalletConnect QR, GemWallet or Crossmark. First connection asks only whether you are an Issuer or an Investor. Identity and 2-of-2 governance can be set later from your profile (navbar pill / Issue tab) or the withdraw modal.
+1. **Connect** — *Connect Wallet* (top right) → scan the WalletConnect QR code (Xaman or any WalletConnect wallet). This is the only connection method, the platform broker included. First connection asks only whether you are an Issuer or an Investor. Identity and 2-of-2 governance can be set later from your profile (navbar pill / Issue tab) or the withdraw modal.
    Everyone can browse every screen; only the platform broker gets the *Broker Hub*. Actions are role-gated: only issuers can post a bond, only investors can bid on or fund a tranche (`frontend/src/lib/roles.ts`).
 2. **Issue (issuer)** — post a bid with amount, annual yield and call date. The platform creates the vault and broker objects on the spot.
 3. **Invest (investor)** — post an indicative ask, or *Deposit* against an open bid. Your wallet signs the `VaultDeposit`; you receive MPT shares.
@@ -322,6 +322,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 
 - **No native time condition on multisig.** The call-date rule is enforced by the daemon's policy, not by the ledger (§3). Proposed fixes in the feedback report: `SignAfter` on `SignerEntry`, or a `TokenEscrow` composition.
 - **Operator keys are backend-held** because no wallet adapter can produce multisig or `LoanSet` counterparty signatures (§4).
+- **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so a wallet that autofills and submits on its own nodes may refuse to sign. A per-network CAIP id (or a way to pass the node URL in the pairing) is the fix we would propose.
 - **The order book is off-chain.** Bids and asks are frontend state; nothing is on-ledger until a deposit.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
 - **No oracle-driven trigger.** A CET1-style trigger would need an off-chain oracle; impairment is triggered manually by the broker.

@@ -1,9 +1,4 @@
-import {
-  WalletManager,
-  WalletConnectAdapter,
-  GemWalletAdapter,
-  CrossmarkAdapter,
-} from 'xrpl-connect'
+import { WalletManager, WalletConnectAdapter } from 'xrpl-connect'
 import { network } from '@/lib/xrpl'
 
 export const hackathonDevnet = {
@@ -14,15 +9,15 @@ export const hackathonDevnet = {
   walletConnectId: 'xrpl:2',
 }
 
-// Real, independent lender/borrower identities: the extension/app holds the key, this app only
-// ever sees the public address and a signed blob it hands back (see chain-api.md "prepare/sign").
-// GemWallet and Crossmark are browser extensions (no config needed, inert if not installed);
-// WalletConnect covers Xaman via QR/deep link. Note: GemWallet/Crossmark must be pointed at this
-// custom hackathon devnet's RPC/WSS in their own network settings for signing here to work.
+// WalletConnect is the only way in: lenders, borrowers and the platform broker all pair a
+// WalletConnect-compatible wallet (Xaman) by QR code / deep link. The app only ever sees the
+// public address and the signed blobs it hands back (see chain-api.md "prepare/sign").
+// Caveat, measured on 13 Sept: this ledger is a custom network (NetworkID 4001) while
+// WalletConnect's CAIP id 'xrpl:2' denotes the public devnet, so a wallet that autofills and
+// submits against its own nodes may refuse to sign for it ("request() chainId"). Kept as the single
+// entry point by product decision; see README §11.
 export const walletManager = new WalletManager({
   adapters: [
-    new GemWalletAdapter(),
-    new CrossmarkAdapter(),
     new WalletConnectAdapter({
       projectId: '32798b46e13dfb0049706a524cf132d6',
       useModal: false,

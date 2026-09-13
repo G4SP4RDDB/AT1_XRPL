@@ -67,7 +67,8 @@ for these two roles as well.
 
 ## Practical note for testing
 
-GemWallet and Crossmark must be pointed at this project's custom hackathon devnet
-(`wss://lending-hackathon.dev.ripplex.io:51233`) in their own network settings before they can
-sign anything for this app — that's outside this app's control. Xaman via WalletConnect has the
-same constraint through whatever network Xaman itself is configured for.
+WalletConnect (Xaman) is the only connection method offered by the UI. This ledger is a custom
+network (NetworkID 4001) while WalletConnect's CAIP id `xrpl:2` denotes the public devnet, so a
+wallet that autofills and submits against its own nodes may refuse to sign for it
+(`request() chainId`); that is outside this app's control. GemWallet / Crossmark adapters and a
+local seed adapter were tried during the hackathon and removed by product decision.

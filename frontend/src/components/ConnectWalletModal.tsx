@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { FC } from 'react'
-import { useWallet } from '@/lib/wallet'
+import { useWallet, type AdapterId } from '@/lib/wallet'
 import { walletManager } from '@/lib/xrplConnect'
 import { chainClient } from '@/lib/chainClient'
 import type { DbAccount } from '@shared/types'
@@ -12,13 +12,11 @@ interface ConnectWalletModalProps {
 }
 
 const ADAPTERS = [
-  { id: 'gemwallet' as const, label: 'GemWallet', icon: '💎', hint: 'Extension navigateur' },
-  { id: 'crossmark' as const, label: 'Crossmark', icon: '✖️', hint: 'Extension navigateur' },
-  { id: 'walletconnect' as const, label: 'Xaman', icon: '📱', hint: 'QR code / WalletConnect' },
+  { id: 'walletconnect' as const, label: 'WalletConnect', icon: '📱', hint: 'Xaman ou tout wallet compatible WalletConnect — QR code / lien', disabled: false },
 ]
 
 export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClose }) => {
-  const { connectAdapter, selectRoleAccount, isConnected } = useWallet()
+  const { connectAdapter, isConnected } = useWallet()
   const [activeTab, setActiveTab] = useState<'wallet' | 'registered'>('wallet')
 
   const [dbAccounts, setDbAccounts] = useState<DbAccount[]>([])
@@ -49,7 +47,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
     if (isConnected && isOpen) onClose()
   }, [isConnected, isOpen, onClose])
 
-  const handleConnectAdapter = async (id: 'gemwallet' | 'crossmark' | 'walletconnect') => {
+  const handleConnectAdapter = async (id: AdapterId) => {
     setConnectingId(id)
     setErrorMsg(null)
     setPairingUri(null)
@@ -59,7 +57,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
 
       await connectAdapter(id, (uri: string) => setPairingUri(uri))
     } catch (err: any) {
-      setErrorMsg(err?.message || `Connexion à ${id} impossible — l'extension est-elle installée et pointée sur le devnet du hackathon ?`)
+      setErrorMsg(err?.message || 'Connexion WalletConnect impossible — réessayez ou vérifiez que votre wallet accepte le réseau du hackathon.')
     } finally {
       setConnectingId(null)
     }
@@ -150,7 +148,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                   {copied ? '✓ Lien copié !' : '📋 Copier le lien WalletConnect (wc:...)'}
                 </button>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                  Scannez ce QR code avec Xaman, ou collez le lien dans l'app.
+                  Scannez ce QR code avec votre wallet WalletConnect (Xaman), ou collez le lien dans l'app.
                 </div>
               </div>
             ) : (
@@ -160,7 +158,8 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                     key={a.id}
                     type="button"
                     className="btn btn-secondary"
-                    disabled={connectingId !== null}
+                    disabled={connectingId !== null || a.disabled}
+                    title={a.disabled ? a.hint : undefined}
                     onClick={() => handleConnectAdapter(a.id)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.1rem' }}
                   >
@@ -181,18 +180,11 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
               }}
             >
               Pas encore de compte financé ? Lancez <code>npm run create-accounts</code> à la racine du projet,
-              importez la seed affichée dans GemWallet, Crossmark ou Xaman, puis connectez-vous ici.
-              Vous choisirez ensuite votre rôle (emprunteur ou prêteur) au premier lancement.
+              importez la seed affichée dans votre wallet WalletConnect (Xaman), puis scannez le QR code ci-dessus.
+              Vous choisirez ensuite votre rôle au premier lancement. Le courtier plateforme se connecte de la même
+              façon, avec le wallet qui détient l'adresse broker.
             </div>
 
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => selectRoleAccount('broker')}
-              style={{ alignSelf: 'center', fontSize: '0.78rem' }}
-            >
-              🏛️ Se connecter en tant que Courtier Plateforme (compte fixe)
-            </button>
           </div>
         )}
 
