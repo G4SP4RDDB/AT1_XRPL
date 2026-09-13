@@ -37,8 +37,8 @@ console.log("✓ Updated .enforcer.env with broker and enforcer credentials.");
 console.log("\n🧹 Wiping previous created accounts (created_accounts.json / created_accounts.txt)...");
 wipeCreatedAccounts();
 
-console.log("📦 Generating 3 fresh test accounts on Devnet for testing...");
-for (let i = 1; i <= 3; i++) {
+console.log("📦 Generating 8 fresh test accounts on Devnet for testing...");
+for (let i = 1; i <= 8; i++) {
   const { wallet, balanceXrp } = await fundNewAccount();
   const name = `Compte Aléatoire #${i}`;
   addCreatedAccount({
@@ -50,7 +50,7 @@ for (let i = 1; i <= 3; i++) {
   });
   console.log(`✓ ${name} généré (${balanceXrp} XRP) : ${wallet.classicAddress}`);
 }
-console.log("👉 Ces 3 comptes sont inscrits dans 'created_accounts.json' et 'created_accounts.txt'.");
+console.log("👉 Ces 8 comptes sont inscrits dans 'created_accounts.json' et 'created_accounts.txt'.");
 console.log("👉 La base SQLite reste vierge : l'enregistrement se fera lors du 1er setup de chaque compte.");
 
 console.log("\n⏳ Waiting for broker accounts to validate on the XRP Ledger...");

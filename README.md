@@ -207,7 +207,7 @@ npm install && (cd frontend && npm install)
 npm run dev:tmux
 ```
 
-`scripts/start-all.sh` then, in order: funds the platform broker and enforcer from the faucet and writes `.env` / `.enforcer.env` (plus 3 spare test accounts in `created_accounts.json` / `.txt`); runs the backend and frontend test suites; typechecks and builds; frees ports 8788, 8787, 5173; and opens a 2x2 `tmux` session named `at1`:
+`scripts/start-all.sh` then, in order: funds the platform broker and enforcer from the faucet and writes `.env` / `.enforcer.env` (plus 8 spare test accounts in `created_accounts.json` / `.txt`); runs the backend and frontend test suites; typechecks and builds; frees ports 8788, 8787, 5173; and opens a 2x2 `tmux` session named `at1`:
 
 | Pane | Runs |
 |---|---|
@@ -229,7 +229,7 @@ git clone git@github.com:G4SP4RDDB/AT1_XRPL.git && cd AT1_XRPL
 npm install && (cd frontend && npm install)
 cp .env.example .env && cp frontend/.env.example frontend/.env
 
-npm run fund:setup          # broker + enforcer from the faucet -> .env / .enforcer.env, 3 spare accounts
+npm run fund:setup          # broker + enforcer from the faucet -> .env / .enforcer.env, 8 spare accounts
 npm run create-accounts 4   # optional: more funded test accounts to import into a wallet
 npm run balances            # optional: check on-chain balances
 
@@ -285,7 +285,7 @@ Four independent layers, all green. Summary with per-layer results: [`docs/test-
 | Command | What it does |
 |---|---|
 | `npm run dev:tmux` / `npm run stop:tmux` | One-command launcher (§7) and its teardown |
-| `npm run fund:setup` | Funds broker + enforcer from the faucet, writes `.env` / `.enforcer.env`, regenerates 3 spare test accounts (SQLite stays empty until accounts onboard) |
+| `npm run fund:setup` | Funds broker + enforcer from the faucet, writes `.env` / `.enforcer.env`, regenerates 8 spare test accounts (SQLite stays empty until accounts onboard) |
 | `npm run create-accounts [N]` | Funds `N` fresh devnet accounts (1,000 XRP each) and prints addresses + seeds |
 | `npm run enforcer` | Enforcer daemon on :8788 |
 | `npm run serve` | Chain shim on :8787; `ENFORCER_URL` selects the daemon, otherwise the policy runs in-process for development. Never wipes local data. |
