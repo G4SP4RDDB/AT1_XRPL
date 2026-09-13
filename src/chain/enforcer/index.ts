@@ -17,6 +17,7 @@ export type BlockedReason =
   | "wrong-amount"
   | "not-loan-pay"
   | "unauthorized-principal-withdrawal"
+  | "not-issuer"
   | "not-supported";
 
 export type CosignResult = { ok: true; blob: string } | { ok: false; blocked: BlockedReason; reason: string };
@@ -125,6 +126,27 @@ export function decide(
     } else if (flags & TF_LATE || String(prepared.Amount) !== String(base)) {
       return { ok: false, blocked: "wrong-amount", reason: `coupon must be exactly ${base} drops with no flags, got ${prepared.Amount}` };
     }
+  }
+  return { ok: true };
+}
+
+/** Counter-signing a LoanSet at origination: the platform's broker must own the LoanBroker, and the
+ *  loan's Counterparty must be the issuer the vault was created for (the `b` field of the bid stored
+ *  in the vault's Data). Pure, so it is unit-tested. */
+export function decideCounterSign(
+  loanSet: Record<string, any>,
+  loanBroker: any,
+  bound: { b?: string } | undefined,
+  brokerAddress: string
+): Decision {
+  if (loanSet.TransactionType !== "LoanSet") {
+    return { ok: false, blocked: "not-supported", reason: `counter-sign expects LoanSet, got ${loanSet.TransactionType}` };
+  }
+  if (!loanBroker || loanBroker.Owner !== brokerAddress) {
+    return { ok: false, blocked: "not-supported", reason: "loan broker is not this platform's" };
+  }
+  if (bound?.b && bound.b !== loanSet.Counterparty) {
+    return { ok: false, blocked: "not-issuer", reason: `vault is bound to issuer ${bound.b}; LoanSet counterparty is ${loanSet.Counterparty}` };
   }
   return { ok: true };
 }

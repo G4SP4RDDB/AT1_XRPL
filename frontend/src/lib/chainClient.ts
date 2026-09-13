@@ -239,6 +239,26 @@ export class ChainBackendClient {
     return baseChain.tx.submitSigned(signed.tx_blob)
   }
 
+  /** A funding deposit triggers origination on the backend (money in, loan out). Tell the user what
+   *  happened to it: a LoanSet hash, or why it waits (partially funded, issuer without 2/2 yet). */
+  private announceAutoOrigination(receipt: TxReceipt): void {
+    const auto = receipt.autoOrigination
+    if (!auto) return
+    if ('originated' in auto) {
+      const ok = auto.originated.result === 'tesSUCCESS'
+      notifyTx({
+        title: ok ? 'Prêt originé automatiquement (LoanSet)' : 'Origination automatique rejetée',
+        message: ok
+          ? `Le vault est financé : le principal a été versé à l'émetteur.${auto.originated.loanId ? ` Loan ${auto.originated.loanId.slice(0, 10)}…` : ''}`
+          : `Code ledger : ${auto.originated.result}`,
+        txHash: auto.originated.hash || undefined,
+        type: ok ? 'success' : 'error',
+      })
+    } else if (!/already originated|already in progress/.test(auto.skipped)) {
+      notifyTx({ title: 'Origination automatique en attente', message: auto.skipped, type: 'info' })
+    }
+  }
+
   /** VaultWithdraw for a plain (non-multisig) account: prepared here, signed by the depositor's
    *  own connected wallet, then submitted. */
   private async signAndSubmitWithdraw(req: RawWithdrawRequest): Promise<TxReceipt | Blocked> {
@@ -338,7 +358,8 @@ export class ChainBackendClient {
   /** Convert one pending LP bid into a real on-chain VaultDeposit, up to whatever capacity
    * the vault's AssetsMaximum cap still allows — first-come-first-served; a bid that no
    * longer fits is rejected on-chain (tecINSUFFICIENT_FUNDS-style guardrail), not silently
-   * dropped. No loan origination here — call `originateTranche` separately once ready. */
+   * dropped. The backend originates the loan itself as soon as the vault is funded (see
+   * `announceAutoOrigination`); `originateTranche` remains as a manual fallback. */
   async acceptBid(askId: string): Promise<{ vaultId: string; txHash: string }> {
     const ask = this.asks.find((a) => a.id === askId) ?? (await this.getAsks()).find((a) => a.id === askId)
     if (!ask) throw new Error('Bid not found')
@@ -355,6 +376,7 @@ export class ChainBackendClient {
     if (receipt.result !== 'tesSUCCESS') {
       throw new Error(`Deposit failed on-chain: ${receipt.result}`)
     }
+    this.announceAutoOrigination(receipt)
 
     ask.status = 'deposited'
     try {
@@ -416,6 +438,7 @@ export class ChainBackendClient {
       throw new Error(`Deposit failed on-chain: ${depositReceipt.result}`)
     }
 
+    this.announceAutoOrigination(depositReceipt)
     notifyTx({
       title: 'Dépôt validé on-chain (VaultDeposit)',
       message: `${amount} XRP déposés avec succès. Parts de Vault (MPT) émises.`,

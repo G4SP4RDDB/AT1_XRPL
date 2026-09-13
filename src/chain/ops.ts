@@ -14,8 +14,8 @@
 // The account owner still authorizes the *conversion* to multisig themselves (prepareAccountMultisigSetup
 // returns two plain transactions for their own wallet to sign) — the backend just can't be cut out
 // of the ongoing cosigning role that comes after, given today's tooling.
-import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, combineLoanSetCounterpartySigners } from "xrpl";
-import type { Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
+import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, combineLoanSetCounterpartySigners, decode } from "xrpl";
+import type { AutoOrigination, Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
 import { loadAccounts } from "./accounts.js";
 import { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
@@ -42,7 +42,7 @@ async function enforcerCounterSign(blob: string): Promise<any> {
   if (!r.ok || d.error) throw new Error(`enforcer: ${d.error ?? r.statusText}`);
   return d.tx;
 }
-import { positionOf } from "./readLayer.js";
+import { positionOf, vaultStateOf, vaultData, brokerFor } from "./readLayer.js";
 
 const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, explorerUrl: r.explorerUrl, ledgerIndex: r.ledgerIndex });
 
@@ -123,13 +123,58 @@ export async function prepareDeposit(lenderAddress: string, vaultId: string, amo
  *  signature — VaultDeposit, a non-multisig VaultWithdraw, or one leg of a multisig setup). */
 export async function submitSigned(signedBlob: string): Promise<TxReceipt> {
   const client = await getClient();
-  return toReceipt(await submitBlob(client, signedBlob));
+  const receipt = toReceipt(await submitBlob(client, signedBlob));
+  let decoded: any;
+  try { decoded = decode(signedBlob); } catch { decoded = undefined; }
+  if (decoded?.TransactionType === "VaultDeposit" && receipt.result === "tesSUCCESS" && decoded.VaultID) {
+    receipt.autoOrigination = await autoOriginateIfFunded(String(decoded.VaultID));
+  }
+  return receipt;
+}
+
+/** Money in, loan out: the deposit that brings the vault's liquid assets up to the bid's principal
+ *  triggers LoanSet to the vault's issuer at once, no manual step. One bond = one loan, so nothing
+ *  happens once a loan exists. Needs the issuer's 2-of-2 governance (the counterparty signature
+ *  comes from its operator key); until then the deposit stands and origination waits. */
+const originating = new Set<string>();
+export async function autoOriginateIfFunded(vaultId: string): Promise<AutoOrigination> {
+  if (originating.has(vaultId)) return { skipped: "origination already in progress" };
+  originating.add(vaultId);
+  try {
+    const client = await getClient();
+    const state = await vaultStateOf(client, vaultId);
+    if (state.loan) return { skipped: "loan already originated" };
+    if (!state.borrowerAddress || !state.loanPrincipal || !state.callDate) return { skipped: "vault carries no bid" };
+    const principalDrops = Number(xrpToDrops(state.loanPrincipal));
+    const availableDrops = Number(xrpToDrops(state.assetsAvailable));
+    if (availableDrops < principalDrops) return { skipped: `funded ${state.assetsAvailable} / ${state.loanPrincipal} XRP` };
+    const lb = await brokerFor(client, vaultId);
+    if (!lb) return { skipped: "no loan broker on this vault" };
+    if (!getAccount(state.borrowerAddress)?.operatorSeed) return { skipped: "issuer has not activated 2-of-2 governance yet" };
+    const bid: Bid = {
+      id: state.bidId ?? vaultId, borrowerAddress: state.borrowerAddress, amount: state.loanPrincipal,
+      yieldRate: state.loanInterestRate ?? 0, callDate: state.callDate, status: "matched", vaultId, loanBrokerId: lb.index,
+    };
+    const r = await originate(bid);
+    return { originated: r };
+  } catch (e) {
+    return { skipped: `origination failed: ${(e as Error).message}` };
+  } finally {
+    originating.delete(vaultId);
+  }
 }
 
 /** 2.5 LoanSet: broker signs, both borrower signers add counterparty signatures, submit. Principal moves here. */
 export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string }> {
   if (!bid.loanBrokerId) throw new Error("bid has no loanBrokerId, call createBond first");
   const client = await getClient();
+  // The vault is bound to one issuer: the bid stored in its Data field at creation. Nobody else can
+  // be the counterparty of a loan on it (the enforcer checks the same thing before counter-signing).
+  const lbEntry = await ledgerEntry(client, bid.loanBrokerId);
+  const bound = lbEntry?.VaultID ? await vaultData(client, lbEntry.VaultID) : {};
+  if (bound.b && bound.b !== bid.borrowerAddress) {
+    throw new Error(`vault ${lbEntry.VaultID} is bound to issuer ${bound.b}; ${bid.borrowerAddress} cannot borrow from it`);
+  }
   const now = await ledgerCloseTime(client);
   const t = termsFromBid(bid, now);
   const tx: any = {

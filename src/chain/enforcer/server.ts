@@ -1,14 +1,16 @@
 // The enforcer as its own process. Owns the enforcer key (.enforcer.env) and nothing else.
 //   POST /cosign        { prepared }  -> { ok: true, blob } | { ok: false, blocked, reason }
-//   POST /counter-sign  { blob }      -> { ok: true, tx }      (LoanSet counterparty signature for origination)
+//   POST /counter-sign  { blob }      -> { ok: true, tx } | 403 { error }   (LoanSet counterparty signature; refused unless the
+//                                       Counterparty is the issuer the vault was created for)
 //   GET  /health                      -> { ok: true, signer, broker }
 // Start with: npm run enforcer   (port ENFORCER_PORT, default 8788). The chain layer uses it when ENFORCER_URL is set.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { signLoanSetByCounterparty } from "xrpl";
+import { signLoanSetByCounterparty, decode } from "xrpl";
 import { getClient } from "../client.js";
-import { cosign, enforcerWallet } from "./index.js";
+import { cosign, decideCounterSign, enforcerWallet } from "./index.js";
+import { ledgerEntry } from "../read.js";
 
 const PORT = Number(process.env.ENFORCER_PORT ?? 8788);
 const envFile = fs.readFileSync(path.resolve(process.cwd(), ".enforcer.env"), "utf8");
@@ -36,6 +38,20 @@ http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && req.url === "/counter-sign") {
       const { blob } = await body(req);
+      // Policy before signature: our broker's LoanBroker, and the vault's own issuer as counterparty.
+      const loanSet: any = decode(blob);
+      const client = await getClient();
+      const lb = loanSet?.LoanBrokerID ? await ledgerEntry(client, loanSet.LoanBrokerID).catch(() => undefined) : undefined;
+      let bound: { b?: string } | undefined;
+      if (lb?.VaultID) {
+        const vault = await ledgerEntry(client, lb.VaultID).catch(() => undefined);
+        try { bound = vault?.Data ? JSON.parse(Buffer.from(vault.Data, "hex").toString("utf8")) : undefined; } catch { bound = undefined; }
+      }
+      const d = decideCounterSign(loanSet ?? {}, lb, bound, BROKER);
+      if (!d.ok) {
+        console.log(`[enforcer] LoanSet counter-sign refused: ${d.blocked} (${d.reason})`);
+        return res.writeHead(403).end(JSON.stringify({ error: `${d.blocked}: ${d.reason}` }));
+      }
       const { tx } = signLoanSetByCounterparty(enforcerWallet(), blob, { multisign: true });
       console.log(`[enforcer] LoanSet counter-signed for ${tx.Counterparty}`);
       return res.end(JSON.stringify({ ok: true, tx }));

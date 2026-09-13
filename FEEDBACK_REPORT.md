@@ -14,7 +14,7 @@ Over the 36-hour hackathon, we built an on-chain **Additional Tier 1 (AT1) Bond 
 
 Rather than relying on closed-ended phase gating (Track 2), we implemented the Call Date lock through native vault illiquidity combined with an **on-chain 2-of-2 Multisig gate** (`SignerListSet` + `asfDisableMaster`) governed by an autonomous, software-only **Enforcer Daemon**. 
 
-Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **25 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
+Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **26 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
 
 ---
 
@@ -105,6 +105,7 @@ We chose WalletConnect (Xaman) as the only way for investors, issuers and the br
 | **Docs** | LoanPay flags untabulated; "full payment = early close" unstated | Medium | XLS-66 LoanPay reference | Flags table + settlement paragraph |
 | **Docs** | First-loss capital lifecycle unexplained | Low | `LoanBrokerCoverDeposit` | One worked example |
 | **Protocol** | No owner/broker key rotation without recreating the vault | Medium | `VaultCreate` / `LoanBrokerSet` | Document RegularKey + SignerList pattern |
+| **Protocol** | No way to bind a vault / loan broker to one borrower | Medium | `LoanBrokerSet` has no counterparty restriction | `AllowedCounterparty` field or a Credential requirement; we use the vault `Data` + enforcer |
 | **Tooling** | Hook tags doc greps with `tx_type`; "3 pages" for markdown; no seed guard | Low | xrpl-devex-hook 2.4.0 / brief | Tag with result codes only; word budget; pre-commit seed grep |
 
 ---

@@ -96,10 +96,16 @@ export interface TxReceipt {
   explorerUrl: string;
   ledgerIndex?: number;
   stub?: true;
+  /** Set on a VaultDeposit receipt: what the shim did about origination right after the deposit. */
+  autoOrigination?: AutoOrigination;
 }
 
+export type AutoOrigination =
+  | { originated: TxReceipt & { loanId?: string } }
+  | { skipped: string };
+
 export type Blocked = {
-  blocked: "before-call-date" | "wrong-amount" | "not-loan-pay" | "unauthorized-principal-withdrawal" | "not-supported";
+  blocked: "before-call-date" | "wrong-amount" | "not-loan-pay" | "unauthorized-principal-withdrawal" | "not-issuer" | "not-supported";
   reason: string;
 };
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide, decideWithdraw, callDateRipple } from "../src/chain/enforcer/index.js";
+import { decideCounterSign, decide, decideWithdraw, callDateRipple } from "../src/chain/enforcer/index.js";
 
 const BROKER = "rBrokerXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 const broker = { Owner: BROKER };
@@ -114,3 +114,16 @@ test("decide routes VaultWithdraw to decideWithdraw cleanly", () => {
   assert.equal(d.ok, true);
 });
 
+
+test("counter-sign: only the vault's own issuer can be the LoanSet counterparty", () => {
+  const lb = { Owner: BROKER, VaultID: "V1" };
+  const loanSet = { TransactionType: "LoanSet", LoanBrokerID: "LB", Counterparty: "rIssuer" };
+  assert.equal(decideCounterSign(loanSet, lb, { b: "rIssuer" }, BROKER).ok, true);
+  const other = decideCounterSign({ ...loanSet, Counterparty: "rSomeoneElse" }, lb, { b: "rIssuer" }, BROKER);
+  assert.equal(other.ok, false);
+  if (!other.ok) assert.equal(other.blocked, "not-issuer");
+  assert.equal(decideCounterSign(loanSet, { Owner: "rNotUs", VaultID: "V1" }, { b: "rIssuer" }, BROKER).ok, false);
+  assert.equal(decideCounterSign({ TransactionType: "Payment" }, lb, { b: "rIssuer" }, BROKER).ok, false);
+  // a vault without a stored bid does not bind anyone
+  assert.equal(decideCounterSign(loanSet, lb, undefined, BROKER).ok, true);
+});

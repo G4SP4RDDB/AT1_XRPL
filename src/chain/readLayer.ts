@@ -25,8 +25,9 @@ async function ownedObjects(client: Client, account: string, entryType: string):
   return out;
 }
 
-async function vaultData(client: Client, v: VaultInfo): Promise<{ id?: string; b?: string; a?: string; y?: number; c?: string }> {
-  const r: any = await client.request({ command: "ledger_entry", index: v.vaultId, ledger_index: "validated" } as any);
+/** The bid stored in the vault's Data field at creation: id, issuer address (b), amount, yield, call date. */
+export async function vaultData(client: Client, vaultId: string): Promise<{ id?: string; b?: string; a?: string; y?: number; c?: string }> {
+  const r: any = await client.request({ command: "ledger_entry", index: vaultId, ledger_index: "validated" } as any);
   const hex = r.result.node?.Data;
   if (!hex) return {};
   try { return JSON.parse(Buffer.from(hex, "hex").toString("utf8")); } catch { return {}; }
@@ -54,14 +55,14 @@ async function findLoan(client: Client, borrower: string | undefined, loanBroker
   return loans.filter((l) => l.LoanBrokerID === loanBrokerId).sort((a, b) => Number(b.LoanSequence) - Number(a.LoanSequence))[0];
 }
 
-async function brokerFor(client: Client, vaultId: string): Promise<any | undefined> {
+export async function brokerFor(client: Client, vaultId: string): Promise<any | undefined> {
   const brokers = await ownedObjects(client, loadAccounts().broker.classicAddress, "LoanBroker");
   return brokers.find((b) => b.VaultID === vaultId);
 }
 
 export async function vaultStateOf(client: Client, vaultId: string): Promise<VaultState> {
   const v = await vaultInfo(client, vaultId);
-  const data = await vaultData(client, v);
+  const data = await vaultData(client, vaultId);
   const lb = await brokerFor(client, vaultId);
   const loan = await findLoan(client, data.b, lb?.index);
   // A closed loan omits PaymentRemaining rather than serializing it as 0 (see loanState above); `?? 0` keeps

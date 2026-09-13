@@ -197,8 +197,8 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
               <div>
                 <p style={{ fontSize: '0.85rem', color: bookTheme.textSecondary, marginBottom: '1rem' }}>
                   {fillFraction >= 1
-                    ? 'This tranche is fully subscribed. You can originate the loan now.'
-                    : `Needs ${Number(target - filled).toLocaleString()} more XRP before origination.`}
+                    ? 'This tranche is fully subscribed. Origination is automatic on the funding deposit; use this button only if it was skipped (e.g. 2/2 governance not active at the time).'
+                    : `Needs ${Number(target - filled).toLocaleString()} more XRP; the loan is originated automatically by the deposit that fills it.`}
                 </p>
                 <button
                   type="button"
