@@ -103,11 +103,20 @@ export async function createBond(bid: Bid): Promise<{ vaultId: string; loanBroke
   return { vaultId, loanBrokerId, receipts };
 }
 
+/** Transactions that wait for a human signature in a wallet (two QR approvals for the multisig
+ *  setup) outlive autofill's ~20-ledger LastLedgerSequence (about a minute here) and come back
+ *  tefMAX_LEDGER. Give them ~15 minutes instead. */
+const WALLET_SIGNING_LEDGERS = 300;
+async function extendExpiry<T extends Record<string, any>>(client: Awaited<ReturnType<typeof getClient>>, tx: T): Promise<T> {
+  (tx as Record<string, any>).LastLedgerSequence = (await client.getLedgerIndex()) + WALLET_SIGNING_LEDGERS;
+  return tx;
+}
+
 /** 2.3 VaultDeposit — prepare only. The lender's own wallet signs the result (see chainClient.ts),
  *  then hands the blob to submitSigned() below. */
 export async function prepareDeposit(lenderAddress: string, vaultId: string, amountXrp: string): Promise<Record<string, any>> {
   const client = await getClient();
-  return client.autofill({ TransactionType: "VaultDeposit", Account: lenderAddress, VaultID: vaultId, Amount: xrpToDrops(amountXrp) } as any);
+  return extendExpiry(client, await client.autofill({ TransactionType: "VaultDeposit", Account: lenderAddress, VaultID: vaultId, Amount: xrpToDrops(amountXrp) } as any));
 }
 
 /** Submit any transaction already signed by an external, independent wallet (a plain single
@@ -236,12 +245,12 @@ export async function prepareWithdraw(req: WithdrawRequest): Promise<{ prepared:
     if (Number(shares) <= 0) return { blocked: "not-supported", reason: "no yield shares yet" };
   }
 
-  const prepared = await client.autofill({
+  const prepared = await extendExpiry(client, await client.autofill({
     TransactionType: "VaultWithdraw",
     Account: req.depositorAddress,
     VaultID: req.vaultId,
     Amount: { mpt_issuance_id: v.shareMptId, value: shares },
-  } as any);
+  } as any));
   return { prepared };
 }
 
@@ -297,6 +306,8 @@ export async function prepareAccountMultisigSetup(accountAddress: string): Promi
   // Both come from the same not-yet-submitted account, autofilled independently — force the second
   // transaction's Sequence past the first so they don't collide when submitted back to back.
   disableMaster.Sequence = Number(signerListSet.Sequence) + 1;
+  await extendExpiry(client, signerListSet);
+  await extendExpiry(client, disableMaster);
 
   return { signerListSet, disableMaster };
 }
