@@ -353,7 +353,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 | Deliverable | Where |
 |---|---|
 | Developer feedback report (max 3 pages, 40 % of the score) | [`feedback.md`](feedback.md) |
-| Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md) |
+| Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`Tokenized AT1 Bonds Presentation.pdf`](<Tokenized AT1 Bonds Presentation.pdf>) (markdown source with speaker notes: [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md)) |
 | Verified on-chain transactions | §6 above (19 steps, 14 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
 | Raw friction log (33 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
 | Full analysis compendium (architecture evolution, Track 1 vs 2, custody decisions, every friction with repro) | [`docs/comprehensive-analysis-and-feedback.md`](docs/comprehensive-analysis-and-feedback.md) |
