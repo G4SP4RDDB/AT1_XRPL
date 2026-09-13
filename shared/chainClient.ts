@@ -1,6 +1,6 @@
 // Browser-safe, typed client for the chain shim. Person B imports this; nothing here signs or touches the ledger.
 // Usage:  const chain = createChainClient(import.meta.env.VITE_CHAIN_URL ?? "http://localhost:8787")
-import type { Bid, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount, AccountRole, CreatedAccount } from "./types.js";
+import type { Ask, VaultState, Position, TxReceipt, WithdrawRequest, Blocked, DbAccount, AccountRole, CreatedAccount } from "./types.js";
 
 export type ChainClient = ReturnType<typeof createChainClient>;
 
@@ -54,7 +54,7 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       /** Deposit First-Loss cover capital into a LoanBroker. */
       depositCover: (loanBrokerId: string, amount: string) => call<TxReceipt>("/tx/depositCover", [loanBrokerId, amount]),
       /** Borrower posted a bid: creates vault + broker + cover. Keep vaultId and loanBrokerId on the bid. */
-      createBond: (bid: Bid) => call<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }>("/tx/createBond", [bid]),
+      createBond: (ask: Ask) => call<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }>("/tx/createBond", [ask]),
 
       /** Prepare a VaultDeposit for the lender's own wallet to sign (amount in XRP, e.g. "1000") —
        *  submit the result with submitSigned() once signed. */
@@ -62,7 +62,7 @@ export function createChainClient(baseUrl = "http://localhost:8787", fetchImpl: 
       /** Submit any transaction already signed by an external, independent wallet. */
       submitSigned: (signedBlob: string) => call<TxReceipt>("/tx/submitSigned", [signedBlob]),
       /** LoanSet with the multisig borrower; principal moves in this transaction. Keep loanId on the bid. */
-      originate: (bid: Bid) => call<TxReceipt & { loanId?: string }>("/tx/originate", [bid]),
+      originate: (ask: Ask) => call<TxReceipt & { loanId?: string }>("/tx/originate", [ask]),
       /** One scheduled coupon, co-signed by the enforcer. Late coupons are flagged automatically. Multisig-active accounts only. */
       payCoupon: (loanId: string, borrowerAddress: string) => call<TxReceipt | Blocked>("/tx/payCoupon", [loanId, borrowerAddress]),
       /** yield-only: redeem position.yieldShares. full: every share (fails with tecINSUFFICIENT_FUNDS or blocked by Enforcer while lent). Multisig-active accounts only. */

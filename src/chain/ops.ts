@@ -15,7 +15,7 @@
 // returns two plain transactions for their own wallet to sign) — the backend just can't be cut out
 // of the ongoing cosigning role that comes after, given today's tooling.
 import { Wallet, xrpToDrops, dropsToXrp, multisign, signLoanSetByCounterparty, combineLoanSetCounterpartySigners, decode } from "xrpl";
-import type { AutoOrigination, Bid, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
+import type { AutoOrigination, Ask, TxReceipt, WithdrawRequest, Blocked } from "../../shared/types.js";
 import { getClient } from "./client.js";
 import { loadAccounts } from "./accounts.js";
 import { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
@@ -69,25 +69,26 @@ function getOperatorFor(address: string): Wallet {
 }
 const getBorrowerOpFor = getOperatorFor;
 
-/** Loan terms derived from a bid: PaymentTotal fixed, interval from the call date (min 60 s). */
-export function termsFromBid(bid: Bid, nowRipple: number) {
-  const principalDrops = Number(xrpToDrops(bid.amount));
+/** Loan terms derived from an ask (the borrower's posted tranche): PaymentTotal fixed,
+ *  interval from the call date (min 60 s). */
+export function termsFromAsk(ask: Ask, nowRipple: number) {
+  const principalDrops = Number(xrpToDrops(ask.amount));
   const paymentTotal = DEMO_LOAN.paymentTotal;
-  const secondsToCall = Math.max(60 * paymentTotal, isoToRipple(bid.callDate) - nowRipple);
+  const secondsToCall = Math.max(60 * paymentTotal, isoToRipple(ask.callDate) - nowRipple);
   const paymentInterval = Math.max(60, Math.floor(secondsToCall / paymentTotal));
   const gracePeriod = Math.min(DEMO_LOAN.gracePeriodSec, paymentInterval);
-  const interestRate = percentToTenthBp(bid.yieldRate);
+  const interestRate = percentToTenthBp(ask.yieldRate);
   const interestDrops = Math.ceil(totalInterest(principalDrops, interestRate, paymentInterval, paymentTotal));
   return { principalDrops, paymentTotal, paymentInterval, gracePeriod, interestRate, interestDrops };
 }
 
-/** 2.1 + 2.2: VaultCreate (capped, bid in Data) + LoanBrokerSet + LoanBrokerCoverDeposit. */
-export async function createBond(bid: Bid): Promise<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }> {
+/** 2.1 + 2.2: VaultCreate (ask in Data) + LoanBrokerSet + LoanBrokerCoverDeposit. */
+export async function createBond(ask: Ask): Promise<{ vaultId: string; loanBrokerId: string; receipts: TxReceipt[] }> {
   const client = await getClient();
   const now = await ledgerCloseTime(client);
-  const t = termsFromBid(bid, now);
-  const data = Buffer.from(JSON.stringify({ id: bid.id, b: bid.borrowerAddress, a: bid.amount, y: bid.yieldRate, c: bid.callDate })).toString("hex");
-  if (data.length / 2 > 256) throw new Error("bid too large for the 256-byte vault Data field");
+  const t = termsFromAsk(ask, now);
+  const data = Buffer.from(JSON.stringify({ id: ask.id, b: ask.borrowerAddress, a: ask.amount, y: ask.yieldRate, c: ask.callDate })).toString("hex");
+  if (data.length / 2 > 256) throw new Error("ask too large for the 256-byte vault Data field");
   const cap = String(t.principalDrops + t.interestDrops + VAULT_CAP_MARGIN_DROPS);
   const receipts: TxReceipt[] = [];
   const vc = await brokerSubmit(client, { TransactionType: "VaultCreate", Account: broker().classicAddress, Asset: { currency: "XRP" }, Data: data, AssetsMaximum: cap });
@@ -152,11 +153,11 @@ export async function autoOriginateIfFunded(vaultId: string): Promise<AutoOrigin
     const lb = await brokerFor(client, vaultId);
     if (!lb) return { skipped: "no loan broker on this vault" };
     if (!getAccount(state.borrowerAddress)?.operatorSeed) return { skipped: "issuer has not activated 2-of-2 governance yet" };
-    const bid: Bid = {
+    const ask: Ask = {
       id: state.bidId ?? vaultId, borrowerAddress: state.borrowerAddress, amount: state.loanPrincipal,
       yieldRate: state.loanInterestRate ?? 0, callDate: state.callDate, status: "matched", vaultId, loanBrokerId: lb.index,
     };
-    const r = await originate(bid);
+    const r = await originate(ask);
     return { originated: r };
   } catch (e) {
     return { skipped: `origination failed: ${(e as Error).message}` };
@@ -179,7 +180,7 @@ export async function originateStalledIfPastDeadline(vaultId: string): Promise<A
     if (state.loan) return { skipped: "loan already originated" };
     if (!state.borrowerAddress || !state.loanPrincipal || !state.callDate || !state.bidId) return { skipped: "vault carries no bid" };
 
-    const tranche = (await book.listTranches()).find((t) => t.id === state.bidId);
+    const tranche = (await book.listAsks()).find((t) => t.id === state.bidId);
     if (!tranche?.expiresAt) return { skipped: "bid has no funding deadline" };
     if (new Date(tranche.expiresAt).getTime() > Date.now()) return { skipped: "funding deadline not reached yet" };
 
@@ -196,11 +197,11 @@ export async function originateStalledIfPastDeadline(vaultId: string): Promise<A
     if (!getAccount(state.borrowerAddress)?.operatorSeed) return { skipped: "issuer has not activated 2-of-2 governance yet" };
 
     // Amount is the actual raised total, not the original ask: the loan is sized to what showed up.
-    const bid: Bid = {
+    const ask: Ask = {
       id: state.bidId, borrowerAddress: state.borrowerAddress, amount: state.assetsAvailable,
       yieldRate: state.loanInterestRate ?? 0, callDate: state.callDate, status: "matched", vaultId, loanBrokerId: lb.index,
     };
-    const r = await originate(bid);
+    const r = await originate(ask);
     return { originated: r };
   } catch (e) {
     return { skipped: `deadline origination failed: ${(e as Error).message}` };
@@ -223,20 +224,20 @@ export async function scanStalledOriginations(): Promise<Record<string, AutoOrig
 }
 
 /** 2.5 LoanSet: broker signs, both borrower signers add counterparty signatures, submit. Principal moves here. */
-export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string }> {
-  if (!bid.loanBrokerId) throw new Error("bid has no loanBrokerId, call createBond first");
+export async function originate(ask: Ask): Promise<TxReceipt & { loanId?: string }> {
+  if (!ask.loanBrokerId) throw new Error("ask has no loanBrokerId, call createBond first");
   const client = await getClient();
-  // The vault is bound to one issuer: the bid stored in its Data field at creation. Nobody else can
+  // The vault is bound to one issuer: the ask stored in its Data field at creation. Nobody else can
   // be the counterparty of a loan on it (the enforcer checks the same thing before counter-signing).
-  const lbEntry = await ledgerEntry(client, bid.loanBrokerId);
+  const lbEntry = await ledgerEntry(client, ask.loanBrokerId);
   const bound = lbEntry?.VaultID ? await vaultData(client, lbEntry.VaultID) : {};
-  if (bound.b && bound.b !== bid.borrowerAddress) {
-    throw new Error(`vault ${lbEntry.VaultID} is bound to issuer ${bound.b}; ${bid.borrowerAddress} cannot borrow from it`);
+  if (bound.b && bound.b !== ask.borrowerAddress) {
+    throw new Error(`vault ${lbEntry.VaultID} is bound to issuer ${bound.b}; ${ask.borrowerAddress} cannot borrow from it`);
   }
   const now = await ledgerCloseTime(client);
-  const t = termsFromBid(bid, now);
+  const t = termsFromAsk(ask, now);
   const tx: any = {
-    TransactionType: "LoanSet", Account: broker().classicAddress, LoanBrokerID: bid.loanBrokerId, Counterparty: bid.borrowerAddress,
+    TransactionType: "LoanSet", Account: broker().classicAddress, LoanBrokerID: ask.loanBrokerId, Counterparty: ask.borrowerAddress,
     PrincipalRequested: String(t.principalDrops), InterestRate: t.interestRate, CloseInterestRate: DEMO_LOAN.closeInterestRate,
     ClosePaymentFee: xrpToDrops(DEMO_LOAN.closePaymentFeeXrp), PaymentTotal: t.paymentTotal, PaymentInterval: t.paymentInterval, GracePeriod: t.gracePeriod,
   };
@@ -245,7 +246,7 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   // signLoanSetByCounterparty() needs a plain single signature on the Account side (it has no path
   // for a multisig Signers array there) — one more reason the broker stays a single key.
   const first = broker().sign(prepared);
-  const op = getBorrowerOpFor(bid.borrowerAddress);
+  const op = getBorrowerOpFor(ask.borrowerAddress);
   const s1 = signLoanSetByCounterparty(op, first.tx_blob, { multisign: true });
   const enf = await enforcerCounterSign(first.tx_blob);
   const combined = combineLoanSetCounterpartySigners([s1.tx, enf]);

@@ -1,16 +1,16 @@
 // Public surface of the chain layer. Person B calls only this (directly or via server.ts).
 // Every function is documented in docs/chain-api.md.
-import type { Bid, TxReceipt, WithdrawRequest, Blocked, AccountRole } from "../../shared/types.js";
+import type { Ask, TxReceipt, WithdrawRequest, Blocked, AccountRole } from "../../shared/types.js";
 import * as ops from "./ops.js";
 export { read } from "./readLayer.js";
 
 export const tx = {
-  createBond: (bid: Bid) => ops.createBond(bid),
+  createBond: (ask: Ask) => ops.createBond(ask),
   // VaultDeposit is signed by the lender's own external wallet, not this backend: prepare returns
   // an unsigned, autofilled transaction; submitSigned takes back the blob once they've signed it.
   prepareDeposit: (lenderAddress: string, vaultId: string, amount: string) => ops.prepareDeposit(lenderAddress, vaultId, amount),
   submitSigned: (signedBlob: string): Promise<TxReceipt> => ops.submitSigned(signedBlob),
-  originate: (bid: Bid) => ops.originate(bid),
+  originate: (ask: Ask) => ops.originate(ask),
   payCoupon: (loanId: string, borrowerAddress: string): Promise<TxReceipt | Blocked> => ops.payCoupon(loanId, borrowerAddress),
   withdraw: (req: WithdrawRequest): Promise<TxReceipt | Blocked> => ops.withdraw(req),
   prepareWithdraw: (req: WithdrawRequest) => ops.prepareWithdraw(req),

@@ -31,27 +31,27 @@ type SortKey = 'yield' | 'liquidity' | 'closes'
 interface BankRowData {
   borrowerAddress: string
   fallbackName: string
-  topOffer: Bid
+  topOffer: Ask
   bestYieldPct: number
   offerCount: number
   remainingLiquidity: number
   closesAt?: string
 }
 
-function remainingLiquidity(bid: Bid, asks: Ask[]): number {
-  const target = Number(bid.amount) || 0
-  const filled = asks
-    .filter((a) => a.matchedBidId === bid.id && a.status === 'deposited')
-    .reduce((sum, a) => sum + Number(a.amount || 0), 0)
+function remainingLiquidity(ask: Ask, bids: Bid[]): number {
+  const target = Number(ask.amount) || 0
+  const filled = bids
+    .filter((b) => b.matchedAskId === ask.id && b.status === 'deposited')
+    .reduce((sum, b) => sum + Number(b.amount || 0), 0)
   return Math.max(0, target - filled)
 }
 
-function buildBankRows(bids: Bid[], asks: Ask[]): BankRowData[] {
-  const byBank = new Map<string, Bid[]>()
-  for (const bid of bids) {
-    const list = byBank.get(bid.borrowerAddress) ?? []
-    list.push(bid)
-    byBank.set(bid.borrowerAddress, list)
+function buildBankRows(asks: Ask[], bids: Bid[]): BankRowData[] {
+  const byBank = new Map<string, Ask[]>()
+  for (const ask of asks) {
+    const list = byBank.get(ask.borrowerAddress) ?? []
+    list.push(ask)
+    byBank.set(ask.borrowerAddress, list)
   }
 
   const rows: BankRowData[] = []
@@ -63,7 +63,7 @@ function buildBankRows(bids: Bid[], asks: Ask[]): BankRowData[] {
       topOffer,
       bestYieldPct: topOffer.yieldRate,
       offerCount: group.length,
-      remainingLiquidity: remainingLiquidity(topOffer, asks),
+      remainingLiquidity: remainingLiquidity(topOffer, bids),
       closesAt: topOffer.expiresAt,
     })
   }
@@ -216,8 +216,8 @@ export const FinanceBonds: FC<FinanceBondsProps> = ({ onNavigateToOrderBook }) =
   const profilesVersion = useProfilesVersion()
 
   const load = async () => {
-    const [allBids, allAsks] = await Promise.all([chainClient.getBids(), chainClient.getAsks()])
-    setBankRows(buildBankRows(allBids.filter((b) => b.status === 'open'), allAsks))
+    const [allAsks, allBids] = await Promise.all([chainClient.getAsks(), chainClient.getBids()])
+    setBankRows(buildBankRows(allAsks.filter((a) => a.status === 'open'), allBids))
   }
 
   useEffect(() => {

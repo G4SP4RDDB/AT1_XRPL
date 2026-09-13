@@ -63,7 +63,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
     const issuerName = borrowerProfile?.company || currentAccount.name || 'AT1 Corporate Issuer'
 
     try {
-      await chainClient.createBid({
+      await chainClient.createAsk({
         borrowerAddress: currentAccount.address,
         borrowerName: issuerName,
         amount,
