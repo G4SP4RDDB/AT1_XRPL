@@ -364,15 +364,17 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            style={{ fontWeight: 500, fontSize: '0.78rem' }}
-                            onClick={() => (isEditing ? setEditingAddress(null) : handleStartEdit(acc))}
-                            title="Changer le rôle et les informations de ce compte"
-                          >
-                            {isEditing ? 'Fermer' : '⚙️ Rôle'}
-                          </button>
+                          {!isBroker && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontWeight: 500, fontSize: '0.78rem' }}
+                              onClick={() => (isEditing ? setEditingAddress(null) : handleStartEdit(acc))}
+                              title="Changer le rôle et les informations de ce compte"
+                            >
+                              {isEditing ? 'Fermer' : '⚙️ Rôle'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
@@ -405,7 +407,7 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                             Définir personnellement le rôle de ce compte :
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.4rem' }}>
                             <button
                               type="button"
                               className={`btn btn-sm ${editRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -421,14 +423,6 @@ export const ConnectWalletModal: FC<ConnectWalletModalProps> = ({ isOpen, onClos
                               style={{ fontSize: '0.75rem', padding: '0.4rem' }}
                             >
                               💰 Prêteur
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${editRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
-                              onClick={() => setEditRole('unassigned')}
-                              style={{ fontSize: '0.75rem', padding: '0.4rem' }}
-                            >
-                              ⚪ Libre
                             </button>
                           </div>
 

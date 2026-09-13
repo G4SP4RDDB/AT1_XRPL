@@ -405,8 +405,12 @@ export async function updateDbAccount(params: {
   userRole?: string;
   multisigActive?: number;
 }): Promise<DbAccount> {
-  if (params.role === "broker" && params.address !== broker().classicAddress) {
+  const brokerAddress = broker().classicAddress;
+  if (params.role === "broker" && params.address !== brokerAddress) {
     throw new Error("The broker role is reserved for the platform's own account; this address cannot self-assign it.");
+  }
+  if (params.address === brokerAddress && params.role !== undefined && params.role !== "broker") {
+    throw new Error("The platform's broker account cannot be reassigned to another role.");
   }
   let seed: string | undefined;
   try {

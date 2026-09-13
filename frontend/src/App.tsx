@@ -154,7 +154,11 @@ const MainContent: FC = () => {
         onClose={closeModal}
         onOpenSetupModal={() => setIsBorrowerModalOpen(true)}
       />
-      <BorrowerOnboardingModal isOpen={isBorrowerModalOpen} onClose={() => setIsBorrowerModalOpen(false)} />
+      <BorrowerOnboardingModal
+        isOpen={isBorrowerModalOpen}
+        onClose={() => setIsBorrowerModalOpen(false)}
+        onGoToBrokerHub={() => setActiveTab('broker')}
+      />
       <NotificationToastContainer />
 
       <BankProfileModal

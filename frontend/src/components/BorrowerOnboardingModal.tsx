@@ -12,6 +12,7 @@ interface BorrowerOnboardingModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: (profile: BorrowerProfile) => void
+  onGoToBrokerHub?: () => void
 }
 
 const PRESET_ROLES = [
@@ -28,9 +29,11 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  onGoToBrokerHub,
 }) => {
   const { currentAccount, connectAccount } = useWallet()
   const [accountRole, setAccountRole] = useState<AccountRole>('borrower')
+  const [isBroker, setIsBroker] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [selectedRole, setSelectedRole] = useState(PRESET_ROLES[0])
   const [customRole, setCustomRole] = useState('')
@@ -38,13 +41,17 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isAlreadyMultisig, setIsAlreadyMultisig] = useState(false)
   const [enableMultisig, setEnableMultisig] = useState(true)
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const [createdAccount, setCreatedAccount] = useState<{ address: string; name: string } | null>(null)
 
   // Load existing profile from SQLite DB and on-chain status
   useEffect(() => {
     if (!isOpen || !currentAccount?.address) return
+    setCreatedAccount(null)
 
     chainClient.listAccounts().then((accounts) => {
       const hit = accounts.find((a) => a.address === currentAccount.address)
+      setIsBroker(hit?.role === 'broker')
       if (hit) {
         setAccountRole(hit.role || 'unassigned')
         if (hit.firstName) setFirstName(hit.firstName)
@@ -67,6 +74,27 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
   }, [isOpen, currentAccount?.address])
 
   if (!isOpen) return null
+
+  const handleCreateAccount = async () => {
+    setIsCreatingAccount(true)
+    try {
+      const acc = await chainClient.createRandomAccount()
+      setCreatedAccount({ address: acc.address, name: acc.name })
+      notifyTx({
+        title: 'Nouveau compte créé',
+        message: `${acc.name} (${acc.address.slice(0, 10)}...) financé à 1 000 XRP. Attribuez-lui un rôle depuis l'onglet Connexion.`,
+        type: 'success',
+      })
+    } catch (err: any) {
+      notifyTx({
+        title: 'Échec de la création',
+        message: err.message,
+        type: 'error',
+      })
+    } finally {
+      setIsCreatingAccount(false)
+    }
+  }
 
   const effectiveRole = selectedRole === 'Autre rôle...' ? (customRole.trim() || (accountRole === 'borrower' ? 'Emprunteur' : accountRole === 'broker' ? 'Courtier' : 'Investisseur')) : selectedRole
 
@@ -155,11 +183,13 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
         <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
           <div>
             <h3 className="card-title" style={{ fontSize: '1.25rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>⚙️</span>
-              <span>Gestion Personnelle du Rôle & Profil</span>
+              <span>{isBroker ? '🏛️' : '⚙️'}</span>
+              <span>{isBroker ? 'Espace Administration — Courtier Plateforme' : 'Gestion Personnelle du Rôle & Profil'}</span>
             </h3>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Vous contrôlez librement le rôle (Emprunteur / Prêteur) de ce compte
+              {isBroker
+                ? 'Ce compte est le Courtier fixe de la plateforme — son rôle ne peut pas être modifié.'
+                : 'Vous devez choisir le rôle (Emprunteur ou Prêteur) de ce compte'}
             </span>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
@@ -167,13 +197,66 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
           </button>
         </div>
 
+        {isBroker ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div
+              style={{
+                background: 'rgba(147, 51, 234, 0.08)',
+                border: '1px solid rgba(147, 51, 234, 0.25)',
+                borderRadius: '10px',
+                padding: '0.9rem 1rem',
+                fontSize: '0.85rem',
+                lineHeight: 1.5,
+              }}
+            >
+              En tant que Courtier, vous structurez les prêts, déposez le First-Loss Capital et pilotez la
+              solvabilité (CET1) des émetteurs depuis le <strong>Broker Hub</strong>. La création de nouveaux
+              comptes de démonstration (Emprunteur/Prêteur) est aussi une action d'administration.
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
+              onClick={() => {
+                onGoToBrokerHub?.()
+                onClose()
+              }}
+            >
+              <span>🩺</span>
+              <span>Piloter le Health Factor (CET1) — Broker Hub</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
+              onClick={handleCreateAccount}
+              disabled={isCreatingAccount}
+            >
+              <span>➕</span>
+              <span>{isCreatingAccount ? 'Création en cours...' : 'Créer un Nouveau Compte de Démonstration'}</span>
+            </button>
+
+            {createdAccount && (
+              <div className="alert alert-success" style={{ fontSize: '0.8rem' }}>
+                Compte créé : <strong>{createdAccount.name}</strong>
+                <div style={{ fontFamily: 'monospace', marginTop: '0.25rem' }}>{createdAccount.address}</div>
+              </div>
+            )}
+
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Fermer
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {/* Sélection du Rôle */}
           <div className="form-group" style={{ marginBottom: '0.25rem' }}>
             <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
               Rôle attribué à ce compte <span style={{ color: 'var(--accent-red)' }}>*</span>
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.4rem' }}>
               <button
                 type="button"
                 className={`btn btn-sm ${accountRole === 'borrower' ? 'btn-primary' : 'btn-secondary'}`}
@@ -191,15 +274,6 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
               >
                 <span style={{ fontSize: '1.1rem' }}>💰</span>
                 <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Prêteur</span>
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${accountRole === 'unassigned' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setAccountRole('unassigned')}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.5rem 0.3rem', gap: '0.2rem' }}
-              >
-                <span style={{ fontSize: '1.1rem' }}>⚪</span>
-                <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>Libre</span>
               </button>
             </div>
           </div>
@@ -335,6 +409,7 @@ export const BorrowerOnboardingModal: FC<BorrowerOnboardingModalProps> = ({
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   )
