@@ -20,7 +20,6 @@
     "dev:tmux": "bash scripts/start-all.sh",
     "stop:tmux": "bash scripts/stop-tmux.sh",
     "show:accounts": "tsx scripts/show-accounts.ts",
-    "setup:broker-multisig": "tsx scripts/setup-broker-multisig.ts",
     "all-balances": "tsx scripts/all-balances.ts"
   },
   "repository": {

@@ -29,8 +29,8 @@ interface WalletContextType {
   disconnect: () => Promise<void>
 }
 
-// The broker is the platform's own fixed, known-in-advance identity (its public address only —
-// the backend never holds its key either, see src/chain/brokerOperator.ts). Lenders and borrowers
+// The broker is the platform's own fixed, known-in-advance identity (its seed lives in the backend's
+// .env as BROKER_SEED, the only user-role key the backend holds). Lenders and borrowers
 // have no fixed address anymore: they're independent accounts connected via a real wallet below.
 export const ROLE_ACCOUNTS = {
   broker: {

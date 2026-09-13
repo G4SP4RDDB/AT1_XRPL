@@ -21,12 +21,10 @@ import { loadAccounts } from "./accounts.js";
 import { wipeCreatedAccounts, getCreatedAccounts } from "./createdAccounts.js";
 import { getAccount, updateAccount, type DbAccount, type AccountRole } from "../db/index.js";
 import { DEMO_LOAN, DEMO_BROKER, VAULT_CAP_MARGIN_DROPS } from "./config.js";
-import { submit, submitBlob, submitMultisigned, createdId, type Receipt } from "./tx.js";
+import { submit, submitBlob, createdId, type Receipt } from "./tx.js";
 import { vaultInfo, ledgerEntry, shareBalance, ledgerCloseTime } from "./read.js";
 import { totalInterest, percentToTenthBp, isoToRipple } from "./loanMath.js";
 import { cosign, enforcerWallet, type CosignResult } from "./enforcer/index.js";
-import { brokerOperatorWallet } from "./brokerOperator.js";
-import { brokerLoanSetWallet } from "./brokerLoanSetKey.js";
 
 // The enforcer runs as its own process when ENFORCER_URL is set (npm run enforcer); otherwise in-process (dev only).
 const ENFORCER_URL = process.env.ENFORCER_URL;
@@ -50,11 +48,12 @@ const toReceipt = (r: Receipt): TxReceipt => ({ hash: r.hash, result: r.result, 
 
 const broker = () => loadAccounts().broker;
 
-/** Every broker-signed transaction except LoanSet (see brokerLoanSetKey.ts) is authorized this
- *  way: the broker account's master key is disabled, and its 2-of-2 SignerList (operator +
- *  enforcer) is the only thing that can sign for it — the backend never holds a broker seed. */
+/** Every broker-signed transaction is a plain single signature with the platform's own broker
+ *  key (BROKER_SEED). The 2-of-2 multisig exists only on borrower/lender accounts, where the
+ *  enforcer's co-signature is a real policy gate (call date, amounts) — on the broker it would just
+ *  be a second key held by the same operator, so it's not used there. */
 function brokerSubmit(client: Awaited<ReturnType<typeof getClient>>, tx: Record<string, unknown>) {
-  return submitMultisigned(client, tx, [brokerOperatorWallet(), enforcerWallet()]);
+  return submit(client, tx, broker());
 }
 
 /** The mechanical "operator" cosigning key for a borrower/lender's own 2-of-2 SignerList. Backend-held
@@ -131,10 +130,9 @@ export async function originate(bid: Bid): Promise<TxReceipt & { loanId?: string
   };
   const prepared = await client.autofill(tx);
   prepared.Fee = String(Number(prepared.Fee) * 5);
-  // signLoanSetByCounterparty() needs a plain single signature on the Account side (no support for
-  // a multisig Signers array there), so this one transaction type signs via the broker's RegularKey
-  // rather than its 2-of-2 SignerList — see brokerLoanSetKey.ts for why.
-  const first = brokerLoanSetWallet().sign(prepared);
+  // signLoanSetByCounterparty() needs a plain single signature on the Account side (it has no path
+  // for a multisig Signers array there) — one more reason the broker stays a single key.
+  const first = broker().sign(prepared);
   const op = getBorrowerOpFor(bid.borrowerAddress);
   const s1 = signLoanSetByCounterparty(op, first.tx_blob, { multisign: true });
   const enf = await enforcerCounterSign(first.tx_blob);
@@ -355,7 +353,7 @@ export async function updateDbAccount(params: {
 
 /** The only account ever allowed the 'broker' role is the platform's own fixed account
  * (the one whose public address the infra operator configured as BROKER_ADDRESS in .env,
- * loadAccounts().broker — the backend never holds its private key, see brokerOperator.ts) —
+ * (the one whose seed the infra operator configured as BROKER_SEED in .env, loadAccounts().broker) —
  * no user-created account can self-assign it (enforced above in create/updateDbAccount).
  * Call once at server startup so that account already reads as 'broker' in the DB without
  * needing anyone to manually set it via the UI. Idempotent. */
@@ -363,8 +361,8 @@ export function ensureBrokerAccountRegistered(): void {
   const brokerWallet = broker();
   const existing = getAccount(brokerWallet.classicAddress);
   // Always re-asserted, never skipped once role is already 'broker': the DB must never hold a
-  // signable seed for this row (the backend only knows its public address, see brokerOperator.ts),
-  // so any leftover seed from before that custody change is wiped here too, not just left as-is.
+  // signable seed for this row (the broker seed lives in .env only), so any leftover seed from an
+  // older custody model is wiped here too, not just left as-is.
   if (existing?.role === "broker" && !existing.seed) return;
   updateAccount(brokerWallet.classicAddress, {
     role: "broker",

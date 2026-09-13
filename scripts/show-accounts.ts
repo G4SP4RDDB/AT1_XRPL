@@ -3,8 +3,6 @@ import { loadAccounts } from "../src/chain/accounts.js";
 import { listAccounts } from "../src/db/index.js";
 import { getCreatedAccounts } from "../src/chain/createdAccounts.js";
 import { getClient, closeClient } from "../src/chain/client.js";
-import { brokerOperatorWallet } from "../src/chain/brokerOperator.js";
-import { brokerLoanSetWallet } from "../src/chain/brokerLoanSetKey.js";
 
 console.log("\n================================================================================");
 console.log("💎 AT1 XRPL — ACTIVE DEVNET ACCOUNTS & SEEDS");
@@ -14,9 +12,15 @@ try {
   const accounts = loadAccounts();
   const client = await getClient();
 
-  console.log("\n🛡️  PLATEFORME BROKER (le backend ne connaît que son adresse publique, jamais sa clé) :");
-  {
-    const wallet = accounts.broker;
+  console.log("\n🛡️  PLATEFORME (les seules clés détenues par le backend) :");
+  for (const [label, wallet, note] of [
+    ["BROKER (compte plateforme)", accounts.broker, "clé unique — VaultCreate / LoanBrokerSet / LoanBrokerCoverDeposit / LoanSet / LoanManage"],
+    ["ENFORCER", accounts.brokerEnforcer, "🤖 co-signataire 2/2 des comptes borrower/lender — condition temporelle, daemon :8788"],
+  ] as const) {
+    if (!wallet) {
+      console.log(`\n🔹 ${label} : ⏳ pas encore configurée (lance npm run fund:setup)`);
+      continue;
+    }
     let balStr = "...";
     try {
       const res = await client.request({ command: "account_info", account: wallet.classicAddress, ledger_index: "validated" });
@@ -24,24 +28,10 @@ try {
     } catch {
       balStr = "1000 XRP";
     }
-    console.log(`\n🔹 BROKER (compte plateforme) :`);
-    console.log(`   Adresse       : ${wallet.classicAddress}`);
-    console.log(`   Clé maîtresse : ❌ désactivée on-chain (asfDisableMaster) — jamais connue du backend`);
-    console.log(`   Solde         : ${balStr}`);
-  }
-  console.log("\n🔐 CLÉS DE SIGNATURE DU BROKER (les seules détenues par le backend pour ce compte) :");
-  for (const [label, wallet, note] of [
-    ["Multisig 2/2 — opérateur", (() => { try { return brokerOperatorWallet(); } catch { return undefined; } })(), "VaultCreate / LoanBrokerSet / LoanBrokerCoverDeposit / LoanManage"],
-    ["Multisig 2/2 — enforcer", (() => { try { return accounts.brokerEnforcer; } catch { return undefined; } })(), "🤖 co-signature autonome, condition temporelle on-chain, daemon :8788"],
-    ["RegularKey — LoanSet seul", (() => { try { return brokerLoanSetWallet(); } catch { return undefined; } })(), "seule exception solo-sig — limite du SDK, voir src/chain/brokerLoanSetKey.ts"],
-  ] as const) {
-    if (!wallet) {
-      console.log(`\n🔹 ${label} : ⏳ pas encore configurée (lance npm run setup:broker-multisig)`);
-      continue;
-    }
     console.log(`\n🔹 ${label} :`);
     console.log(`   Adresse : ${wallet.classicAddress}`);
     console.log(`   Rôle    : ${note}`);
+    console.log(`   Solde   : ${balStr}`);
   }
 
   const createdAccs = getCreatedAccounts();
