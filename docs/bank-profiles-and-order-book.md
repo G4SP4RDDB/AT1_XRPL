@@ -372,6 +372,84 @@ the sweep from the spread to that row. Clicking a bid row ("300 XRP") correctly 
 
 ---
 
+## 6. Bid/Ask redesign — real LP offers with borrower accept/decline (`feature/bid-lock-accept-decline`)
+
+Requested after live use surfaced three compounding problems with the model in §2-§5:
+1. **Naming was inverted from convention.** `Bid` was the borrower's posted tranche and `Ask`
+   was the LP's commitment — backwards from every real market (bid = buyer/investor, ask =
+   seller/issuer). The code already fought this: `OrderBookPanel.tsx`'s own `AskRowData` was
+   fed from the `Bid` prop and `BidRowData` from the `Ask[]` array; the backend's
+   `trancheBookStore.createBid(bid: Ask)` took an `Ask` despite its name.
+2. **`Ask.targetYield` was dead code.** Declared, written by the frontend, persisted, and
+   returned — but never read anywhere in `ops.ts`. The UI didn't even let the LP choose it:
+   it silently echoed the tranche's own posted rate.
+3. **No negotiation step.** Any LP could unilaterally fund a tranche the moment they saw it —
+   no point at which the borrower reviewed and approved who they were borrowing from, or at
+   what rate.
+
+### What changed
+
+**`Bid` ↔ `Ask` swapped throughout.** `Bid` is now the investor's offer (what locks and gets
+accepted/declined); `Ask` is the borrower's posted terms. Touches `shared/types.ts`,
+`src/chain/trancheBookStore.ts` (`listTranches→listAsks`, `upsertTranche→upsertAsk`;
+`listBids`/`createBid`/`updateBidStatus` keep their names — they were already correctly
+named for what they operate on), `frontend/src/lib/chainClient.ts`
+(`getBids()`↔`getAsks()`, `createBid()`↔`createAsk()` swapped; `acceptBid()` renamed to
+`fundBid()` since "accept" now means something else — see below), and every component that
+touches these types. `server.ts`'s `/book/*` routes are just the store's exported function
+names, so they renamed automatically with no separate route-table edit.
+
+**A real per-LP rate.** `TranchePage.tsx`'s bid form gained a rate input; `createBid()` now
+takes the LP's own chosen `targetYield` instead of echoing the tranche's posted rate.
+`OrderBookPanel.tsx`'s bid rows now render each bid's own proposed rate (`bid.targetYield ??
+ask.yieldRate`) instead of always showing the tranche's single rate.
+
+**Lock + accept/decline, with rate pinning.** New `Bid.status` flow: `"pending"` →
+`"accepted"` | `"declined"` → `"deposited"`. The borrower gets a review panel
+(`TranchePage.tsx`, owner-only) listing pending bids with Accept/Decline buttons.
+**Accepting the first bid on a tranche pins that tranche's rate** to the accepted bid's
+`targetYield` (XLS-66 allows exactly one `InterestRate` per `LoanSet` — there is no other
+option once one bid is committed to); `trancheBookStore.acceptBid()` then auto-declines every
+other still-pending bid on the same tranche whose rate no longer matches, and refuses
+accepting a second bid at a mismatched rate outright. Only `"accepted"` bids show a "Fund
+Now" button; `chainClient.fundBid()` also checks this server-side (not just a hidden button)
+before allowing the real `VaultDeposit`.
+
+### The off-chain-vs-on-chain challenge (posed and answered explicitly)
+
+A "lock" enforced by nothing is just a UI label. `trancheBookStore.ts` is a bare
+`fs.readFileSync`/`writeFileSync` JSON file with no lock — harmless when it only held
+indicative metadata, but acceptance is now a real, consequential state transition. Two
+options were weighed:
+
+- **Off-chain (shipped):** free and instant for LPs to bid, matches this project's stated
+  Track 1 design choice (no on-chain order book, by design — CLAUDE.md), fastest to build.
+  Cost: an accepted LP can simply never fund, and nothing detects it beyond the existing
+  (already cosmetic) `expiresAt` countdown; two near-simultaneous accepts could race without
+  protection. Hardened with a promise-chain write mutex in `trancheBookStore.ts` serializing
+  every mutation — a defensive backstop, not a fix for an active race (all the fs calls here
+  are synchronous with nothing awaited in between, so nothing can interleave within this one
+  process today regardless).
+- **On-chain (proposed, not built):** `TokenEscrow`/`Escrow` (XLS-85) could make a bid
+  genuinely lock real XRP — released to the vault on the borrower's accept (`EscrowFinish`)
+  or returned on expiry (`EscrowCancel`) — a real commitment instead of a label, and a
+  natural "Loaded" flavour candidate (CLAUDE.md already flags TokenEscrow elsewhere as a
+  stretch for the call-date multisig). Cost: forces the LP to lock their full bid amount
+  *before* knowing if they'll be accepted (new friction that doesn't exist today), and is
+  real, unbuilt implementation work — confirmed zero `TokenEscrow` transaction code anywhere
+  in `src/` at the time of writing.
+
+Shipped the off-chain version now; the `TokenEscrow` alternative is written up as a proposed
+fix in `FEEDBACK_REPORT.md` rather than silently deferred.
+
+### Verified
+`npx tsc --noEmit` (backend) and `npx tsc -b` (frontend) both clean after the rename; full
+backend suite (`npm run test`, 35/35 including 5 new tests on `trancheBookStore.acceptBid`/
+`declineBid` covering rate-pinning, mismatched-rate auto-decline, and re-deciding an
+already-decided bid) and frontend suite (`vitest run`, 22/22) pass.
+
+---
+
 ## Branches / commits
 
 - `feature/bank-profiles` (`364983e`) — bank profile registry + onboarding.
@@ -381,3 +459,5 @@ the sweep from the spread to that row. Clicking a bid row ("300 XRP") correctly 
   the Hyperliquid-style mirrored book in §5.
 - `main` has moved ahead separately with unrelated work (a tmux dev-runner script,
   `fund-and-setup.ts`, a full e2e pipeline run) — neither branch has picked that up yet.
+- `feature/bid-lock-accept-decline` (based on `main`) — the Bid/Ask rename, real per-LP
+  rate, and lock/accept/decline workflow described in §6.

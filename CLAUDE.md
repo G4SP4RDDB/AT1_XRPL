@@ -79,16 +79,30 @@ Note: the multisig repayment lock (§4) is itself a strong Loaded candidate if i
 
 ### Core idea
 
-Each bond issuance is its own open-ended vault, created automatically the moment a borrower posts a bid. Lenders express interest through a purely indicative frontend matching layer (no on-chain order book). Depositors can withdraw accrued yield at any time; principal stays effectively locked until the call date because it's out on loan and its final repayment is gated by a multisig.
+Each bond issuance is its own open-ended vault, created automatically the moment a borrower posts an ask. Lenders express interest by placing bids through a frontend matching layer (no on-chain order book). Depositors can withdraw accrued yield at any time; principal stays effectively locked until the call date because it's out on loan and its final repayment is gated by a multisig.
+
+> **Naming note (branch `feature/bid-lock-accept-decline`):** `bid`/`ask` were originally
+> inverted relative to this convention in the code (the borrower's post was typed `Bid`, the
+> lender's offer `Ask`) — fixed to match standard usage: **ask = the borrower's posted terms,
+> bid = the lender's offer against it.** See `docs/bank-profiles-and-order-book.md` §6.
 
 ### Workflow
 
-1. Borrower emits a bid — specifies amount requested, yield offered, and a call date. This action automatically triggers vault creation:
-   - VaultCreate (open-ended) — one vault per bond/bid
+1. Borrower emits an ask — specifies amount requested, yield offered, and a call date. This action automatically triggers vault creation:
+   - VaultCreate (open-ended) — one vault per bond/ask
    - LoanBrokerSet — broker terms, fees, first-loss capital for this specific issuance
    - LoanSet — loan terms drafted with rate = yield offered, term aligned to the call date, co-signed once a lender is matched
-2. Lenders create asks — this is a purely frontend, indicative action. There is no real on-chain order book; it's a matching/discovery layer that shows the person needing money (the borrower) that interest exists at a given size/yield. The actual on-chain action only happens once a match is made.
-3. Matched deposit — once a bid and an ask align, the lender executes VaultDeposit into that specific bond's vault. Shares (MPT) are minted at the current PPS.
+2. Lenders place bids — each bid proposes an amount and a rate. Purely off-chain and frontend
+   until the borrower acts on it: there is no real on-chain order book, and nothing moves any
+   funds yet. **Accepting the first bid on an ask pins that ask's rate** to the accepted bid's
+   proposed rate (XLS-66 allows exactly one `InterestRate` per loan, so only one bid's rate can
+   ultimately win); the platform then auto-declines any other still-pending bid on the same ask
+   whose rate no longer matches. This "lock" is an off-chain, platform-enforced convention, not
+   a cryptographic guarantee — see the TokenEscrow discussion in
+   `docs/bank-profiles-and-order-book.md` §6 for what a real on-chain lock would need.
+3. Matched deposit — once the borrower has accepted a bid, that lender executes VaultDeposit
+   into that specific bond's vault (the platform refuses the deposit server-side if the bid
+   was never accepted). Shares (MPT) are minted at the current PPS.
 4. Drawdown — the borrower receives the principal via LoanDraw/LoanSet execution.
 5. Coupon cycle — the borrower pays yield periodically via LoanPay. This raises AssetsTotal, and therefore the PPS, without touching principal.
 6. Yield withdrawal (depositor-facing feature) — depositors can withdraw the accrued yield portion at any time via a partial VaultWithdraw, leaving enough shares in the vault to keep their principal position intact. This is possible precisely because the open-ended vault allows withdrawals at any time — the trick is that only the yield-equivalent share count is redeemed, not the full position.
@@ -98,10 +112,10 @@ Each bond issuance is its own open-ended vault, created automatically the moment
 
 | AT1 role | Protocol role | Action |
 |---|---|---|
-| Bond investor | Lender | VaultDeposit (matched from an ask), partial VaultWithdraw (yield only) |
+| Bond investor | Lender | Places a bid, VaultDeposit once accepted, partial VaultWithdraw (yield only) |
 | Platform / structurer | Loan Broker | LoanBrokerSet, deposits first-loss capital, holds a multisig seat |
-| Issuing borrower | Borrower | Posts the bid, co-signs LoanSet, receives principal, repays via LoanPay, needs multisig co-signature to execute the final principal repayment |
-| Matching layer | Application (frontend only) | Bid/ask board — no on-chain order book, purely indicative |
+| Issuing borrower | Borrower | Posts the ask, accepts/declines bids, co-signs LoanSet, receives principal, repays via LoanPay, needs multisig co-signature to execute the final principal repayment |
+| Matching layer | Application (frontend only) | Bid/ask board with borrower accept/decline — no on-chain order book, purely indicative until accepted and funded |
 
 ---
 

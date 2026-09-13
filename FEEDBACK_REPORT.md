@@ -14,7 +14,7 @@ Over the 36-hour hackathon, we built an on-chain **Additional Tier 1 (AT1) Bond 
 
 Rather than relying on closed-ended phase gating (Track 2), we implemented the Call Date lock through native vault illiquidity combined with an **on-chain 2-of-2 Multisig gate** (`SignerListSet` + `asfDisableMaster`) governed by an autonomous, software-only **Enforcer Daemon**. 
 
-Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **27 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
+Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **28 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
 
 ---
 
@@ -43,6 +43,14 @@ The gate above protects the Call Date from the *borrower*. We had to build a sec
 We confirmed directly against the XLS-0065 spec text that **`Vault` gives the owner no protocol-level lever over withdrawals at all**: `VaultWithdraw` "does not respect the permissioned domain rules," and any shareholder can withdraw at will, bounded only by `Vault.AssetsAvailable`. `AssetsMaximum` and `tfVaultPrivate` gate deposits only — neither restricts who can withdraw, how much, or how often.
 
 **Proposed solution**: an optional, owner-set periodic withdrawal cap on `VaultSet` — e.g. `WithdrawalCapPerPeriod` (an `Amount` or a basis-point share of `AssetsTotal`) plus `WithdrawalPeriodSeconds` — enforced by the ledger at `VaultWithdraw` time against cumulative withdrawals in the current period. This mirrors the redemption-gate mechanics already standard in real-world fund and bond structures (e.g. quarterly liquidity windows), and would have let us drop this second multisig + Enforcer instance entirely, removing one full off-chain trust assumption from the design. It generalizes well beyond our use case to any vault wanting redemption throttling (money-market funds, insurance-linked vaults, etc.).
+
+### 1.2 The Bid-Side Mirror: No Native Primitive for a Conditional/Escrowed Lender Offer
+
+Rebuilding our order book (`feature/bid-lock-accept-decline`) to let a lender's bid genuinely "lock" pending the borrower's accept/decline surfaced the same family of gap a third time. A locked bid should mean the lender's capital is actually committed, not just a mutable off-chain database row the platform itself writes and can edit at will — but XLS-65/66 has no primitive for a conditional or escrowed funding commitment: `VaultDeposit` is immediate and unconditional, there is no "reserve my spot, release on issuer approval" transaction type.
+
+Our shipped fix is intentionally honest rather than aspirational: the bid stays a plain off-chain JSON record (hardened with a write-serializing mutex, since acceptance is now a real state transition, not decorative metadata), and both the code comments and the UI copy say plainly that "locked" is a platform-enforced convention, not a cryptographic guarantee — an accepted lender can still simply never fund, and nothing currently detects or penalizes that.
+
+**Proposed solution**: `TokenEscrow` (XLS-85, already flagged elsewhere in this report as a stretch for the call-date lock, §1) is a natural fit here too: a lender's bid could lock real XRP in escrow, released to the vault via `EscrowFinish` on the borrower's accept, or returned via `EscrowCancel` on expiry/decline. That would turn "locked" into an actual on-chain guarantee instead of a label. We did not build this — it forces the lender to hold and lock their full bid amount *before* knowing if they'll be accepted, a real friction trade-off worth weighing against the credibility gain, and it was outside this branch's time budget (confirmed: zero `TokenEscrow` transaction-building code anywhere in `src/` today).
 
 ---
 
@@ -99,6 +107,7 @@ We chose WalletConnect (Xaman) as the only way for investors, issuers and the br
 |---|---|---|---|---|
 | **Security** | Multisig lacks native time restriction | **High** | Core `SignerListSet` | Add `SignerCondition` (`SignAfter`) or combine with `TokenEscrow` |
 | **Protocol** | Vault owner has zero native withdrawal control | **High** | `VaultWithdraw` / XLS-65 | Add owner-set `WithdrawalCapPerPeriod` + `WithdrawalPeriodSeconds` on `VaultSet` |
+| **Protocol** | No conditional/escrowed funding commitment; "locked" bids are off-chain only | Medium | `VaultDeposit` / XLS-65 | `TokenEscrow` (XLS-85): lock bid funds in escrow, `EscrowFinish` on accept / `EscrowCancel` on expiry |
 | **Protocol** | `LoanDraw` does not exist | **Medium** | XLS-66 / `xrpl.js` models | Update overview docs: `LoanSet` disburses atomically |
 | **Spec** | `AssetsTotal` does not book `InterestDue` | **High** | XLS-66 §3.8.6 item 6 | Align spec text with `rippled 3.4.0-rc1` implementation |
 | **Protocol** | `AssetsMaximum` blocks loan origination | **Medium** | `tecLIMIT_EXCEEDED` (§3.8.5.2) | Separate cap vs. interest headroom error codes |
