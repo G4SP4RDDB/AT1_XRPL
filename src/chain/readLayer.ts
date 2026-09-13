@@ -55,15 +55,19 @@ async function findLoan(client: Client, borrower: string | undefined, loanBroker
   return loans.filter((l) => l.LoanBrokerID === loanBrokerId).sort((a, b) => Number(b.LoanSequence) - Number(a.LoanSequence))[0];
 }
 
-export async function brokerFor(client: Client, vaultId: string): Promise<any | undefined> {
-  const brokers = await ownedObjects(client, loadAccounts().broker.classicAddress, "LoanBroker");
-  return brokers.find((b) => b.VaultID === vaultId);
+/** Pass a pre-fetched `brokers` list (see listVaultsOf) to avoid re-paginating the broker's
+ * entire LoanBroker set on every single vault — it's the same list every time, filtered locally. */
+export async function brokerFor(client: Client, vaultId: string, brokers?: any[]): Promise<any | undefined> {
+  const list = brokers ?? (await ownedObjects(client, loadAccounts().broker.classicAddress, "LoanBroker"));
+  return list.find((b) => b.VaultID === vaultId);
 }
 
-export async function vaultStateOf(client: Client, vaultId: string): Promise<VaultState> {
-  const v = await vaultInfo(client, vaultId);
-  const data = await vaultData(client, vaultId);
-  const lb = await brokerFor(client, vaultId);
+export async function vaultStateOf(client: Client, vaultId: string, brokers?: any[]): Promise<VaultState> {
+  const [v, data, lb] = await Promise.all([
+    vaultInfo(client, vaultId),
+    vaultData(client, vaultId),
+    brokerFor(client, vaultId, brokers),
+  ]);
   const loan = await findLoan(client, data.b, lb?.index);
   // A closed loan omits PaymentRemaining rather than serializing it as 0 (see loanState above); `?? 0` keeps
   // callDate falling back to the vault's Data-stored bid call date once the loan is gone, instead of NaN > 0.
@@ -132,9 +136,11 @@ export function splitShares(shares: number, depositedDrops: number, pps: number)
 }
 
 export async function positionOf(client: Client, address: string, vaultId: string): Promise<Position> {
-  const v = await vaultInfo(client, vaultId);
+  const [v, { depositedDrops, withdrawnDrops }] = await Promise.all([
+    vaultInfo(client, vaultId),
+    depositHistory(client, address, vaultId),
+  ]);
   const shares = Number(await shareBalance(client, address, v.shareMptId));
-  const { depositedDrops, withdrawnDrops } = await depositHistory(client, address, vaultId);
   const currentValueDrops = shares * v.pps;
   const { yieldShares } = splitShares(shares, depositedDrops, v.pps);
   return {
@@ -144,10 +150,15 @@ export async function positionOf(client: Client, address: string, vaultId: strin
 }
 
 export async function listVaultsOf(client: Client): Promise<VaultState[]> {
-  const vaults = await ownedObjects(client, loadAccounts().broker.classicAddress, "Vault");
-  const out: VaultState[] = [];
-  for (const v of vaults) out.push(await vaultStateOf(client, v.index));
-  return out;
+  const brokerAddress = loadAccounts().broker.classicAddress;
+  // Broker's LoanBroker set is the same for every vault in this call — fetch it once and
+  // hand it to each vaultStateOf instead of re-paginating it per vault (was the dominant
+  // cost of loading the order book / vaults pages: N vaults x a full owned-objects re-fetch).
+  const [vaults, brokers] = await Promise.all([
+    ownedObjects(client, brokerAddress, "Vault"),
+    ownedObjects(client, brokerAddress, "LoanBroker"),
+  ]);
+  return Promise.all(vaults.map((v) => vaultStateOf(client, v.index, brokers)));
 }
 
 import { listAccounts, getAccount, type DbAccount, type AccountRole } from "../db/index.js";

@@ -20,11 +20,14 @@ export const MyPositions: FC = () => {
     const allVaults = await chainClient.getAllVaults()
     setVaults(allVaults)
 
+    const results = await Promise.all(
+      allVaults.map((v) => chainClient.getUserPosition(currentAccount.address, v.vaultId))
+    )
     const posMap: Record<string, UserPosition> = {}
-    for (const v of allVaults) {
-      const pos = await chainClient.getUserPosition(currentAccount.address, v.vaultId)
+    allVaults.forEach((v, i) => {
+      const pos = results[i]
       if (pos) posMap[v.vaultId] = pos
-    }
+    })
     setPositions(posMap)
   }
 
