@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FC, FormEvent } from 'react'
 import { useWallet } from '@/lib/wallet'
+import { canIssue } from '@/lib/roles'
 import { chainClient } from '@/lib/chainClient'
 import { DURATION_OPTIONS, expiresAtFromNow } from '@/lib/durations'
 import { notifyTx } from '@/lib/notifications'
@@ -24,7 +25,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!currentAccount) return
+    if (!currentAccount || !canIssue(currentAccount.role)) return
     setIsSubmitting(true)
     setSuccessMsg(null)
 
@@ -191,10 +192,16 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
             />
           </div>
 
+          {!canIssue(currentAccount?.role) && (
+            <div className="alert alert-warning" style={{ fontSize: '0.82rem', marginTop: '0.5rem' }}>
+              Only issuer (borrower) accounts can post a bond. This account is registered as
+              {currentAccount?.role === 'lender' ? ' an investor' : currentAccount?.role === 'broker' ? ' the platform broker' : ' not onboarded yet'}.
+            </div>
+          )}
           <button
             type="submit"
             className="btn btn-primary btn-block"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canIssue(currentAccount?.role)}
             style={{ marginTop: '0.5rem', padding: '0.85rem' }}
           >
             {isSubmitting ? 'Publishing Issuance...' : 'Issue Bond'}

@@ -1,22 +1,13 @@
 // Role-based access for the UI. The ledger and the chain shim enforce the real rules (who can
 // sign what); this only decides which screens and actions a connected account is offered.
+// Everyone can browse every screen; only the platform broker gets the Broker Hub. Actions are
+// gated separately: issuers post bonds, investors bid on and fund tranches.
 export type AppTab = 'issue' | 'finance' | 'positions' | 'orderbook' | 'broker'
 export type AccountRole = 'borrower' | 'lender' | 'broker' | 'unassigned'
 
-const TAB_ACCESS: Record<AppTab, ReadonlyArray<Exclude<AccountRole, 'unassigned'>>> = {
-  orderbook: ['borrower', 'lender', 'broker'],
-  finance: ['borrower', 'lender', 'broker'],
-  issue: ['borrower'],
-  positions: ['borrower', 'lender'],
-  broker: ['broker'],
-}
-
-// What an account sees before it has completed onboarding (no role yet): read-only screens.
-const PUBLIC_TABS: ReadonlyArray<AppTab> = ['orderbook', 'finance']
-
 export function canAccessTab(role: AccountRole | undefined, tab: AppTab): boolean {
-  if (!role || role === 'unassigned') return PUBLIC_TABS.includes(tab)
-  return TAB_ACCESS[tab].includes(role)
+  if (tab === 'broker') return role === 'broker'
+  return true
 }
 
 export const TAB_ORDER: ReadonlyArray<{ id: AppTab; label: string }> = [
