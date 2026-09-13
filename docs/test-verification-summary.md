@@ -28,8 +28,9 @@ only one of the two required signers is rejected (`tefBAD_QUORUM`) · **write-do
 genuinely overdue, impair succeeds (`lossUnrealized` rises, PPS drops), then unimpair restores it · the
 overdue coupon is paid (late-flagged automatically), PPS rises, yield accrues · yield-only withdrawal leaves
 the principal shares in place · **debt reimbursement** — at the call date, with 2 payments still scheduled,
-the enforcer allows the early close (`tfLoanFullPayment`); the close penalty lands in the vault and lifts PPS
-again · final withdrawal returns principal plus every accrued increment of yield.
+`finalRepayment` pays the remaining coupons one by one (late-flagged, `tfLoanLatePayment`), the last one closes the
+loan on the ledger and the coupon interest lifts PPS again; `tfLoanFullPayment` is never used here because it only
+means an early close, which the enforcer refuses before the call date (step 9) · final withdrawal returns principal plus every accrued increment of yield.
 
 One test-script bug found and fixed along the way, not a product bug: the first run placed the
 "impair before due" check after two other on-chain submissions (each several real seconds via

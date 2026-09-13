@@ -6,7 +6,8 @@ Everything the frontend calls lives in `src/chain/index.ts` and is reachable ove
 
 ```bash
 npm install
-npm run fund      # once: creates the role accounts from the faucet, writes .env
+npm run fund:setup  # once: funds the platform broker + enforcer, writes .env and .enforcer.env
+npm run enforcer  # the co-signer daemon on http://localhost:8788 (set ENFORCER_URL for the shim)
 npm run check     # devnet reachability + amendments (needs a network that allows ports 51233/51234)
 npm run serve     # HTTP shim on http://localhost:8787
 ```
@@ -32,11 +33,11 @@ Every function is real and validated on the devnet (Sat evening, `npm run demo`)
 | `read.position` | real | demo-flow |
 | `read.listVaults` | real | shim smoke test |
 | `tx.createBond` | real | B087C9CA2D11, E4846F7483C0, AC939AB1AA2A |
-| `tx.deposit` | real | 9749415B3405 |
+| `tx.prepareDeposit` + `tx.submitSigned` | real | BA2C86E975 (e2e, lender-signed `VaultDeposit`); 9749415B3405 (earlier backend-signed `tx.deposit`, since removed) |
 | `tx.originate` | real | 47D2F682B46E |
 | `tx.payCoupon` | real | D7351A12A00C |
 | `tx.withdraw` | real | F6E477595F2B (yield-only), E5C33914F5FE (full, guardrail rejection) |
-| `tx.finalRepayment` | real | blocked before call date; 685A52185C45 after (spike) |
+| `tx.finalRepayment` | real | `blocked:before-call-date` before the call date (e2e step 9); settles the remaining coupons at the call date (e2e EA805215F3, `tfLoanLatePayment`). 685A52185C45 is the spike run's early close with `tfLoanFullPayment` (0x20000), signed before the call-date policy was wired in |
 | `tx.impair` / `tx.unimpair` | real | tecTOO_SOON until a payment is overdue (spike) |
 
 Signatures changed since the stub: `originate` takes the whole `Bid` (with `vaultId` and `loanBrokerId` filled), `payCoupon` and `finalRepayment` take `(loanId, borrowerAddress)`.
@@ -92,6 +93,12 @@ The one-signature bypass is rejected on-chain with `tefBAD_QUORUM`.
 ### `tx.impair(loanId)` / `tx.unimpair(loanId): TxReceipt`
 Broker marks the loan impaired (`LoanManage`): the vault's `lossUnrealized` rises and PPS drops, the write-down demo. `unimpair` reverses it. **Only accepted once a payment is overdue** (`tecTOO_SOON` before `nextPaymentDueDate`), so the UI flow is: issuer skips a coupon, due date passes, broker impairs.
 
+### `tx.depositCover(loanBrokerId, amount): TxReceipt`
+Broker tops up the first-loss cover (`LoanBrokerCoverDeposit`, `amount` in XRP). `tx.createBond` already deposits the initial cover; this is for adding more later.
+
+### `tx.updateAccount({ address, role?, name?, company?, firstName?, userRole?, multisigActive? })`
+Writes the onboarding profile of a connected address into the SQLite registry. `read.listAccounts(role?)` / `read.getAccount(address)` read it back; `read.createdAccounts()` lists the faucet-funded spare accounts from `created_accounts.json` with their seeds blanked. `tx.wipeCreatedAccounts()` clears that spare list.
+
 ### `tx.prepareAccountMultisigSetup(accountAddress): { signerListSet, disableMaster }` + `tx.submitAccountMultisigSetup(accountAddress, signerListSetBlob, disableMasterBlob): TxReceipt`
 Converts a borrower or lender's own account to 2-of-2 multisig governance. The account owner's own connected wallet signs both halves — this backend never holds that account's master key:
 1. `prepare` mints (or reuses) an "operator" keypair for this account — held backend-side, since no wallet-connect adapter available today (GemWallet, Crossmark, WalletConnect/Xaman) can produce a multisig-shaped signature — and autofills `SignerListSet` (Quorum 2, entries `[operator, platform enforcer]`) and `AccountSet` (flag 4, `asfDisableMaster`), with the second transaction's `Sequence` bumped past the first.
@@ -129,7 +136,7 @@ bid depth instead of each browser's own private copy. Stored in `data/order-book
   state (`read.listVaults()`) to render the book; the ledger stays the source of truth for
   amount/rate/status once a vault exists.
 - **bids** — LP commitments against a tranche (an `Ask` with `matchedBidId` pointing at the
-  tranche id). `"pending"` until an LP actually funds it via a real `tx.deposit`
+  tranche id). `"pending"` until an LP actually funds it via a real `VaultDeposit` (`tx.prepareDeposit` → wallet signature → `tx.submitSigned`)
   (`VaultDeposit`), then `"deposited"`. A pending bid is purely indicative — nothing
   prevents one from exceeding the tranche's remaining capacity; that's enforced natively by
   the vault's own `AssetsMaximum` cap when the deposit is actually submitted, not by this
@@ -158,7 +165,7 @@ Distinguish it from a receipt with `"blocked" in result`. `reason` is human-read
 
 ## Enforcer
 
-The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. It runs as its own process: `npm run enforcer` (port 8788, routes `POST /cosign`, `POST /counter-sign`, `GET /health`), and the shim uses it when started with `ENFORCER_URL=http://localhost:8788 npm run serve`. Without `ENFORCER_URL` the same policy runs in-process, for development only. Policy, in order: only `LoanPay`; only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up. Anything else returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed without a policy check because it is the broker's own act.
+The second key of the borrower multisig lives in `.enforcer.env` (gitignored), read only by `src/chain/enforcer/`. It runs as its own process: `npm run enforcer` (port 8788, routes `POST /cosign`, `POST /counter-sign`, `GET /health`), and the shim uses it when started with `ENFORCER_URL=http://localhost:8788 npm run serve`. Without `ENFORCER_URL` the same policy runs in-process, for development only. Policy for `LoanPay`, in order: only loans brokered by this platform; `tfLoanFullPayment` only once ledger time has passed the call date; a coupon's `Amount` must equal `PeriodicPayment + LoanServiceFee` rounded up (or, once overdue, carry `tfLoanLatePayment` with at least that plus the late fee). Policy for `VaultWithdraw` (lender accounts with multisig active, `decideWithdraw`): up to the account's `yieldShares` is co-signed at any time; more than that is co-signed only once the vault's loan is closed (`unauthorized-principal-withdrawal`). Any other transaction type is refused. A refusal returns `Blocked` and nothing reaches the ledger. Origination (`LoanSet`) is counter-signed without a policy check because it is the broker's own act.
 
 ## Changes
 

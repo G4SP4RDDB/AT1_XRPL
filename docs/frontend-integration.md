@@ -17,7 +17,7 @@ npm run dev
 ```
 The ledger ports are blocked on the venue wifi; the machine running the shim must be on a hotspot. The browser only needs the shim, so the UI works on any network. The explorer links in receipts open pages that need the ledger port too, so they will not load on venue wifi.
 
-Drop the direct `xrpl` client from `frontend/src/lib/xrpl/`: nothing in the UI should sign or query the ledger. `VITE_DEMO_*_SEED` variables are not needed and should stay empty.
+Drop the direct `xrpl` client from `frontend/src/lib/xrpl/`: nothing in the UI should sign or query the ledger. The former `VITE_DEMO_*_SEED` variables have been removed; nothing in the frontend reads a seed.
 
 ## 2. The client
 
@@ -61,7 +61,7 @@ A wallet picker can simply offer lender1, lender2 and borrower. Wallet-connect i
 ### Ask board and match (lender)
 1. Lender posts an `Ask` (amount, `indicated: true`). Pure local state, nothing on-chain.
 2. Match rule for the demo: same amount and ask yield <= bid yield. On match, set `ask.matchedBidId`, `bid.status = "matched"`.
-3. Deposit: `await chain.tx.deposit(ask.lenderAddress, bid.vaultId, ask.amount)` (about 4 s). Then `read.position(lender, vaultId)` shows `shares` equal to the deposit in drops, `pps: 1`.
+3. Deposit: `const prepared = await chain.tx.prepareDeposit(ask.lenderAddress, bid.vaultId, ask.amount)`, sign it in the lender's connected wallet, then `await chain.tx.submitSigned(blob)` (about 4 s). Then `read.position(lender, vaultId)` shows `shares` equal to the deposit in drops, `pps: 1`.
 4. Originate: `const o = await chain.tx.originate(bid)`; store `o.loanId`, `bid.status = "originated"`. `vaultState.loan` now exists, `assetsAvailable` is `"0"`, and `callDate` comes from the loan.
 
 ### Depositor dashboard (lender)

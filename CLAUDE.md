@@ -234,11 +234,11 @@ Sourced from the hackathon Notion and workshop slides. Items marked "not yet dec
 ```json
 {
   "dependencies": {
-    "xrpl": "^3.x"
+    "xrpl": "^5.2.0"
   }
 }
 ```
-- Track 1 requires the stable `xrpl.js` release — do not install the `5.2.0-beta.0` line, that's Track 2 only (V1.1 closed-ended types) and is incompatible with this project's final Track 1 decision.
+- Track 1 requires the stable `xrpl.js` release; the project is on stable `xrpl@5.2.0`, which ships the XLS-65/66 transaction types. Do not install the `5.2.0-beta.0` prerelease line used during the Track 2 exploration.
 - Recommended client libraries per the workshop slides: `xrpl.js` (JS/TS) and `xrpl-py` (Python) are both explicitly "Recommended" by Ripple DevRel. `xrpl4j` (Java) and `xrpl-rust` exist but aren't flagged as recommended. Pick JS/TS unless there's a reason to use Python — the reference app and most tooling below assume JS/TS.
 
 ### Wallet integration (optional but useful for the demo)

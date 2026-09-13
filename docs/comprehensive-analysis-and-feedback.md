@@ -100,10 +100,8 @@ Contrairement aux architectures naïves qui écrivent tous les comptes en dur da
 ### 3.4 Création de Comptes Aléatoires & Attribution Personnelle des Rôles
 
 Pour éviter d'imposer des profils pré-formatés ("Alexandre CFO", "Sophie Investor") :
-- Le système génère de simples **comptes aléatoires neutres** financés à 1 000 XRP via le faucet Devnet (`role: "unassigned"`).
-- L'utilisateur gère personnellement et souverainement leur rôle depuis l'onglet *"Comptes en Base"* ou son profil :
-  - Il peut définir en 1 clic un compte comme **🏢 Emprunteur**, **💰 Prêteur** ou le laisser libre.
-  - S'il le configure comme Emprunteur, le système lui alloue une paire de clés opérateur dédiée (`borrowerOp`) et lui permet d'activer à la demande la gouvernance Multisig 2-sur-2 (`SignerListSet` + `asfDisableMaster`).
+- `npm run create-accounts N` génère de simples **comptes aléatoires neutres** financés à 1 000 XRP via le faucet Devnet, listés dans `created_accounts.json` / `.txt` (hors base SQLite). L'utilisateur importe la seed dans un vrai wallet (GemWallet, Crossmark, Xaman) et se connecte via `xrpl-connect`.
+- À la première connexion, une modale d'onboarding obligatoire lui fait choisir **🏢 Emprunteur** ou **💰 Prêteur** (pas d'état "libre" persistant), renseigner son identité, et activer à la demande la gouvernance Multisig 2-sur-2 (`SignerListSet` + `asfDisableMaster`, signés par son propre wallet). Une paire de clés opérateur dédiée (`borrowerOp`) lui est alors allouée côté backend (voir `docs/borrower-lender-custody.md` pour la raison de ce compromis).
 
 ---
 
@@ -188,7 +186,7 @@ Chaque friction est consignée selon le standard rigoureux du hackathon : Catég
 ---
 
 ### #10 · Protocole / Incompatibilité de Flags · Remboursement après échéance rejeté avec `tecEXPIRED`
-- **Description** : Dès qu'une échéance de prêt est dépassée, `LoanPay` exige obligatoirement le flag `tfLoanLatePayment` (`0x00010000`). Or, ce flag est **mutuellement exclusif** avec le flag de remboursement intégral `tfLoanFullPayment` (`0x00040000`). Par conséquent, un emprunt en retard ne peut pas être soldé en un seul paiement : l'emprunteur doit obligatoirement soumettre d'abord un coupon en retard, puis une seconde transaction distincte pour le solde du prêt.
+- **Description** : Dès qu'une échéance de prêt est dépassée, `LoanPay` exige obligatoirement le flag `tfLoanLatePayment` (`0x00040000`). Or, ce flag est **mutuellement exclusif** avec le flag de remboursement intégral `tfLoanFullPayment` (`0x00020000`). Par conséquent, un emprunt en retard ne peut pas être soldé en un seul paiement : l'emprunteur doit obligatoirement soumettre d'abord un coupon en retard, puis une seconde transaction distincte pour le solde du prêt.
 - **Repro** : `LoanPay` avec `tfLoanFullPayment` sur un prêt dont la date de coupon est dépassée (tx `0CAB4645F86B`).
 - **Sévérité** : Moyenne.
 - **Proposition de fix** : Permettre au flag `tfLoanFullPayment` de solder de manière atomique l'intégralité de la dette (intérêts échus, pénalités de retard et capital restant) en une seule transaction.

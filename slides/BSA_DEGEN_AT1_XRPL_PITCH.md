@@ -103,7 +103,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Generates dedicated per-borrower operator keys (`borrowerOp`).
 - **Cryptographic Independence**:
   - No two borrowers ever share signing credentials.
-  - Front-end supports one-click Devnet faucet generation, SQLite accounts, or hardware wallets via `xrpl-connect` (Xaman / Crossmark).
+  - Lenders and borrowers connect their own wallets via `xrpl-connect` (Xaman / GemWallet / Crossmark); the backend only ever learns their public address (prepare → sign in wallet → submit).
 
 > *Speaker Note (25s)*: "In institutional finance, brokers must not custody customer keys. Our backend only holds broker keys. All borrower and lender profiles are dynamically managed in an isolated database with dedicated signing operators."
 
@@ -115,13 +115,17 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
 
 | Step | Transaction | Result Code | On-Chain State Impact |
 |---|---|---|---|
-| **1-3** | `VaultCreate` + `LoanBrokerSet` + `CoverDeposit` | `tesSUCCESS` | Vault deployed, first-loss buffer funded |
-| **4** | `VaultDeposit` | `tesSUCCESS` | 1,000 XRP deposited, MPT shares minted |
-| **5-6** | `LoanSet` (2-of-2 Co-signed) | `tesSUCCESS` | Principal atomically disbursed to borrower |
-| **7-8** | `LoanPay` (Coupons) | `tesSUCCESS` | Interest paid, PPS grows from 1.000 to 1.006 |
-| **9** | `VaultWithdraw` (Harvest) | `tesSUCCESS` | Yield shares redeemed; principal stays intact |
-| **10** | `LoanPay` (Call Date Final Payoff) | `tesSUCCESS` | Enforcer co-signs; loan closed at Call Date |
-| **11** | Full `VaultWithdraw` | `tesSUCCESS` | Full 1,000 XRP principal redeemed |
+| **1-3** | `VaultCreate` + `LoanBrokerSet` + `LoanBrokerCoverDeposit` | `tesSUCCESS` | Vault deployed, first-loss buffer funded |
+| **4** | `VaultDeposit` (lender-signed) | `tesSUCCESS` | 200 XRP deposited, MPT shares minted at PPS 1.0 |
+| **5** | `Payment` signed by the disabled master key | `tefMASTER_DISABLED` | Borrower master key is dead on-ledger |
+| **6** | `LoanSet` (broker + 2-of-2 counterparty signature) | `tesSUCCESS` | Principal atomically disbursed to borrower |
+| **7-8** | `LoanManage` impair (not yet due) / full `VaultWithdraw` | `tecTOO_SOON` / `tecINSUFFICIENT_FUNDS` | Guardrails hold (see next slide) |
+| **9-10** | Early close before call date / `LoanPay` with 1 of 2 signatures | `blocked:before-call-date` / `tefBAD_QUORUM` | Enforcer + quorum both required |
+| **11-12** | `LoanManage` impair (overdue) then unimpair | `tesSUCCESS` | `lossUnrealized` rises, PPS drops, then restored |
+| **13** | `LoanPay` coupon (late-flagged) | `tesSUCCESS` | Interest paid, PPS rises |
+| **14** | `VaultWithdraw` (yield-only) | `tesSUCCESS` | Yield shares redeemed; principal shares intact |
+| **15** | `LoanPay` remaining coupons at the Call Date | `tesSUCCESS` | Enforcer co-signs; loan closes, all assets liquid |
+| **16** | Full `VaultWithdraw` | `tesSUCCESS` | Principal + accrued yield returned to lender |
 
 > *Speaker Note (45s)*: "[SWITCH TO LIVE SCREEN] Here is our live dashboard running on the Custom Hackathon Devnet. We see the active bond vault, the real-time PPS, and our 4-pane tmux environment coordinating the Enforcer, Shim, and UI."
 
@@ -135,7 +139,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
    - Investor attempts full principal withdrawal while funds are out on loan.
    - Verified rejection hash: `C4240633AC...` — Native proof that principal cannot be drained.
 2. **Multisig Quorum Guardrail (`tefBAD_QUORUM`)**:
-   - Borrower attempts to unilaterally settle the loan without the Enforcer.
+   - A coupon `LoanPay` signed by the borrower's operator key alone, without the Enforcer.
    - Rejected on-ledger: quorum threshold of 2 is strictly required.
 3. **Premature Impairment Guardrail (`tecTOO_SOON`)**:
    - Broker calls `tfLoanImpair` on an on-time loan under `fixCleanup3_4_0`.

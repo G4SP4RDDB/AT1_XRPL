@@ -141,7 +141,7 @@ assertTrue("shares reduced by exactly the yield shares redeemed", Number(pos.sha
 // slightly, which is correct — each remaining share is worth marginally more XRP. Tolerance is 0.05%.
 assertTrue("principal shares within 0.05% of the original 200,000,000", Math.abs(Number(pos.shares) - 200_000_000) < 100_000, `(${pos.shares})`);
 
-console.log("\n=== 12. debt reimbursement: wait for the call date, close early with 2 payments still remaining ===");
+console.log("\n=== 12. debt reimbursement: wait for the call date, then settle the remaining scheduled coupons ===");
 const loan2 = await ledgerEntry(client, bid.loanId!);
 const callAt = callDateRipple(loan2);
 console.log(`    call date: ${rippleToIso(callAt)}  (paymentRemaining=${loan2.PaymentRemaining})`);
@@ -149,11 +149,11 @@ await sleepUntil(callAt, "the loan's call date");
 
 const vBeforeClose = await read.vaultState(bid.vaultId!);
 const lenderXrpBefore = Number(dropsToXrp((await client.request({ command: "account_info", account: A.lender1.classicAddress, ledger_index: "validated" })).result.account_data.Balance));
-log("finalRepayment at the call date (early close, tfLoanFullPayment)", "tesSUCCESS", await tx.finalRepayment(bid.loanId!, bid.borrowerAddress));
+log("finalRepayment at the call date (remaining coupons, tfLoanLatePayment)", "tesSUCCESS", await tx.finalRepayment(bid.loanId!, bid.borrowerAddress));
 v = await read.vaultState(bid.vaultId!);
 assertEq("loan closed", v.loan?.status, "closed");
 assertEq("payments remaining", v.loan?.paymentRemaining, 0);
-assertTrue("close penalty landed in the vault (pps rose again)", v.pps > vBeforeClose.pps, `(${v.pps} > ${vBeforeClose.pps})`);
+assertTrue("coupon interest landed in the vault (pps rose again)", v.pps > vBeforeClose.pps, `(${v.pps} > ${vBeforeClose.pps})`);
 assertEq("all assets liquid again", v.assetsAvailable, v.assetsTotal);
 
 console.log("\n=== 13. final withdrawal: principal + all accrued yield ===");

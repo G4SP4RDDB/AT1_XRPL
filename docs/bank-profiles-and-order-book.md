@@ -144,7 +144,7 @@ Wired into `server.ts` as the `book` group (unchanged by the rewire):
 - **`frontend/src/lib/chainClient.ts`** — `getBids()`/`getAsks()` now read the shared
   `/book/*` store instead of `localStorage` (the old `BIDS_KEY`/`ASKS_KEY` and their
   load/save helpers are gone). Two new methods:
-  - `acceptBid(askId)` — converts one pending LP bid into a real `tx.deposit`
+  - `acceptBid(askId)` — converts one pending LP bid into a real `VaultDeposit` (`prepareDeposit` → wallet signature → `submitSigned`)
     (`VaultDeposit`); does **not** originate the loan.
   - `originateTranche(trancheId)` — explicit `tx.originate` (`LoanSet`), callable once a
     tranche has collected enough deposits (or any time — the ledger enforces

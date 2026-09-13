@@ -5,7 +5,7 @@ Vite + React + TypeScript frontend for the AT1 bond marketplace (Track 1, Custom
 ## Setup
 
 ```sh
-cp .env.example .env   # fill in optional demo seeds
+cp .env.example .env   # devnet endpoints + VITE_CHAIN_URL (the chain shim)
 npm install
 npm run dev            # http://localhost:5173
 ```
@@ -23,10 +23,10 @@ npm run dev            # http://localhost:5173
 
 ```
 src/
-  lib/xrpl/      # xrpl.js client, network config, XLS-65/66 transaction + read helpers (TS)
-  components/    # BidForm, AskForm, MatchBoard, VaultCard
-  pages/         # bids, asks, dashboard
-  mocks/         # mock VaultState matching shared/types.ts, used before the chain layer is ready
+  lib/xrpl/        # network config + read-only xrpl.js client (balances, explorer links)
+  lib/             # wallet context (wallet.tsx), xrplConnect adapters, chainClient (talks to the shim), order book + bank-profile helpers
+  components/      # IssueBond, FinanceBonds, OrderBookPanel, TrancheBook, TranchePage, VaultCard, WithdrawModal, CouponModal, MultisigRepayModal, BrokerHub, onboarding + wallet modals
+integration/       # vitest integration suite against the live shim + devnet (npm run test:integration)
 ```
 
 Aliases: `@/*` → `src/*`, `@shared/*` → `../shared/*` (the frozen contract with the chain layer).
@@ -34,7 +34,7 @@ Aliases: `@/*` → `src/*`, `@shared/*` → `../shared/*` (the frozen contract w
 ## Dependencies
 
 - `xrpl@5.2.0` — stable xrpl.js, ships the XLS-65/66 transaction types. No Vite polyfills needed since 3.0.
-- `xrpl-connect@0.8.2` — wallet connect abstraction (Xaman, Crossmark, GemWallet). Optional; demo accounts can use seed-based signing.
+- `xrpl-connect@0.8.2` — wallet connect abstraction (Xaman, Crossmark, GemWallet). Every lender/borrower signature goes through it (prepare → sign → submit); the frontend never holds a seed.
 
 ## Tests
 

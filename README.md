@@ -86,11 +86,10 @@ A local **SQLite** database (`src/db/index.ts`, `better-sqlite3`) keeps the dire
 An AT1 bond's maturity lock must not depend on human discretion:
 - **Software-only key**: the enforcer's seed (`ENFORCER_SEED` in `.enforcer.env`, mode `0600`) is held and used **exclusively by the autonomous daemon** (`src/chain/enforcer/server.ts`, port 8788).
 - **No human access**: no operator (borrower, broker or admin) can request a manual signature or extract the key. It is never printed, never exposed to the frontend, and there is no arbitrary-signing endpoint.
-- **Immutable co-signing policy**: the daemon exposes a single `POST /cosign` route that:
-  1. verifies the transaction is a `LoanPay` on a loan supervised by this platform;
-  2. reads the validated ledger's official close time (`ledgerCloseTime`);
-  3. if the transaction carries `tfLoanFullPayment` while `now < callDate`, **refuses to sign** (`blocked:before-call-date`) — the key is never even loaded;
-  4. co-signs only once the on-chain time condition is met.
+- **Three routes, no discretionary signing** (`src/chain/enforcer/server.ts`): `GET /health`, `POST /counter-sign` (adds the enforcer's `LoanSet` counterparty signature at origination, the broker's own act, no policy check) and `POST /cosign`, which applies a fixed policy and returns either a signature or `{ blocked, reason }`:
+  - **`LoanPay` (borrower)**: the loan must be brokered by this platform; `tfLoanFullPayment` (an early close) is refused while the validated ledger close time is before the call date (`blocked:before-call-date`); a coupon must be exactly `PeriodicPayment + LoanServiceFee`, or carry `tfLoanLatePayment` with at least that plus the late fee once overdue (`wrong-amount` otherwise).
+  - **`VaultWithdraw` (lender with multisig active)**: redeeming up to the account's yield shares is co-signed at any time; anything beyond that (principal) is co-signed only once the vault's loan is closed (`unauthorized-principal-withdrawal` otherwise). This is the lender-side half of the call-date lock.
+  - Anything else is refused (`not-loan-pay` / `not-supported`). When a request is refused the signing routine is never reached.
 - **In production**: the daemon would run inside a confidential enclave (**AWS Nitro Enclaves, HSM or TEE**), making key extraction or forced signing cryptographically impossible even with `root` on the host.
 
 ### 3.6 Loss absorption (write-down)
@@ -140,7 +139,7 @@ Every phase of the AT1 bond lifecycle has been executed and verified on the **Cu
 | **12** | Debt Restoration: `LoanManage tfLoanUnimpair` | `tesSUCCESS` | ✅ `tesSUCCESS` | [`8BB3ECA9B9...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/8BB3ECA9B954F13AFE386ECD03954E91397016236203D6EC4E83654D9C13E4A1) |
 | **13** | Periodic Coupon: `LoanPay` (Increases PPS) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`5F2A407308...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/5F2A4073080377786571A24CD2AD0B5DE334BB008871C477FDD998EE0B1211B6) |
 | **14** | `VaultWithdraw` (Yield-only partial harvest) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`0224724B4D...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/0224724B4DA69A92D01D1EDA54FD13DB1D7D79520407E706C039F195E760D234) |
-| **15** | Final Payoff at Call Date (`tfLoanFullPayment`) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`EA805215F3...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/EA805215F309CCC1F22A209B3B01328E351BE9EB1F73B5F90447E816D947994E) |
+| **15** | Settlement at Call Date (remaining coupons via `LoanPay` + `tfLoanLatePayment`; the last one closes the loan) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`EA805215F3...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/EA805215F309CCC1F22A209B3B01328E351BE9EB1F73B5F90447E816D947994E) |
 | **16** | Final Full `VaultWithdraw` (Principal + Yield) | `tesSUCCESS` | ✅ `tesSUCCESS` | [`99A7BB682D...`](https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/99A7BB682D4A772B4A2F8FF461E556DE8D8EC4A33BBED51E5EA56BF76024A7BF) |
 
 ---
@@ -219,7 +218,7 @@ npm run dev:tmux
 1. **⚡ Broker Generation & DB Initialization** (`scripts/fund-and-setup.ts`):
    - Funds the Platform Broker and its Enforcer from the Devnet faucet (1,000 XRP each).
    - Writes `.env` containing **only** `BROKER_SEED` and `BROKERENFORCER_SEED` (no client keys).
-   - Initialises the local SQLite registry (`data/accounts.db`).
+   - Wipes and regenerates 3 unassigned, faucet-funded test accounts in `created_accounts.json` / `.txt` (the SQLite registry stays empty until each account connects and onboards).
 2. **🧪 Test Suite**: runs the 29 backend unit tests and the 19 frontend Vitest tests (all passing).
 3. **⚙️ Compilation & Typecheck**: TypeScript check (`tsc --noEmit`) and the Vite production bundle.
 4. **🧹 Port Cleanup**: frees ports 8788, 8787 and 5173.
@@ -274,8 +273,8 @@ cp .env.example .env
 cp frontend/.env.example frontend/.env
 ```
 
-#### Step 3: Fund Accounts & Configure On-Chain Multisig
-Generate fresh roles from the Devnet faucet, populate `.env` / `.enforcer.env`, and submit the multisig configuration:
+#### Step 3: Fund the Platform Accounts
+Fund the broker and its enforcer from the Devnet faucet, write `.env` / `.enforcer.env`, and generate 3 spare test accounts. Multisig is activated later, per account, from the onboarding modal (the owner's wallet signs `SignerListSet` + `AccountSet`):
 ```bash
 npm run fund:setup
 ```
@@ -342,7 +341,7 @@ Open your browser at **[http://localhost:5173](http://localhost:5173)**.
 4. **Coupon Distribution & Yield Harvest**:
    - The borrower pays periodic interest coupons via `LoanPay`.
    - Each payment increases the vault's total assets and share price (PPS).
-   - Lenders can click **Claim Accrued Yield** (`VaultWithdraw`), burning only the yield-equivalent shares while leaving their principal locked in the vault.
+   - Lenders open **Withdraw**, pick **Yield-Only Partial** and confirm **Redeem Accrued Yield** (`VaultWithdraw`), burning only the yield-equivalent shares while leaving their principal locked in the vault. The **Full Principal (Guardrail Test)** mode is there to show the on-ledger rejection while capital is on loan.
 5. **Call Date & Principal Redemption**:
    - Prior to Call Date: Attempting to fully redeem principal triggers the protocol's native **"insufficient liquidity" guardrail** (capital is out on loan). Early full loan repayment is blocked by the Enforcer.
    - On/After Call Date: The borrower initiates final loan repayment; the Enforcer approves and co-signs the transaction. Once repaid, capital becomes liquid in the vault and lenders can withdraw their full principal.
@@ -366,9 +365,9 @@ npm test
 ✔ full payment is refused before the call date and allowed after
 ✔ callDateRipple does not drift as coupons are paid
 ✔ periodicRate scales an annual 1/10 bp rate to one interval
-✔ splitShares: a coupon raises PPS and positive yield shares appear
+✔ splitShares: a coupon raises PPS and a positive yield share count appears without any share burn
 ...
-ℹ pass 29 | fail 0
+ℹ pass 29 | fail 0  (+ 4 read-layer / terms suites not shown)
 ```
 
 ### On-Chain End-to-End Devnet Verification (16/16 Steps)
@@ -420,7 +419,7 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 | `npm run all-balances` | Full diagnostic report of liquid and reserved XRP balances across all accounts. |
 | `npm run vaults` | Scans on-chain vaults, Price Per Share (PPS), outstanding loans, and call dates. |
 | `npm run create-accounts [N]` | Generates and funds `N` fresh Devnet accounts (1,000 XRP each) and outputs their addresses & seeds. |
-| `npm run fund` | Automatically funds and populates root `.env` demo seeds from the Devnet faucet. |
+| `npm run fund` | **Legacy**, pre custody change: funds one account per role and writes `BORROWER_SEED`, `LENDER1_SEED`, … into `.env`, which `loadAccounts()` still honours as overrides for scripts. Not used by the current setup; prefer `npm run fund:setup`. |
 | `npm run fund:setup` | Generates fresh accounts, updates `.env` & `.enforcer.env`, and configures borrower multisig on-chain. |
 | `npm run show:accounts` | Displays a formatted summary of all active roles, addresses, seeds, and verified XRP balances. |
 | `npm run enforcer` | Starts the standalone Multisig Call-Date Enforcer daemon on port `8788`. |
@@ -437,10 +436,10 @@ While XLS-65 prevents premature principal redemption via native liquidity guardr
 ├── docs/                       # Architectural specs, friction logs, and reports
 │   ├── chain-api.md            # Chain shim API documentation
 │   ├── e2e-full-report.md      # On-chain verified test report (16 transactions)
-│   ├── friction-log.md         # Detailed hackathon friction log & proposals (14 points)
+│   ├── friction-log.md         # Detailed hackathon friction log & proposals (15 points)
 │   └── tech-stack.md           # Technology stack deep-dive
 ├── frontend/                   # Vite + React 19 web application
-│   ├── src/                    # Components, pages, wallet context, chainClient
+│   ├── src/                    # Components, lib (wallet context, chainClient, order book, bank profiles)
 │   └── integration/            # Frontend integration test suite
 ├── shared/                     # Frozen contracts & types between layers
 │   ├── types.ts                # Domain models (Bid, Ask, VaultState, LoanState)

@@ -11,7 +11,7 @@ flowchart TD
     subgraph UI ["Frontend (Client Layer - Port 5173)"]
         React["React 19 + TypeScript + Vite"]
         XRPLConnect["xrpl-connect (Wallet Adapter)"]
-        DbSelector["Comptes en Base SQLite & Faucet Devnet"]
+        DbSelector["Wallet connect (xrpl-connect) & read-only registry"]
         WalletCtx["Devnet Multi-Account Context"]
     end
 
@@ -104,9 +104,9 @@ To decouple frontend and backend development while preventing interface drift, a
   * Real-time dynamic reconstruction of bond marketplace bids and user positions from ledger vault queries.
 * **Wallet & Account Management**:
   * `frontend/src/lib/wallet.tsx` & `ConnectWalletModal.tsx`: Multi-wallet React Context providing:
-    * **Comptes en Base (DB)**: instant connection to registered borrowers and lenders stored in the backend SQLite DB.
-    * **Nouveau Compte Devnet**: 1-click creation of funded corporate borrowers (with auto-generated operator key) or institutional lenders via the Devnet faucet (1 000 XRP).
-    * **WalletConnect / Hardware**: external wallet connectivity via `xrpl-connect` (Crossmark, Xaman, GemWallet).
+    * **Real wallet**: connection via `xrpl-connect` (GemWallet, Crossmark, Xaman over WalletConnect); the backend only learns the public address, and every user transaction is prepare → sign in the wallet → submit.
+    * **Registered accounts (read-only)**: addresses that have connected and completed onboarding, from the SQLite registry; plus a fixed login for the platform broker (admin panel).
+    * Funded test accounts come from `npm run create-accounts` at the repo root, imported into a real wallet.
   * Real-time ledger balance queries via `client.getXrpBalance()`.
 
 ---

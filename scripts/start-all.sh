@@ -12,7 +12,7 @@ echo ""
 if [ "$SKIP_FUND" = "1" ]; then
   echo "⚡ [1/5] Skipping account generation (SKIP_FUND=1)..."
 else
-  echo "⚡ [1/5] Generating fresh accounts from faucet, updating .env & configuring borrower multisig..."
+  echo "⚡ [1/5] Funding the platform broker & enforcer from the faucet, writing .env / .enforcer.env, generating test accounts..."
   npx tsx "$PROJECT_DIR/scripts/fund-and-setup.ts"
 fi
 
