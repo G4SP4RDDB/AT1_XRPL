@@ -61,6 +61,14 @@ const bid: Bid = {
 };
 console.log(`bid: ${bid.amount} XRP at ${bid.yieldRate}% to call ${bid.callDate}`);
 
+// The lender is a plain (non-multisig) wallet account: it signs its own VaultWithdraw, the route
+// the frontend uses. tx.withdraw() is the multisig-only route (operator + enforcer co-signature).
+async function lenderWithdraw(mode: "full" | "yield-only") {
+  const r = await tx.prepareWithdraw({ depositorAddress: A.lender1.classicAddress, vaultId: bid.vaultId!, mode });
+  if ("blocked" in r) return r;
+  return tx.submitSigned(A.lender1.sign(r.prepared as any).tx_blob);
+}
+
 console.log("\n=== 1. vault creation ===");
 const created = await tx.createBond(bid);
 ["VaultCreate", "LoanBrokerSet", "LoanBrokerCoverDeposit"].forEach((s, i) => log(s, "tesSUCCESS", created.receipts[i]));
@@ -73,7 +81,8 @@ assertTrue("fresh vault has no loan yet", v.loan === undefined);
 console.log("\n=== 2. deposit ===");
 const depositPrepared = await tx.prepareDeposit(A.lender1.classicAddress, bid.vaultId!, bid.amount);
 const depositSigned = A.lender1.sign(depositPrepared as any);
-log("VaultDeposit lender1 200 XRP", "tesSUCCESS", await tx.submitSigned(depositSigned.tx_blob));
+const depositReceipt = await tx.submitSigned(depositSigned.tx_blob);
+log("VaultDeposit lender1 200 XRP", "tesSUCCESS", depositReceipt);
 v = await read.vaultState(bid.vaultId!);
 assertEq("assetsTotal after deposit", v.assetsTotal, "200");
 assertEq("pps after deposit", v.pps, 1);
@@ -84,14 +93,25 @@ console.log("\n=== 3. multisig proof: master key is disabled ===");
 const masterPay = await submit(client, { TransactionType: "Payment", Account: A.borrower.classicAddress, Destination: A.broker.classicAddress, Amount: "1" }, A.borrower);
 log("Payment signed by disabled master key", "tefMASTER_DISABLED", masterPay);
 
-console.log("\n=== 4. origination (2-of-2 multisig counterparty) ===");
-const o = await tx.originate(bid);
-log("LoanSet, counterparty Signers[2]", "tesSUCCESS", o, `loanId ${o.loanId?.slice(0, 10)}`);
+console.log("\n=== 4. origination: automatic on the funding deposit (2-of-2 multisig counterparty) ===");
+const auto = depositReceipt.autoOrigination;
+const o = auto && "originated" in auto ? auto.originated : await tx.originate(bid);
+log(auto && "originated" in auto ? "LoanSet auto-originated by the funding deposit" : "LoanSet, counterparty Signers[2]", "tesSUCCESS", o, `loanId ${o.loanId?.slice(0, 10)}${auto && "skipped" in auto ? ` (auto skipped: ${auto.skipped})` : ""}`);
 bid.loanId = o.loanId; bid.status = "originated";
 v = await read.vaultState(bid.vaultId!);
 assertEq("assetsAvailable drained by origination", v.assetsAvailable, "0");
 assertTrue("loan is active", v.loan?.status === "active");
 assertEq("payments remaining", v.loan?.paymentRemaining, 3);
+
+console.log("\n=== 4b. issuer binding: a LoanSet for another counterparty is refused before it reaches the ledger ===");
+let binding: { blocked: string; reason: string } | { result: string } = { result: "not-refused" };
+try {
+  await tx.originate({ ...bid, borrowerAddress: A.broker.classicAddress });
+} catch (e) {
+  const msg = (e as Error).message;
+  binding = /bound to issuer/.test(msg) ? { blocked: "not-issuer", reason: msg } : { result: `error: ${msg.slice(0, 60)}` };
+}
+log("LoanSet with a foreign counterparty", "blocked:not-issuer", binding);
 
 // Read the loan's own clock (StartDate/PaymentInterval) once, right after origination, before any other
 // submission spends real seconds: the protocol's minimum PaymentInterval is 60s, and every submitAndWait
@@ -102,7 +122,7 @@ const loan1 = await ledgerEntry(client, bid.loanId!);
 log("LoanManage tfLoanImpair, not yet due", "tecTOO_SOON", await tx.impair(bid.loanId!));
 
 console.log("\n=== 6. guardrail: full withdrawal while principal is on loan ===");
-log("VaultWithdraw full (guardrail)", "tecINSUFFICIENT_FUNDS", await tx.withdraw({ depositorAddress: A.lender1.classicAddress, vaultId: bid.vaultId!, mode: "full" }));
+log("VaultWithdraw full (guardrail)", "tecINSUFFICIENT_FUNDS", await lenderWithdraw("full"));
 
 console.log("\n=== 7. enforcer refuses an early close (3 payments remaining, well before the call date) ===");
 log("finalRepayment, paymentRemaining=3", "blocked:before-call-date", await tx.finalRepayment(bid.loanId!, bid.borrowerAddress));
@@ -134,7 +154,7 @@ assertTrue("pps rose after coupon 1", v.pps > ppsBeforeCoupon, `(${v.pps} > ${pp
 console.log("\n=== 11. yield-only withdrawal leaves principal untouched ===");
 pos = await read.position(A.lender1.classicAddress, bid.vaultId!);
 const sharesBeforeYield = pos.shares;
-log("VaultWithdraw yield-only", "tesSUCCESS", await tx.withdraw({ depositorAddress: A.lender1.classicAddress, vaultId: bid.vaultId!, mode: "yield-only" }));
+log("VaultWithdraw yield-only", "tesSUCCESS", await lenderWithdraw("yield-only"));
 pos = await read.position(A.lender1.classicAddress, bid.vaultId!);
 assertTrue("shares reduced by exactly the yield shares redeemed", Number(pos.shares) < Number(sharesBeforeYield));
 // Not exactly 200,000,000: as PPS rises above 1, depositedDrops/pps (the principal share basis) drops
@@ -157,7 +177,7 @@ assertTrue("coupon interest landed in the vault (pps rose again)", v.pps > vBefo
 assertEq("all assets liquid again", v.assetsAvailable, v.assetsTotal);
 
 console.log("\n=== 13. final withdrawal: principal + all accrued yield ===");
-log("VaultWithdraw all shares", "tesSUCCESS", await tx.withdraw({ depositorAddress: A.lender1.classicAddress, vaultId: bid.vaultId!, mode: "full" }));
+log("VaultWithdraw all shares", "tesSUCCESS", await lenderWithdraw("full"));
 pos = await read.position(A.lender1.classicAddress, bid.vaultId!);
 const lenderXrpAfter = Number(dropsToXrp((await client.request({ command: "account_info", account: A.lender1.classicAddress, ledger_index: "validated" })).result.account_data.Balance));
 assertEq("no shares left", pos.shares, "0");

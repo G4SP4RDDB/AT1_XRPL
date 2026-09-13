@@ -16,7 +16,7 @@ in any one layer's assumptions would be caught by another. All four are green.
 One bond, top to bottom, calling the exact same functions the chain shim exposes to the frontend
 (`src/chain/index.ts`), plus the deliberately-invalid transactions no legitimate caller would ever build,
 submitted straight against the ledger to prove the guardrails hold rather than trusting application code.
-**16/16 steps matched expectation.** Full table with every transaction hash: `docs/e2e-full-report.md`.
+**17/17 steps matched expectation** (re-run 13 September with wallet-onboarded accounts: origination now happens automatically on the funding deposit, and a LoanSet for a foreign counterparty is refused by the issuer binding). Full table with every transaction hash: `docs/e2e-full-report.md`.
 
 Covers, in order: vault creation (VaultCreate + LoanBrokerSet + cover deposit) · deposit · **multisig proof
 1** — a payment signed by the borrower's disabled master key is rejected (`tefMASTER_DISABLED`) · origination

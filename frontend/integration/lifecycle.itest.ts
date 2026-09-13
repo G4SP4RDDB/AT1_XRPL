@@ -53,6 +53,7 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   let chain: ChainClient
   let bid: Bid
   let vault: VaultState
+  let depositReceipt: Awaited<ReturnType<typeof chain.tx.submitSigned>> | undefined
   let position: Position
   const hashes: Record<string, string> = {}
 
@@ -109,7 +110,8 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   it('deposit: the matched lender funds the vault and receives shares at PPS 1', async () => {
     const preparedDeposit = await chain.tx.prepareDeposit(demo!.lender, bid.vaultId!, bid.amount)
     const signedDeposit = demoLenderWallet().sign(preparedDeposit as never)
-    hashes.VaultDeposit = expectSuccess(await chain.tx.submitSigned(signedDeposit.tx_blob)).hash
+    depositReceipt = expectSuccess(await chain.tx.submitSigned(signedDeposit.tx_blob))
+    hashes.VaultDeposit = depositReceipt.hash
 
     vault = await chain.read.vaultState(bid.vaultId!)
     expect(vault.assetsTotal).toBe(AMOUNT_XRP)
@@ -125,7 +127,9 @@ describe.skipIf(!chainUrl || !demo)('AT1 bond lifecycle through the chain shim',
   })
 
   it('originate: LoanSet with the multisig borrower moves the principal out of the vault', async () => {
-    const o = await chain.tx.originate(bid)
+    // Origination is automatic on the funding deposit; fall back to the manual route if it was skipped.
+    const auto = depositReceipt?.autoOrigination
+    const o = auto && 'originated' in auto ? auto.originated : await chain.tx.originate(bid)
     expectSuccess(o)
     expect(isHash(o.loanId ?? '')).toBe(true)
     hashes.LoanSet = o.hash

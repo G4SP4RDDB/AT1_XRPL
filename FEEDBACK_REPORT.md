@@ -4,7 +4,7 @@
 
 ## What we built, in one paragraph
 
-An AT1 bond platform where one bond is one open-ended vault (`VaultCreate`), investors deposit through their own wallet (`VaultDeposit`), the deposit that funds the vault automatically originates the loan to the issuer (`LoanSet`), coupons (`LoanPay`) raise the price per share, investors harvest yield at any time with a partial `VaultWithdraw`, and principal stays locked until the call date. Sixteen transactions of that lifecycle, including four deliberate rejections, are verified on the devnet (`docs/e2e-full-report.md`). Everything below was hit while building it; the raw log with repros, severities and library versions is `docs/friction-log.md` (27 entries). Every point ends with what we would change.
+An AT1 bond platform where one bond is one open-ended vault (`VaultCreate`), investors deposit through their own wallet (`VaultDeposit`), the deposit that funds the vault automatically originates the loan to the issuer (`LoanSet`), coupons (`LoanPay`) raise the price per share, investors harvest yield at any time with a partial `VaultWithdraw`, and principal stays locked until the call date. Seventeen steps of that lifecycle, including five deliberate rejections, are verified on the devnet (`docs/e2e-full-report.md`). Everything below was hit while building it; the raw log with repros, severities and library versions is `docs/friction-log.md` (27 entries). Every point ends with what we would change.
 
 ## 1. The headline: multisig has no notion of time
 
