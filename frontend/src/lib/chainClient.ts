@@ -385,7 +385,8 @@ export class ChainBackendClient {
     }
   }
 
-  async payCoupon(vaultId: string, _amount?: string): Promise<{ newPps: number; txHash: string }> {
+  /** Pays the loan's next scheduled instalment; the amount is the ledger's PeriodicPayment, never a user input. */
+  async payCoupon(vaultId: string): Promise<{ newPps: number; txHash: string }> {
     const vault = await this.getVault(vaultId)
     if (!vault?.loan?.loanId) {
       throw new Error('No active on-chain loan found for this vault')
@@ -410,7 +411,7 @@ export class ChainBackendClient {
     const updated = await this.getVault(vaultId)
     this.notify()
     notifyTx({
-      title: 'Coupon distribué (LoanPay)',
+      title: 'Échéance payée (LoanPay)',
       message: `Paiement validé on-chain. Le PPS monte à ${(updated?.pps ?? vault.pps).toFixed(6)} !`,
       txHash: r.hash,
       type: 'success',

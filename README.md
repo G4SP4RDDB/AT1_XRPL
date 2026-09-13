@@ -50,7 +50,7 @@ The full lifecycle, in the order the code runs it:
 1. **Issuer posts an ask** → the platform (as Loan Broker) submits `VaultCreate`, `LoanBrokerSet` and `LoanBrokerCoverDeposit` (first-loss buffer).
 2. **Investor deposits** → `VaultDeposit`, signed by the investor's own wallet. Shares are minted at the current PPS.
 3. **Origination, automatic** → the deposit that brings the vault's liquid assets up to the ask's principal triggers `LoanSet` at once, signed by the broker and counter-signed by the issuer's 2-of-2 signer set. Principal moves to the issuer in this same transaction (there is no separate `LoanDraw` in XLS-66). The vault is bound to its issuer: the ask stored in the vault's `Data` field names the borrower, and both the shim and the enforcer refuse a `LoanSet` whose `Counterparty` is anyone else. If the issuer has not activated 2/2 yet, the deposit stands and origination waits (a manual *Originate* button remains as fallback). An ask that never fills is settled by a background scan in the shim once its funding window (`expiresAt`, off-chain) has passed: originated for whatever was raised if at least 50 % of the principal came in, otherwise left for depositors to withdraw.
-4. **Coupons** → `LoanPay` on each due date, co-signed by the enforcer. PPS rises.
+4. **Coupons** → `LoanPay` on each due date, co-signed by the enforcer. An XLS-66 loan amortises: each instalment is `PeriodicPayment` = a slice of principal + the period's interest (there is no interest-only schedule), and the interest part raises PPS.
 5. **Yield harvest** → partial `VaultWithdraw` of the yield-equivalent shares only, at any time.
 6. **Call date** → the issuer settles the remaining scheduled coupons (`LoanPay`, late ones flagged `tfLoanLatePayment`); the last one closes the loan and the vault becomes fully liquid.
 7. **Redemption** → full `VaultWithdraw`: principal plus every accrued increment of yield.
@@ -326,6 +326,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 - **WalletConnect on a custom network.** WalletConnect identifies XRPL networks by CAIP id (`xrpl:0/1/2`); this devnet is NetworkID 4001, so the app has to pick a chain the wallet approved and encode the signed transaction itself (`signPrepared`). It works, but every signature is a phone round trip, the session does not survive a reload, and Xaman cannot show this network's balances: fine for the demo, slow for development.
 - **Discovery and funding windows are off-chain.** An ask is a vault plus off-chain metadata; its funding window has no on-chain effect (a background scan settles stalled bonds at the deadline). We built a bid / accept / decline layer and removed it: nothing on the ledger can reserve an investor's funds against an ask, so a "locked" bid was only a database row (`TokenEscrow` would make it real).
 - **No native "this vault lends only to X".** Neither `VaultCreate` nor `LoanBrokerSet` can restrict the loan counterparty; we record the issuer in the vault's `Data` and enforce it in the shim and the enforcer. A `LoanBrokerSet.AllowedCounterparty` (or a Credential requirement on borrowers) would make it a ledger rule.
+- **Amortising only.** XLS-66 has no interest-only / bullet schedule: every instalment repays a slice of principal, so a "coupon" here is principal + interest, unlike a real AT1 whose coupons are interest-only with principal at the call.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
 - **No oracle-driven trigger.** A CET1-style trigger would need an off-chain oracle; impairment is triggered manually by the broker.
 - **Whitelists are asymmetric.** Depositors can be gated natively (`VaultCreate` `tfVaultPrivate` + `DomainID`, Credentials), which is how an accredited-investor / minimum-ticket rule would be expressed; we did not build it. Borrowers cannot: `LoanBrokerSet` has no `DomainID`, and the depositor gate does not apply to `VaultWithdraw`.
@@ -341,7 +342,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 | Developer feedback report (max 3 pages, 40 % of the score) | [`FEEDBACK_REPORT.md`](FEEDBACK_REPORT.md) |
 | Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md) |
 | Verified on-chain transactions | §6 above (17 steps, 13 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
-| Raw friction log (31 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
+| Raw friction log (32 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
 | Full analysis compendium (architecture evolution, Track 1 vs 2, custody decisions, every friction with repro) | [`docs/comprehensive-analysis-and-feedback.md`](docs/comprehensive-analysis-and-feedback.md) |
 | DevEx hook | `xrpl-devex-hook/` installed and active on every developer machine |
 
