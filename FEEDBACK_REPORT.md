@@ -14,7 +14,7 @@ Over the 36-hour hackathon, we built an on-chain **Additional Tier 1 (AT1) Bond 
 
 Rather than relying on closed-ended phase gating (Track 2), we implemented the Call Date lock through native vault illiquidity combined with an **on-chain 2-of-2 Multisig gate** (`SignerListSet` + `asfDisableMaster`) governed by an autonomous, software-only **Enforcer Daemon**. 
 
-Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **15 distinct developer friction points**. Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our four primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
+Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **25 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
 
 ---
 
@@ -67,17 +67,23 @@ While XRPL provides native multisig (`SignerListSet`), it possesses **no native 
 
 ---
 
-## 4. DevEx, Network Infrastructure & Client SDK Friction
+## 4. Wallet Connectivity on a Custom Network (`xrpl-connect` 0.8.2)
 
-### Network TLS Drops on Non-Standard Ports
-During on-site venue development, local Wi-Fi firewalls repeatedly dropped or stalled TLS handshakes targeting `rippled` ports `51233` (WSS) and `51234` (JSON-RPC), completely blocking CLI commands, while port `443` (faucet) operated normally. 
-- *Proposed Fix*: Devnet endpoints should always expose a port `443` reverse-proxy alias (e.g. `https://lending-hackathon.dev.ripplex.io/rpc` and `wss://lending-hackathon.dev.ripplex.io/ws`).
+We chose WalletConnect (Xaman) as the only way for investors, issuers and the broker to sign. Three defects, all read from the shipped bundle and reproduced:
+- **Custom networks are not addressable.** The adapter identifies the ledger by a CAIP-2 id and only knows `xrpl:0/1/2`; this ledger is NetworkID 4001. WalletConnect v2 downgrades the requested namespace to optional, the wallet approves the chains it supports, and every request tagged `xrpl:2` is rejected client-side: `Failed to sign transaction. Missing or invalid. request() chainId: xrpl:2`.
+- **`sign()` returns the bare signature.** `WalletConnectAdapter.sign()` hardcodes `autofill: true` and returns `tx_json.TxnSignature` as `tx_blob`, which is not a submittable transaction.
+- **Sessions never survive a reload.** `reconnect()` re-runs `connect()` and proposes a new pairing instead of restoring the approved session from SignClient storage; the proposal is never shown, so the manager silently stays disconnected.
+- **No adapter can produce a multisig `Signers` entry or a `LoanSet` `CounterpartySignature`**, so one co-signing key per 2-of-2 account stays backend-held (§1).
 
-### SDK Client Timeout Ambiguity
-In `xrpl.js 5.2.0`, `new Client(url, { timeout: 15000 })` configures the individual request timeout but leaves the WebSocket connection handshake timeout at the default 5,000 ms. Under network latency, connections fail with a timeout error that only reveals the true configuration option (`connectionTimeout`) in the error trace.
-- *Proposed Fix*: Harmonize `connectionTimeout` with `timeout` as a fallback, or raise default connection timeout to 15,000 ms.
+*Proposed fixes*: a CAIP id convention for custom networks (`xrpl:<NetworkID>`) honoured by adapters; take the request `chainId` from the approved session; return `encode(tx_json)` and expose `autofill` as an option; resume stored sessions; add `signForMultisig()` / `signLoanSetAsCounterparty()` adapter primitives. *Our workaround*: a `signPrepared()` helper that calls the WalletConnect client directly with an approved chain id, `autofill: false` (the backend already autofilled, `NetworkID` included) and encodes the returned `tx_json`.
 
----
+## 5. DevEx, Infrastructure & Tooling
+
+- **Venue TLS drops on non-standard ports.** Local Wi-Fi stalled TLS handshakes to `51233` (WSS) and `51234` (JSON-RPC) while `443` (faucet) worked. *Fix*: expose the devnet on a port-443 reverse proxy.
+- **`xrpl.js` `Client` timeout ambiguity.** `new Client(url, { timeout })` sets the request timeout; the 5 s connect timeout is `connectionTimeout`, named only in the error. *Fix*: document both, or raise the default.
+- **Documentation gaps that cost us**: LoanPay flag values are not tabulated anywhere (we published wrong ones ourselves; xrpl.js: `tfLoanFullPayment 0x20000`, `tfLoanLatePayment 0x40000`), and nothing states that at the final due date you simply pay the last coupon, `tfLoanFullPayment` only ever meaning an early close; first-loss capital (`LoanBrokerCoverDeposit` → `CoverAvailable`, the `CoverRateMinimum` gate on `LoanSet`) has no plain-language lifecycle.
+- **Key management**: `VaultCreate` / `LoanBrokerSet` bind to the submitting account; after our broker seed leaked into a README the only remedy was regenerating everything. *Fix*: document RegularKey + SignerList for vault owners from day one, plus a pre-commit seed guard in the starter kit (the DevEx hook already has the redactor).
+- **DevEx capture**: doc greps were tagged with `tx_type` (`LoanSet`, `LoanPay`, `Batch`) although no transaction was built; and "max 3 pages" has no meaning for a markdown deliverable. *Fix*: tag `tx_type` only with a `result_code` or submit; state a word budget.
 
 ## Summary Matrix of Findings & Actionable Proposals
 
@@ -92,6 +98,14 @@ In `xrpl.js 5.2.0`, `new Client(url, { timeout: 15000 })` configures the individ
 | **SDK** | Counterparty multisig string ambiguity | **Medium** | `signLoanSetByCounterparty` | Clarify X-address parameter vs boolean multisig flag |
 | **Infra** | Devnet TLS dropped on 51233/51234 | **High** | Venue network / ports | Host WebSocket and RPC on standard port 443 |
 | **Financial** | Lack of Rate Reset / Variable Interest Rate | **High** | `LoanSet.InterestRate` immutable | Integrate XLS-47d Oracles or add `LoanBrokerRateReset` |
+| **SDK** | WalletConnect cannot target a custom network (`request() chainId: xrpl:2`) | **High** | `xrpl-connect` 0.8.2 CAIP ids `xrpl:0/1/2` | `xrpl:<NetworkID>` convention; chainId from the approved session |
+| **SDK** | `sign()` returns `TxnSignature` as `tx_blob`; `autofill` hardcoded | **High** | `WalletConnectAdapter.sign` | Return `encode(tx_json)`; expose `autofill` |
+| **SDK** | Sessions never resume after reload | Medium | `WalletManager.reconnect` | Restore from SignClient storage |
+| **SDK** | No multisig / `CounterpartySignature` signing via wallets | **High** | all adapters | `signForMultisig()`, `signLoanSetAsCounterparty()` |
+| **Docs** | LoanPay flags untabulated; "full payment = early close" unstated | Medium | XLS-66 LoanPay reference | Flags table + settlement paragraph |
+| **Docs** | First-loss capital lifecycle unexplained | Low | `LoanBrokerCoverDeposit` | One worked example |
+| **Protocol** | No owner/broker key rotation without recreating the vault | Medium | `VaultCreate` / `LoanBrokerSet` | Document RegularKey + SignerList pattern |
+| **Tooling** | Hook tags doc greps with `tx_type`; "3 pages" for markdown; no seed guard | Low | xrpl-devex-hook 2.4.0 / brief | Tag with result codes only; word budget; pre-commit seed grep |
 
 ---
 
