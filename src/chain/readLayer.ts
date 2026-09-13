@@ -173,7 +173,7 @@ export const read = {
     const acc = getAccount(address);
     return acc ? sanitizeAccount(acc) : null;
   },
-  createdAccounts: async () => getCreatedAccounts(),
+  createdAccounts: async () => getCreatedAccounts().map((a) => ({ ...a, seed: "" })),
   isMasterDisabled: async (address: string) => {
     const client = await getClient();
     try {

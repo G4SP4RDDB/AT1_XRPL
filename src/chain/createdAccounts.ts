@@ -28,16 +28,51 @@ function ensureDataDir(): void {
   }
 }
 
+import { Wallet } from "xrpl";
+
+function getBrokerInfo(): { address: string; seed: string } | null {
+  try {
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf8");
+      const m = content.match(/BROKER_SEED=([^\s]+)/);
+      if (m && m[1]) {
+        const seed = m[1].trim();
+        const wallet = Wallet.fromSeed(seed);
+        return { address: wallet.classicAddress, seed };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function writeTxtSummary(accounts: CreatedAccount[]): void {
+  const broker = getBrokerInfo();
+
+  const brokerSection = broker
+    ? [
+        "🛡️  COURTIER PLATEFORME (BROKER) :",
+        `   Adresse : ${broker.address}`,
+        `   Seed    : ${broker.seed}`,
+        "   Rôle    : Courtier Plateforme (BSA Platform Structurer)",
+        "   Solde   : 1 000 XRP (initial)",
+        "",
+        "--------------------------------------------------------------------------------",
+      ]
+    : [];
+
   const header = [
     "================================================================================",
-    "💎 AT1 XRPL — COMPTES DEVNET CRÉÉS (HORS BASE SQLITE)",
+    "💎 AT1 XRPL — COMPTES DEVNET ACTIFS & CLÉS DE CONNEXION",
     "================================================================================",
+    ...brokerSection,
+    `👥  COMPTES UTILISATEURS CRÉÉS (HORS BASE SQLITE : ${accounts.length}) :`,
     "Ces comptes sont financés sur le Devnet XRPL mais ne sont PAS enregistrés",
     "dans SQLite (data/accounts.db).",
     "Ils seront enregistrés en base lors de leur première connexion et onboarding.",
     `Dernière mise à jour : ${new Date().toISOString()}`,
-    `Nombre de comptes    : ${accounts.length}`,
     "================================================================================",
     "",
   ].join("\n");
