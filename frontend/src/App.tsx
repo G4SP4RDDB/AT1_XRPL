@@ -86,7 +86,7 @@ const MainContent: FC = () => {
                 <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
                   <div style={{ fontSize: '1.3rem', marginBottom: '0.5rem' }}>🛡️</div>
                   <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.35rem', color: 'var(--text-primary)' }}>Call Date Lock</div>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.45' }}>Multisig enforcer policy gates final repayment until verified call date maturity.</div>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: '1.45' }}>Multisig enforcer policy gates final repayment until the verified call date.</div>
                 </div>
               </div>
 

@@ -104,7 +104,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess }) => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Call Date / Maturity</label>
+              <label className="form-label">Call Date</label>
               <input
                 type="date"
                 className="form-input"

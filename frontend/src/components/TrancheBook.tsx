@@ -8,7 +8,7 @@ import { bookTheme } from '@/lib/orderBookTheme'
 import { formatTimeRemaining, isExpired } from '@/lib/durations'
 import { getTrancheIdFromHash, navigateToTranche } from '@/lib/hashRoute'
 
-type SortKey = 'rate' | 'maturity' | 'expires'
+type SortKey = 'rate' | 'callDate' | 'expires'
 
 function fillFraction(bid: Bid, asksForBid: Ask[]): number {
   const target = Number(bid.amount) || 0
@@ -60,7 +60,7 @@ export const TrancheBook: FC = () => {
 
   const sorted = [...bids].sort((a, b) => {
     if (sortKey === 'rate') return b.yieldRate - a.yieldRate
-    if (sortKey === 'maturity') return new Date(a.callDate).getTime() - new Date(b.callDate).getTime()
+    if (sortKey === 'callDate') return new Date(a.callDate).getTime() - new Date(b.callDate).getTime()
     const aExp = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity
     const bExp = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity
     return aExp - bExp
@@ -81,18 +81,18 @@ export const TrancheBook: FC = () => {
             AT1 Tranche Order Book
           </h2>
           <p style={{ color: bookTheme.textSecondary, marginTop: '0.4rem', fontSize: '0.9rem' }}>
-            Every open tranche the platform's borrowers have emitted, ranked by rate, maturity or bidding-window expiry.
+            Every open tranche the platform's borrowers have emitted, ranked by rate, call date or bidding-window expiry.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {(['rate', 'maturity', 'expires'] as SortKey[]).map((key) => (
+          {(['rate', 'callDate', 'expires'] as SortKey[]).map((key) => (
             <button
               key={key}
               type="button"
               className={`btn btn-sm ${sortKey === key ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setSortKey(key)}
             >
-              Sort: {key === 'rate' ? 'Rate' : key === 'maturity' ? 'Maturity' : 'Expires'}
+              Sort: {key === 'rate' ? 'Rate' : key === 'callDate' ? 'Call Date' : 'Expires'}
             </button>
           ))}
         </div>
@@ -132,7 +132,7 @@ export const TrancheBook: FC = () => {
             <span>Bank</span>
             <span>Amount</span>
             <span>Rate</span>
-            <span>Maturity</span>
+            <span>Call Date</span>
             <span>Expires</span>
             <span>Filled</span>
           </div>

@@ -5,6 +5,7 @@ import { chainClient } from '@/lib/chainClient'
 import { useWallet } from '@/lib/wallet'
 import { useBankName } from '@/lib/bankProfiles'
 import { ResolvedName } from './ResolvedName'
+import { OrderBookPanel } from './OrderBookPanel'
 import { explorerTxUrl } from '@/lib/xrpl'
 import { bookTheme } from '@/lib/orderBookTheme'
 import { DURATION_OPTIONS, expiresAtFromNow, formatTimeRemaining, isExpired } from '@/lib/durations'
@@ -13,8 +14,6 @@ import { navigateToTrancheList } from '@/lib/hashRoute'
 interface TranchePageProps {
   trancheId: string
 }
-
-const STATUS_LABEL: Record<string, string> = { pending: 'Pending', matched: 'Matched', deposited: 'Deposited' }
 
 /** A dedicated page per tranche (its own #/orderbook/<id> URL), modeled on
  * app.tenor.finance's per-market trading page: a two-sided book (this tranche's single Ask
@@ -76,18 +75,6 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
   const fillFraction = target > 0 ? Math.min(1, filled / target) : 0
   const isOwner = Boolean(currentAccount && currentAccount.address === bid.borrowerAddress)
   const askExpired = isExpired(bid.expiresAt)
-
-  const depthRows: Array<{ ask: Ask; barFraction: number }> = (() => {
-    const sorted = [...asks].sort((a, b) => {
-      const rank = (s?: string) => (s === 'deposited' ? 0 : s === 'matched' ? 1 : 2)
-      return rank(a.status) - rank(b.status) || Number(b.amount) - Number(a.amount)
-    })
-    let cumulative = 0
-    return sorted.map((ask) => {
-      if (ask.status === 'deposited') cumulative += Number(ask.amount || 0)
-      return { ask, barFraction: target > 0 ? Math.min(1, cumulative / target) : 0 }
-    })
-  })()
 
   const myPendingAsks = asks.filter((a) => a.lenderAddress === currentAccount?.address)
 
@@ -170,7 +157,7 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
             <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'AT1 Bond'} />
           </h2>
           <span style={{ fontSize: '0.85rem', color: bookTheme.textSecondary }}>
-            {Number(bid.amount).toLocaleString()} XRP · {bid.yieldRate}% · Maturity {new Date(bid.callDate).toLocaleDateString()}
+            {Number(bid.amount).toLocaleString()} XRP · {bid.yieldRate}% · Call Date {new Date(bid.callDate).toLocaleDateString()}
           </span>
         </div>
         <span style={{ fontSize: '0.8rem', color: askExpired ? 'var(--accent-red)' : bookTheme.textSecondary, textAlign: 'right' }}>
@@ -180,101 +167,19 @@ export const TranchePage: FC<TranchePageProps> = ({ trancheId }) => {
 
       <div style={{ background: bookTheme.panelBg, border: `1px solid ${bookTheme.border}`, borderRadius: '12px', overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 0 }}>
-          {/* Left: two-sided book — this tranche's Ask, then the Bids stacked against it */}
+          {/* Left: mirrored Ask/Bids book, Hyperliquid-style */}
           <div style={{ padding: '1.25rem 1.5rem', borderRight: `1px solid ${bookTheme.border}` }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: bookTheme.textMuted, marginBottom: '0.5rem' }}>
-              Ask
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.6rem 0.75rem',
-                borderRadius: '8px',
-                border: `1px solid ${bookTheme.border}`,
-                marginBottom: '1.25rem',
-              }}
-            >
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                <ResolvedName address={bid.borrowerAddress} fallback={bid.borrowerName || 'AT1 Bond'} />
-              </span>
-              <span style={{ fontSize: '0.85rem', color: 'var(--accent-green)', fontWeight: 700 }}>{bid.yieldRate}%</span>
-              <span style={{ fontSize: '0.85rem' }}>{Math.max(0, target - filled).toLocaleString()} XRP remaining</span>
-              <span style={{ fontSize: '0.72rem', color: askExpired ? 'var(--accent-red)' : bookTheme.textMuted }}>
-                {formatTimeRemaining(bid.expiresAt)}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: bookTheme.textMuted }}>
-                Bids — filled {Number(filled).toLocaleString()} / {target.toLocaleString()} XRP
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: bookTheme.textSecondary }}>
+                Filled {Number(filled).toLocaleString()} / {target.toLocaleString()} XRP
               </span>
               <span style={{ fontSize: '0.8rem', color: bookTheme.textMuted }}>{Math.round(fillFraction * 100)}%</span>
             </div>
-            <div style={{ height: '8px', borderRadius: '9999px', background: bookTheme.pageBg, border: `1px solid ${bookTheme.border}`, overflow: 'hidden', marginBottom: '1rem' }}>
+            <div style={{ height: '6px', borderRadius: '9999px', background: bookTheme.pageBg, border: `1px solid ${bookTheme.border}`, overflow: 'hidden', marginBottom: '1.25rem' }}>
               <div style={{ width: `${Math.round(fillFraction * 100)}%`, height: '100%', background: fillFraction >= 1 ? 'var(--accent-green)' : 'var(--accent-blue)' }} />
             </div>
 
-            {depthRows.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2rem 0', color: bookTheme.textMuted, fontSize: '0.85rem' }}>
-                No bids yet on this tranche.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {depthRows.map(({ ask, barFraction }) => {
-                  const bidExpired = isExpired(ask.expiresAt)
-                  return (
-                    <div
-                      key={ask.id}
-                      style={{
-                        position: 'relative',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '0.5rem 0.75rem',
-                        borderRadius: '8px',
-                        border: `1px solid ${bookTheme.border}`,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {ask.status === 'deposited' && (
-                        <div style={{ position: 'absolute', inset: 0, width: `${Math.round(barFraction * 100)}%`, background: 'rgba(5, 150, 105, 0.08)', zIndex: 0 }} />
-                      )}
-                      <span style={{ position: 'relative', zIndex: 1, fontSize: '0.85rem', fontWeight: 600 }}>
-                        <ResolvedName address={ask.lenderAddress} fallback={ask.lenderName || 'Investor'} />
-                      </span>
-                      <span style={{ position: 'relative', zIndex: 1, fontSize: '0.85rem' }}>{Number(ask.amount).toLocaleString()} XRP</span>
-                      <span
-                        style={{
-                          position: 'relative',
-                          zIndex: 1,
-                          fontSize: '0.72rem',
-                          color: bidExpired && ask.status === 'pending' ? 'var(--accent-red)' : bookTheme.textMuted,
-                        }}
-                      >
-                        {formatTimeRemaining(ask.expiresAt)}
-                      </span>
-                      <span
-                        style={{
-                          position: 'relative',
-                          zIndex: 1,
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '0.1rem 0.5rem',
-                          borderRadius: '9999px',
-                          color: ask.status === 'deposited' ? 'var(--accent-green)' : bookTheme.textMuted,
-                          background: ask.status === 'deposited' ? 'rgba(5, 150, 105, 0.12)' : bookTheme.pageBg,
-                        }}
-                      >
-                        {STATUS_LABEL[ask.status ?? 'pending']}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            <OrderBookPanel bid={bid} asks={asks} onSelectAmount={setBidAmount} />
           </div>
 
           {/* Right: role-aware action panel */}

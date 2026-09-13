@@ -317,11 +317,67 @@ matching bank.
 
 ---
 
+## 5. Hyperliquid-style mirrored book, "Maturity" → "Call Date"
+
+Requested with a full display spec (`app.hyperliquid.xyz/trade`'s order book panel,
+API-verified where the rendered page couldn't be inspected): replace the tranche page's
+single-Ask-row-plus-Bids-list with a real mirrored book — asks above a spread row, bids
+below, best prices adjacent to the middle, cumulative "Total" growing outward, depth bars
+anchored right, fixed row count so the panel never reflows, row-hover sweep highlight,
+row-click prefill. Also: every user-facing "Maturity" label became "Call Date" throughout
+(`TrancheBook.tsx`, `TranchePage.tsx`, `IssueBond.tsx`, `App.tsx`) — same underlying
+`bid.callDate` field, just the label.
+
+### New — `frontend/src/components/OrderBookPanel.tsx`
+Renders the mirrored book for one tranche. Fixed `ROWS_PER_SIDE = 6` per side (Hyperliquid
+uses ~11; this app typically has far fewer resting bids, so 6 was enough to demonstrate
+padding without a mostly-empty panel), blank rows above/below to hold that count, a spread
+row in the middle, tabular-nums monospace figures, depth bars computed exactly per the
+spec's formula (`width% = row.total / maxTotalOnThatSide`).
+
+### Deviations from the literal spec, and why
+XLS-66 gives every depositor in a vault the same rate — there is no per-lender price
+competition (the same point already logged as XRPL DevEx feedback this session). That
+single fact drives every deviation here:
+- **Only one real ask row.** The tranche's own posted rate/remaining-capacity is the only
+  resting ask; there's nothing else to bucket by price. Padded with blanks above it.
+- **Bid rows have no distinct price.** Every bid targets the ask's one posted rate, so
+  "closest to the spread" is ranked by already-deposited capital first, then size — the
+  most real bids first — rather than by price like a real book would.
+- **The Spread row is honestly `0.00 / 0.00%`.** There is no rate competition to produce a
+  real spread in this variant. This is exactly where a real spread would appear if the
+  reverse-auction variant (discussed, not built) were implemented instead.
+- **No aggregation-tick or size-unit header controls.** There is only one price level to
+  bucket and one unit (XRP) — those controls would be decorative.
+- **No websocket/animation-frame throttling.** This panel refreshes on explicit user
+  actions (place/fund/originate/refresh), not a live-streaming feed like Hyperliquid's.
+- **Rows are keyed by id, not price.** Many bid rows legitimately share the same price
+  here; price alone isn't a stable/unique React key in this data model.
+- **Lender name moved to a hover tooltip, not a 4th column.** Useful in an institutional
+  lending context (unlike an anonymous public exchange book), but the spec is explicitly
+  3 columns — kept the name available without breaking that.
+- **Row click prefills the bid *amount*, not a price**, since price/rate isn't the
+  interesting, variable dimension here — size is. Clicking a peer's bid row (or the ask
+  row, to fill the full remaining capacity) copies its size into the "Place a Bid" input.
+- Colors/fonts again follow the app's existing CSS variables (red asks / green bids per
+  the spec's convention) — no CSS was retrievable from Hyperliquid's client-rendered shell
+  to copy from.
+
+### Verified live
+Loaded a tranche with a mix of bid states (one deposited, two pending, one with an active
+expiry): the mirrored layout, spread row, checkmark on the deposited bid, and cumulative
+totals (500 → 2,500 → 2,800) all rendered correctly. Hovering a row visibly highlighted
+the sweep from the spread to that row. Clicking a bid row ("300 XRP") correctly wrote
+`300` into the "Place a Bid" amount field.
+
+---
+
 ## Branches / commits
 
 - `feature/bank-profiles` (`364983e`) — bank profile registry + onboarding.
 - `feature/orderBook` (based on `feature/bank-profiles`) — tranche order book:
   `6b913a0` (first version), `80a2f2e` (docs), the rewire described in §3 (per-vault
-  pages, two-sided book, expiry, blanc cassé), and the Finance Bonds table rewrite in §4.
+  pages, two-sided book, expiry, blanc cassé), the Finance Bonds table rewrite in §4, and
+  the Hyperliquid-style mirrored book in §5.
 - `main` has moved ahead separately with unrelated work (a tmux dev-runner script,
   `fund-and-setup.ts`, a full e2e pipeline run) — neither branch has picked that up yet.
