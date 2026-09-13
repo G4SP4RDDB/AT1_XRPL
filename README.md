@@ -328,7 +328,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 - **No native "this vault lends only to X".** Neither `VaultCreate` nor `LoanBrokerSet` can restrict the loan counterparty; we record the issuer in the vault's `Data` and enforce it in the shim and the enforcer. A `LoanBrokerSet.AllowedCounterparty` (or a Credential requirement on borrowers) would make it a ledger rule.
 - **Write-down, not conversion.** XLS-66 supports impairment, not converting debt to equity.
 - **No oracle-driven trigger.** A CET1-style trigger would need an off-chain oracle; impairment is triggered manually by the broker.
-- **No per-investor minimum ticket** is enforced natively; Credentials / Permissioned Domains would be the way to gate that.
+- **Whitelists are asymmetric.** Depositors can be gated natively (`VaultCreate` `tfVaultPrivate` + `DomainID`, Credentials), which is how an accredited-investor / minimum-ticket rule would be expressed; we did not build it. Borrowers cannot: `LoanBrokerSet` has no `DomainID`, and the depositor gate does not apply to `VaultWithdraw`.
 
 ---
 
@@ -341,7 +341,7 @@ Environment files (all gitignored): `.env` (`BROKER_SEED`, `BROKERENFORCER_SEED`
 | Developer feedback report (max 3 pages, 40 % of the score) | [`FEEDBACK_REPORT.md`](FEEDBACK_REPORT.md) |
 | Slide deck (10 slides, 4-minute demo + 2-minute Q&A) | [`slides/BSA_DEGEN_AT1_XRPL_PITCH.md`](slides/BSA_DEGEN_AT1_XRPL_PITCH.md) |
 | Verified on-chain transactions | §6 above (17 steps, 13 hashes), [`docs/e2e-full-report.md`](docs/e2e-full-report.md) |
-| Raw friction log (28 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
+| Raw friction log (29 entries: category, repro, severity, library version, proposed fix) | [`docs/friction-log.md`](docs/friction-log.md) |
 | Full analysis compendium (architecture evolution, Track 1 vs 2, custody decisions, every friction with repro) | [`docs/comprehensive-analysis-and-feedback.md`](docs/comprehensive-analysis-and-feedback.md) |
 | DevEx hook | `xrpl-devex-hook/` installed and active on every developer machine |
 

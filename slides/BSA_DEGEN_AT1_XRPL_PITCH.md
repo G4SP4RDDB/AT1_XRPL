@@ -178,7 +178,7 @@ $$\text{Price Per Share (PPS)} = \frac{\text{AssetsTotal}}{\text{SharesTotal}}$$
   - Native **TokenEscrow (XLS-85)** composition for on-chain escrowed repayments.
 - **Contributions Back to the Ecosystem**:
   - **Full E2E Test Suite**: 17-step verified on-chain lifecycle test runner (`npm run e2e`).
-  - **28 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
+  - **29 Detailed Friction Entries**: Complete documentation in `FEEDBACK_REPORT.md` and `docs/friction-log.md`.
   - **Automated DevEx Hook Active**: Telemetry logged via `xrpl-devex-hook`.
 
 ### Thank you! Questions & Answers (2 mins)
