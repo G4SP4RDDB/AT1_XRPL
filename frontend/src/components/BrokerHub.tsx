@@ -113,7 +113,6 @@ export const BrokerHub: FC = () => {
 
   const borrowers = accounts.filter((a) => a.role === 'borrower')
   const lenders = accounts.filter((a) => a.role === 'lender')
-  const brokers = accounts.filter((a) => a.role === 'broker')
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
@@ -151,8 +150,8 @@ export const BrokerHub: FC = () => {
         </div>
       </div>
 
-      {/* THREE ROLES MATRIX STATS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+      {/* ROLES STATS: borrowers and lenders */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
         <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #2563eb' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>🏢 EMPRUNTEURS (BORROWERS)</span>
@@ -170,16 +169,6 @@ export const BrokerHub: FC = () => {
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
             Déposent dans les coffres, détiennent les parts MPT et retirent le rendement (yield) à discrétion.
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #9333ea' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)' }}>🏛️ COURTIERS (BROKERS)</span>
-            <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#9333ea' }}>{brokers.length}</span>
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            Créent les coffres, apportent le capital de premier risque et déclenchent l'impairment CET1.
           </div>
         </div>
       </div>
