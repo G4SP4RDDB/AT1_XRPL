@@ -1,7 +1,7 @@
 # Developer Feedback Report — XRPL Lending Protocol Hackathon 2026
 
 **Track**: Track 1 (Open-ended Single Asset Vault & Lending Protocol V1)  
-**Flavour**: Loaded (XLS-65 / XLS-66 + XRPL Native Multisig + MPT)  
+**Flavour**: Loaded (XLS-65 / XLS-66 + native XRPL 2-of-2 multisig as a call-date enforcer)  
 **Environment**: Custom Hackathon Devnet (`rippled 3.4.0-rc1`, `lending-hackathon.dev.ripplex.io:51233`, reserve: 10 XRP base + 2 XRP/object)  
 **Library & Version**: `xrpl.js 5.2.0` (Stable)  
 **Team**: BSA Degen (`participant_id: sunny-puffin-57`)  
@@ -33,7 +33,7 @@ While XRPL provides native multisig (`SignerListSet`), it possesses **no native 
 
 ### Proposed Solutions
 1. **Native `SignerCondition` in `SignerListSet` (Protocol-Level)**: Introduce an optional `SignAfter` / `SignBefore` Ripple-epoch timestamp within `SignerEntry`. The ledger engine would natively reject transactions signed by a temporal signer before its activation time with `tefSIGNER_NOT_ACTIVE`. This would eliminate off-chain policy daemons entirely.
-2. **Loaded Composition via TokenEscrow / XLS-85**: Anchor the borrower's repayment funds into a native `TokenEscrow` with a `FinishAfter: callDate` condition, coupling escrow release atomically with `LoanPay`.
+2. **Loaded Composition via TokenEscrow / XLS-85**: Anchor the borrower's repayment funds into a native `TokenEscrow` with a `FinishAfter: callDate` condition, coupling escrow release atomically with `LoanPay`. We confirmed the `TokenEscrow` amendment is enabled on the hackathon devnet (`npm run check`), so this is buildable today; we did not ship it within the 36 h because the escrow release and the `LoanPay` are still two separate transactions with no atomic link, which is the exact gap a native `SignAfter` would close.
 3. **Hardware Enclave (TEE / HSM) Enforcer**: In production, the software enforcer daemon must run inside an AWS Nitro Enclave or SGX enclave where zero human operator keys exist, and signing logic is cryptographically bound to on-chain ledger close time.
 
 ---

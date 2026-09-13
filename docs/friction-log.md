@@ -1,6 +1,6 @@
 # Friction log — raw findings (append-only, both people)
 
-Header for the report: **Track 1, open-ended** · flavour: Vanilla (multisig enforcer is a candidate Loaded composition) · environment: custom hackathon devnet `lending-hackathon.dev.ripplex.io` (rippled 3.4.0-rc1, reserve 10 XRP base + 2 XRP per object) · library: `xrpl.js 5.2.0`.
+Header for the report: **Track 1, open-ended** · flavour: Loaded (native 2-of-2 multisig composed as the call-date enforcer on the final `LoanPay`) · environment: custom hackathon devnet `lending-hackathon.dev.ripplex.io` (rippled 3.4.0-rc1, reserve 10 XRP base + 2 XRP per object) · library: `xrpl.js 5.2.0`.
 
 | # | Category | Title | Description | Repro | Severity | Library + version | Proposed fix |
 |---|---|---|---|---|---|---|---|

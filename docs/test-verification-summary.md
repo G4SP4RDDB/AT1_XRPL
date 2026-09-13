@@ -8,7 +8,7 @@ in any one layer's assumptions would be caught by another. All four are green.
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend (loan maths, enforcer policy, read mapping, bid terms) | `npm test` | **24/24 pass** |
+| Backend (loan maths, enforcer policy, read mapping, bid terms) | `npm test` | **29/29 pass** (24 at the time of this run; 5 bid-terms tests added since) |
 | Frontend (wallet, xrpl config/client, App) | `cd frontend && npm test` | **19/19 pass**, 3 runs in a row, no flake |
 
 ## 2. Full lifecycle through the public API — `npm run e2e` (`scripts/e2e-full.ts`)

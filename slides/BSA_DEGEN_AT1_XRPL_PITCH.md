@@ -3,7 +3,7 @@
 > **XRPL Lending Protocol Hackathon 2026**  
 > **Team**: BSA Degen (`participant_id: sunny-puffin-57`)  
 > **Track**: Track 1 (Open-ended Single Asset Vault & Lending Protocol V1)  
-> **Flavour**: Loaded (XLS-65 / XLS-66 + XRPL Native Multisig + MPT)  
+> **Flavour**: Loaded (XLS-65 / XLS-66 + native XRPL 2-of-2 multisig as a call-date enforcer)  
 > **Presentation Duration**: 4 minutes pitch/demo + 2 minutes Q&A  
 
 ---

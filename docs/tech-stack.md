@@ -115,7 +115,7 @@ To decouple frontend and backend development while preventing interface drift, a
 
 * **Backend Unit Tests**:
   * Executed with Node.js test runner (`tsx --test tests/*.test.ts`).
-  * 24 tests verifying:
+  * 29 tests verifying:
     * Scheduled coupon and late payment fee calculations (`LoanPay`).
     * Enforcer policy decisions (rejection before call date, approval after).
     * Tenth-of-a-basis-point annual rate scaling and periodic interest compounding.
