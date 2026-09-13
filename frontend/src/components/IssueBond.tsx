@@ -6,6 +6,7 @@ import { chainClient } from '@/lib/chainClient'
 import { DURATION_OPTIONS, expiresAtFromNow } from '@/lib/durations'
 import { notifyTx } from '@/lib/notifications'
 import { useBorrowerProfile, getStoredBorrowerProfile, saveStoredBorrowerProfile } from '@/lib/borrowerProfile'
+import { toLocalInputValue } from '@/lib/format'
 
 interface IssueBondProps {
   onSuccess: () => void
@@ -68,7 +69,7 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
         borrowerName: issuerName,
         amount,
         yieldRate: parseFloat(yieldRate),
-        callDate,
+        callDate: new Date(callDate).toISOString(),
         description,
         expiresAt: expiresAtFromNow(durationMs),
       })
@@ -180,30 +181,49 @@ export const IssueBond: FC<IssueBondProps> = ({ onSuccess, onOpenProfile }) => {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
-              <label className="form-label">Offered Coupon Rate (% APY)</label>
+              <label className="form-label">Offered Coupon Rate (% per year, ledger max 100)</label>
               <input
                 type="number"
                 className="form-input"
                 value={yieldRate}
                 onChange={(e) => setYieldRate(e.target.value)}
                 required
-                min="0.5"
-                max="50"
+                min="0.1"
+                max="100"
                 step="0.1"
                 placeholder="e.g. 8.5"
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Call Date</label>
+              <label className="form-label">Call Date (maturity)</label>
               <input
-                type="date"
+                type="datetime-local"
                 className="form-input"
                 value={callDate}
                 onChange={(e) => setCallDate(e.target.value)}
                 required
+                step="60"
               />
             </div>
+          </div>
+
+          {/* Demo preset: a bond that matures in three minutes. Rates are annualised on the ledger
+              (max 100 %/yr), so three minutes of interest is a few thousand drops on 1,000 XRP: the
+              mechanics (coupons, PPS, yield harvest, call-date settlement) all show, the amounts are small. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                if (!amount) setAmount('1000')
+                setYieldRate('100')
+                setCallDate(toLocalInputValue(new Date(Date.now() + 3 * 60_000)))
+              }}
+            >
+              ⚡ Demo: 3-minute bond
+            </button>
+            <span>Call date = now + 3 min, rate = 100 %/yr (the ledger's maximum). Interest is annualised, so expect a few thousand drops of yield, not XRP.</span>
           </div>
 
           <div className="form-group">

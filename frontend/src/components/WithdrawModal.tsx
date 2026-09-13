@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { fmtPps, fmtXrp } from '@/lib/format'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
 import { chainClient } from '@/lib/chainClient'
@@ -122,7 +123,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
           </div>
           <div className="metric-row">
             <span className="metric-label">Current PPS (Assets / Shares)</span>
-            <span className="metric-val highlight-cyan">{pps.toFixed(5)}</span>
+            <span className="metric-val highlight-cyan">{fmtPps(pps)}</span>
           </div>
           <div className="metric-row">
             <span className="metric-label">Total Value at Current PPS</span>
@@ -130,7 +131,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
           </div>
           <div className="metric-row">
             <span className="metric-label">Accrued Yield Available</span>
-            <span className="metric-val highlight-green">+{accruedYield.toFixed(2)} XRP</span>
+            <span className="metric-val highlight-green">+{fmtXrp(accruedYield)}</span>
           </div>
         </div>
 
@@ -198,7 +199,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
 
         {mode === 'yield-only' ? (
           <div className="alert alert-info">
-            <strong>Partial VaultWithdraw:</strong> Burns only <code>{yieldEquivalentShares}</code> shares corresponding to the <code>+{accruedYield.toFixed(2)} XRP</code> yield accrued via borrower coupons. Leaves principal shares safely intact in the open-ended vault.
+            <strong>Partial VaultWithdraw:</strong> Burns only <code>{yieldEquivalentShares}</code> shares corresponding to the <code>+{fmtXrp(accruedYield)}</code> yield accrued via borrower coupons. Leaves principal shares safely intact in the open-ended vault.
           </div>
         ) : (
           <div className="alert alert-warning">
@@ -239,7 +240,7 @@ export const WithdrawModal: FC<WithdrawModalProps> = ({
             {isSubmitting
               ? 'Broadcasting to XRPL...'
               : mode === 'yield-only'
-              ? `Redeem Accrued Yield (${accruedYield.toFixed(2)} XRP)`
+              ? `Redeem Accrued Yield (${fmtXrp(accruedYield)})`
               : 'Trigger Full Withdrawal Rejection'}
           </button>
           <button type="button" className="btn btn-secondary" onClick={onClose}>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { fmtPps, fmtXrp } from '@/lib/format'
 import type { FC } from 'react'
 import type { VaultState, UserPosition } from '@shared/types'
 import { useWallet } from '@/lib/wallet'
@@ -78,7 +79,7 @@ export const MyPositions: FC = () => {
                         Call Date: {vault.callDate}
                       </span>
                     </div>
-                    <span className="card-tag tag-active">PPS: {vault.pps.toFixed(4)}</span>
+                    <span className="card-tag tag-active">PPS: {fmtPps(vault.pps)}</span>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', background: 'var(--bg-surface-elevated)', padding: '1rem 1.1rem', borderRadius: '10px', border: '1px solid var(--border-subtle)', margin: '0.9rem 0' }}>
@@ -92,7 +93,7 @@ export const MyPositions: FC = () => {
                     </div>
                     <div>
                       <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Accrued Yield</div>
-                      <div style={{ fontWeight: 800, fontSize: '1.1rem', marginTop: '0.15rem', color: 'var(--accent-green)' }}>+{Number(pos.accruedYield).toLocaleString()} XRP</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.1rem', marginTop: '0.15rem', color: 'var(--accent-green)' }}>+{fmtXrp(pos.accruedYield)}</div>
                     </div>
                   </div>
 
