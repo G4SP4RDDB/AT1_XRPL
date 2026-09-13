@@ -14,7 +14,7 @@ Over the 36-hour hackathon, we built an on-chain **Additional Tier 1 (AT1) Bond 
 
 Rather than relying on closed-ended phase gating (Track 2), we implemented the Call Date lock through native vault illiquidity combined with an **on-chain 2-of-2 Multisig gate** (`SignerListSet` + `asfDisableMaster`) governed by an autonomous, software-only **Enforcer Daemon**. 
 
-Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **26 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
+Across 16 on-chain verified transactions and four intentional protocol guardrail rejections, we encountered **27 distinct developer friction points** (full log with repros: `docs/friction-log.md`). Per the hackathon evaluation philosophy (*"Proposals score above flagging"*), this report details our five primary friction areas, citing exact ledger codes, SDK behaviors, and concrete architectural proposals for Ripple and the XRPL community.
 
 ---
 
@@ -35,6 +35,14 @@ While XRPL provides native multisig (`SignerListSet`), it possesses **no native 
 1. **Native `SignerCondition` in `SignerListSet` (Protocol-Level)**: Introduce an optional `SignAfter` / `SignBefore` Ripple-epoch timestamp within `SignerEntry`. The ledger engine would natively reject transactions signed by a temporal signer before its activation time with `tefSIGNER_NOT_ACTIVE`. This would eliminate off-chain policy daemons entirely.
 2. **Loaded Composition via TokenEscrow / XLS-85**: Anchor the borrower's repayment funds into a native `TokenEscrow` with a `FinishAfter: callDate` condition, coupling escrow release atomically with `LoanPay`. We confirmed the `TokenEscrow` amendment is enabled on the hackathon devnet (`npm run check`), so this is buildable today; we did not ship it within the 36 h because the escrow release and the `LoanPay` are still two separate transactions with no atomic link, which is the exact gap a native `SignAfter` would close.
 3. **Hardware Enclave (TEE / HSM) Enforcer**: In production, the software enforcer daemon must run inside an AWS Nitro Enclave or SGX enclave where zero human operator keys exist, and signing logic is cryptographically bound to on-chain ledger close time.
+
+### 1.1 The Depositor-Side Mirror: No Native Owner-Set Withdrawal Cap on the Vault
+
+The gate above protects the Call Date from the *borrower*. We had to build a second, separate off-chain mechanism to protect it from the *lender*: a 2-of-2 multisig on each depositor account, cosigned by the same Enforcer daemon, whose `decideWithdraw()` policy only ever cosigns a `VaultWithdraw` that stays within the depositor's accrued-yield shares, refusing anything touching principal shares until the underlying loan is settled.
+
+We confirmed directly against the XLS-0065 spec text that **`Vault` gives the owner no protocol-level lever over withdrawals at all**: `VaultWithdraw` "does not respect the permissioned domain rules," and any shareholder can withdraw at will, bounded only by `Vault.AssetsAvailable`. `AssetsMaximum` and `tfVaultPrivate` gate deposits only — neither restricts who can withdraw, how much, or how often.
+
+**Proposed solution**: an optional, owner-set periodic withdrawal cap on `VaultSet` — e.g. `WithdrawalCapPerPeriod` (an `Amount` or a basis-point share of `AssetsTotal`) plus `WithdrawalPeriodSeconds` — enforced by the ledger at `VaultWithdraw` time against cumulative withdrawals in the current period. This mirrors the redemption-gate mechanics already standard in real-world fund and bond structures (e.g. quarterly liquidity windows), and would have let us drop this second multisig + Enforcer instance entirely, removing one full off-chain trust assumption from the design. It generalizes well beyond our use case to any vault wanting redemption throttling (money-market funds, insurance-linked vaults, etc.).
 
 ---
 
@@ -90,6 +98,7 @@ We chose WalletConnect (Xaman) as the only way for investors, issuers and the br
 | Area | Observed Friction | Severity | Exact Ledger / Code Point | Actionable Proposal |
 |---|---|---|---|---|
 | **Security** | Multisig lacks native time restriction | **High** | Core `SignerListSet` | Add `SignerCondition` (`SignAfter`) or combine with `TokenEscrow` |
+| **Protocol** | Vault owner has zero native withdrawal control | **High** | `VaultWithdraw` / XLS-65 | Add owner-set `WithdrawalCapPerPeriod` + `WithdrawalPeriodSeconds` on `VaultSet` |
 | **Protocol** | `LoanDraw` does not exist | **Medium** | XLS-66 / `xrpl.js` models | Update overview docs: `LoanSet` disburses atomically |
 | **Spec** | `AssetsTotal` does not book `InterestDue` | **High** | XLS-66 §3.8.6 item 6 | Align spec text with `rippled 3.4.0-rc1` implementation |
 | **Protocol** | `AssetsMaximum` blocks loan origination | **Medium** | `tecLIMIT_EXCEEDED` (§3.8.5.2) | Separate cap vs. interest headroom error codes |
