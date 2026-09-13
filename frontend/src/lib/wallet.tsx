@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import type { FC, ReactNode } from 'react'
-import { walletManager } from '@/lib/xrplConnect'
+import { walletManager, signPrepared } from '@/lib/xrplConnect'
 import { getClient } from '@/lib/xrpl'
 import { chainClient } from '@/lib/chainClient'
 
@@ -165,7 +165,7 @@ export const WalletProvider: FC<{ children: ReactNode }> = ({ children }) => {
   }
 
   const signTransaction = async (tx: Record<string, unknown>): Promise<{ tx_blob: string }> => {
-    return walletManager.sign(tx as any)
+    return signPrepared(tx)
   }
 
   const connectAccount = (account: { address: string; name: string; role?: 'borrower' | 'lender' | 'broker' | 'unassigned' }) => {

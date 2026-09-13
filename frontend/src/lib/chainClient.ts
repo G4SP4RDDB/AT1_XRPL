@@ -1,6 +1,6 @@
 import { createChainClient, isBlocked } from '@shared/chainClient'
 import { notifyTx } from './notifications'
-import { walletManager } from './xrplConnect'
+import { walletManager, signPrepared } from './xrplConnect'
 import type {
   Bid,
   Ask,
@@ -235,7 +235,7 @@ export class ChainBackendClient {
       throw new Error('Connect the lender wallet for this address before depositing — the backend cannot sign on its behalf.')
     }
     const prepared = await baseChain.tx.prepareDeposit(lenderAddress, vaultId, amountXrp)
-    const signed = await walletManager.sign(prepared as any)
+    const signed = await signPrepared(prepared as Record<string, unknown>)
     return baseChain.tx.submitSigned(signed.tx_blob)
   }
 
@@ -247,7 +247,7 @@ export class ChainBackendClient {
     }
     const result = await baseChain.tx.prepareWithdraw(req)
     if ('blocked' in result) return result
-    const signed = await walletManager.sign(result.prepared as any)
+    const signed = await signPrepared(result.prepared as Record<string, unknown>)
     return baseChain.tx.submitSigned(signed.tx_blob)
   }
 
@@ -681,8 +681,8 @@ export class ChainBackendClient {
     }
     try {
       const { signerListSet, disableMaster } = await baseChain.tx.prepareAccountMultisigSetup(address)
-      const signedSignerListSet = await walletManager.sign(signerListSet as any)
-      const signedDisableMaster = await walletManager.sign(disableMaster as any)
+      const signedSignerListSet = await signPrepared(signerListSet as Record<string, unknown>)
+      const signedDisableMaster = await signPrepared(disableMaster as Record<string, unknown>)
       const receipt = await baseChain.tx.submitAccountMultisigSetup(address, signedSignerListSet.tx_blob, signedDisableMaster.tx_blob)
       if (receipt.result === 'tesSUCCESS') {
         notifyTx({
